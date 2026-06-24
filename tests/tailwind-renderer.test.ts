@@ -27,11 +27,15 @@ describe('renderer Tailwind foundation', () => {
   it('documents Tailwind and pc-client reuse as the global renderer UI baseline', () => {
     const tasks = readFileSync('specs/milestone-execution-plan/tasks.md', 'utf8')
     const requirements = readFileSync('specs/milestone-execution-plan/requirements.md', 'utf8')
+    const pmAgent = readFileSync('.codex/agents/pm-agent.toml', 'utf8')
 
     expect(tasks).toContain('## Global Frontend UI Baseline')
     expect(tasks).toContain('All renderer UI tasks in M2-M5 must use the desktop Tailwind pipeline')
     expect(tasks).toContain('hjwall/pc-client/src/modules/workflow-canvas/components/CanvasChatBox.tsx')
     expect(requirements).toContain('Renderer UI Reuse Baseline')
     expect(requirements).toContain('Tailwind CSS plus the shared `cn` helper')
+    expect(pmAgent).toContain('For every renderer UI requirement')
+    expect(pmAgent).toContain('Tailwind CSS, the shared renderer cn helper')
+    expect(pmAgent).toContain('hjwall/pc-client reference module')
   })
 })

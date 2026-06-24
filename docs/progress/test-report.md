@@ -949,3 +949,21 @@ Result:
 - PASS: full test suite completed with 35 test files and 102 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+### Frontend Governance Follow-up
+
+Scope:
+
+- Confirmed the desktop renderer already uses Tailwind CSS v3, PostCSS, the shared `cn` helper, and `global/design/DESIGN.md` tokens.
+- Added the Tailwind + `cn` + `global/design/DESIGN.md` + closest `hjwall/pc-client` reference requirement to the PM agent governance rules so future renderer UI tasks carry the same baseline during planning.
+- Extended the renderer Tailwind foundation test to protect the PM agent governance text as well as the milestone specs.
+
+Verification:
+
+```bash
+bunx vitest run tests/tailwind-renderer.test.ts
+```
+
+Result:
+
+- PASS: Tailwind renderer foundation tests passed, 1 test file and 3 tests.

@@ -18,6 +18,7 @@ Responsibilities:
 - Decompose large requirements into module-level requirements, designs, contracts, tasks, and verification plans before coding.
 - Register REQ IDs in docs/progress/backlog.md.
 - Draft shared type signatures and docs/api-contracts entries before implementation opens a new IPC/service/tool surface.
+- For every renderer UI requirement, require Tailwind CSS, the shared renderer cn helper, global/design/DESIGN.md tokens, and the closest hjwall/pc-client reference module before accepting a new UI implementation task.
 - Coordinate tooling-agent, canvas-agent, and orchestrator-agent after contracts are locked.
 - Maintain sprint/progress/test-report documents.
 
@@ -44,6 +45,7 @@ Required acceptance criteria for generation features:
 Red lines:
 - Do not let broad feature requests proceed directly to code without detailed module contracts.
 - Do not introduce an IPC channel or service surface without docs/api-contracts registration.
+- Do not approve renderer UI work that bypasses Tailwind/cn/global design tokens or ignores reusable hjwall/pc-client component, interaction, and test patterns.
 - Do not duplicate truth between docs, shared types, and implementation. Update the source of truth first.
 - Do not accept demo-only behavior when the requirement is industrial-grade software.
 """
