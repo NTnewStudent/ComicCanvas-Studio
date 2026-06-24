@@ -1,0 +1,232 @@
+import { useMemo, useState } from 'react'
+import { KeyRound, LinkIcon, Save, X } from 'lucide-react'
+
+import type { GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayModelMap, GatewayType } from '../../../../../shared/gateway'
+import { cn } from '../lib/cn'
+
+export interface GatewayFormProps {
+  gateway?: GatewayConfigView | undefined
+  onSubmit: (input: GatewayConfigInput) => Promise<void> | void
+  onCancel: () => void
+  saving?: boolean
+}
+
+const gatewayTypes: Array<{ value: GatewayType; label: string }> = [
+  { value: 'openai_compat', label: 'OpenAI compatible' },
+  { value: 'async_media_task', label: 'Async media task' },
+  { value: 'stub', label: 'Stub provider' }
+]
+
+const channelCapabilities: Array<{ channel: keyof GatewayModelMap; capability: GatewayCapability; label: string; inputLabel: string }> = [
+  { channel: 'text', capability: 'text', label: 'Text capability', inputLabel: 'Text model key' },
+  { channel: 'image', capability: 'image', label: 'Image capability', inputLabel: 'Image model key' },
+  { channel: 'video', capability: 'video', label: 'Video capability', inputLabel: 'Video model key' }
+]
+
+function defaultCapabilities(gateway?: GatewayConfigView): GatewayCapability[] {
+  return gateway?.capabilities ?? ['text', 'image']
+}
+
+function modelValue(modelMap: GatewayModelMap, channel: keyof GatewayModelMap): string {
+  return modelMap[channel] ?? ''
+}
+
+function nextCapabilities(current: GatewayCapability[], capability: GatewayCapability, checked: boolean): GatewayCapability[] {
+  if (checked) {
+    return current.includes(capability) ? current : [...current, capability]
+  }
+
+  return current.filter((item) => item !== capability)
+}
+
+function compactModelMap(modelMap: GatewayModelMap, capabilities: GatewayCapability[]): GatewayModelMap {
+  const compact: GatewayModelMap = {}
+
+  for (const item of channelCapabilities) {
+    const value = modelValue(modelMap, item.channel).trim()
+    if (capabilities.includes(item.capability) && value.length > 0) {
+      compact[item.channel] = value
+    }
+  }
+
+  return compact
+}
+
+/**
+ * Renders the gateway configuration form for create and edit flows.
+ * @param props - Existing gateway, submit handler, cancel handler, and saving flag.
+ * @returns Gateway settings form.
+ * @throws Error never intentionally; validation errors are represented through form state.
+ * @see docs/api-contracts/gateway-providers.md
+ */
+export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: GatewayFormProps): JSX.Element {
+  const [name, setName] = useState(gateway?.name ?? '')
+  const [type, setType] = useState<GatewayType>(gateway?.type ?? 'openai_compat')
+  const [baseUrl, setBaseUrl] = useState(gateway?.baseUrl ?? '')
+  const [secret, setSecret] = useState('')
+  const [enabled, setEnabled] = useState(gateway?.enabled ?? true)
+  const [capabilities, setCapabilities] = useState<GatewayCapability[]>(defaultCapabilities(gateway))
+  const [modelMap, setModelMap] = useState<GatewayModelMap>(gateway?.modelMap ?? {})
+  const [error, setError] = useState<string | null>(null)
+  const hasExistingKey = Boolean(gateway?.keyRef)
+  const submitDisabled = saving || name.trim().length === 0 || baseUrl.trim().length === 0
+  const keyHint = useMemo(() => (hasExistingKey ? `Using ${gateway?.keyRef}` : 'New key will be stored by the key vault'), [gateway?.keyRef, hasExistingKey])
+
+  function updateModel(channel: keyof GatewayModelMap, value: string): void {
+    setModelMap((current) => ({ ...current, [channel]: value }))
+  }
+
+  function submit(event: React.FormEvent<HTMLFormElement>): void {
+    event.preventDefault()
+
+    if (submitDisabled) {
+      setError('Name and base URL are required.')
+      return
+    }
+
+    const auth =
+      secret.trim().length > 0
+        ? ({ mode: 'apiKey', secret: secret.trim() } as const)
+        : hasExistingKey && gateway
+          ? ({ mode: 'existingRef', keyRef: gateway.keyRef } as const)
+          : ({ mode: 'none' } as const)
+
+    setError(null)
+    void onSubmit({
+      ...(gateway ? { id: gateway.id } : {}),
+      name: name.trim(),
+      type,
+      baseUrl: baseUrl.trim(),
+      auth,
+      capabilities,
+      modelMap: compactModelMap(modelMap, capabilities),
+      enabled
+    })
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[18px] font-semibold leading-tight text-text-base">{gateway ? 'Edit gateway' : 'Add gateway'}</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">Configure provider URL, secret reference, capabilities, and model routing.</p>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-input bg-bg-input text-text-secondary transition hover:border-border-primary hover:text-text-base"
+          aria-label="Cancel gateway edit"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+        Gateway name
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className="min-h-10 rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+        />
+      </label>
+
+      <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+        Gateway type
+        <select
+          value={type}
+          onChange={(event) => setType(event.target.value as GatewayType)}
+          className="min-h-10 rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+        >
+          {gatewayTypes.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+        Base URL
+        <span className="relative">
+          <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+          <input
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            className="min-h-10 w-full rounded-lg border border-border-input bg-bg-input py-2 pl-9 pr-3 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+          />
+        </span>
+      </label>
+
+      <div className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+        <label htmlFor="gateway-api-key">API key</label>
+        <span className="relative">
+          <KeyRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+          <input
+            id="gateway-api-key"
+            type="password"
+            value={secret}
+            onChange={(event) => setSecret(event.target.value)}
+            placeholder={hasExistingKey ? 'Leave blank to keep current key' : 'Optional for local stub gateways'}
+            className="min-h-10 w-full rounded-lg border border-border-input bg-bg-input py-2 pl-9 pr-3 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+          />
+        </span>
+        <span className="text-[12px] font-normal text-text-muted">{keyHint}</span>
+      </div>
+
+      <label className="inline-flex items-center gap-2 text-[13px] font-medium text-text-secondary">
+        <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} className="h-4 w-4 accent-[var(--cc-accent-gold)]" />
+        Enabled
+      </label>
+
+      <fieldset className="flex flex-col gap-3 rounded-lg border border-border-secondary bg-bg-input/60 p-3">
+        <legend className="px-1 text-[12px] font-semibold text-text-secondary">Capabilities and model mapping</legend>
+        {channelCapabilities.map((item) => {
+          const checked = capabilities.includes(item.capability)
+
+          return (
+            <div key={item.channel} className="grid gap-2 md:grid-cols-[180px_1fr] md:items-center">
+              <label className="inline-flex items-center gap-2 text-[13px] font-medium text-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(event) => setCapabilities((current) => nextCapabilities(current, item.capability, event.target.checked))}
+                  className="h-4 w-4 accent-[var(--cc-accent-gold)]"
+                />
+                {item.label}
+              </label>
+              <input
+                aria-label={item.inputLabel}
+                value={modelValue(modelMap, item.channel)}
+                onChange={(event) => updateModel(item.channel, event.target.value)}
+                disabled={!checked}
+                className="min-h-9 rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-base outline-none transition focus:ring-1 focus:ring-brand disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+          )
+        })}
+      </fieldset>
+
+      {error && <p className="text-[13px] text-semantic-negative">{error}</p>}
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base transition hover:border-border-primary"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={submitDisabled}
+          className={cn(
+            'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60'
+          )}
+        >
+          <Save className="h-4 w-4" />
+          Save gateway
+        </button>
+      </div>
+    </form>
+  )
+}

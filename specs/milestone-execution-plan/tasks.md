@@ -148,7 +148,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: mock polling tests for completed, failed, timeout, and cancellation.
   - Covers: R4.
 
-- [ ] 25. Implement Gateway settings UI.
+- [x] 25. Implement Gateway settings UI.
   - Files: `desktop/src/renderer/settings/GatewayList.tsx`, `GatewayForm.tsx`.
   - Reference: `hjwall/pc-client/src/modules/project/components/` and `hjwall/pc-client/src/components/common/` for form, select, dialog, and feedback patterns.
   - Include: add/edit/delete/test, enabled switch, masked key display, model mapping fields.

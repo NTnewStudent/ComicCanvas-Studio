@@ -864,3 +864,47 @@ Result:
 - PASS: full test suite completed with 32 test files and 92 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+### M3-25 Gateway Settings UI
+
+Scope:
+
+- Read `global/design/DESIGN.md` before UI work and used the existing Tailwind + `cn` renderer pipeline.
+- Referenced `hjwall/pc-client/src/modules/project/components/` and `hjwall/pc-client/src/components/common/` form/dialog patterns before implementing ComicCanvas-specific components.
+- Added `GatewayList` and `GatewayForm` renderer components for add/edit/delete/test, enabled switch, masked key display, capability selection, and text/image/video model mapping.
+- Added typed preload methods for `gateway.list`, `gateway.save`, `gateway.delete`, and `gateway.test`.
+- Extended the gateway IPC skeleton to register list/save/delete/test handlers, while leaving real encrypted vault behavior to M3-26 and hot reload to M3-27.
+- Mounted the gateway settings panel in the current renderer shell so the UI is reachable in the app.
+
+Verification:
+
+```bash
+bunx vitest run tests/gateway-settings-ui.test.tsx tests/gateway-preload.test.ts
+bunx vitest run tests/ipc-skeleton.test.ts tests/electron-security.test.ts
+bun run typecheck
+bun run lint
+```
+
+Result:
+
+- RED before implementation: gateway settings UI tests failed because `GatewayForm` and `GatewayList` did not exist.
+- RED before implementation: gateway preload test failed because typed gateway methods were not exposed.
+- PASS after implementation: gateway settings/preload/security/IPC tests passed, 4 test files and 13 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full test suite completed with 34 test files and 98 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
