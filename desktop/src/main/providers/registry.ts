@@ -25,8 +25,35 @@ export class GatewayProviderError extends Error implements GatewayError {
 }
 
 export interface GatewayRegistry {
+  /**
+   * Registers or replaces one provider for future invocations.
+   * @param id - Gateway ID used by jobs and gateway settings.
+   * @param provider - Provider handle to use for future invocations.
+   * @returns void.
+   * @see docs/api-contracts/gateway-providers.md
+   */
   set(id: string, provider: GatewayProvider): void
+  /**
+   * Hot-reloads provider handles for future invocations.
+   * @param providers - Provider handles rebuilt from the latest gateway configuration.
+   * @returns Gateway IDs replaced in the registry.
+   * @see docs/api-contracts/gateway-providers.md
+   */
+  reload(providers: GatewayProvider[]): { reloadedGatewayIds: string[] }
+  /**
+   * Invokes the currently registered provider while retaining that provider for the call lifetime.
+   * @param id - Gateway ID selected by the job or tool call.
+   * @param request - Normalized gateway request.
+   * @param context - Optional worker cancellation/progress context.
+   * @returns Normalized provider result.
+   * @throws GatewayProviderError when the provider is missing or cannot serve the requested channel/model.
+   * @see docs/api-contracts/gateway-providers.md
+   */
   invoke(id: string, request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult>
+}
+
+function resolveModelKey(provider: GatewayProvider, request: GatewayRequest): string {
+  return request.modelKey.length > 0 ? request.modelKey : provider.modelKeys[request.channel]
 }
 
 /**
@@ -42,6 +69,14 @@ export function createGatewayRegistry(): GatewayRegistry {
     set(id, provider) {
       providers.set(id, provider)
     },
+    reload(nextProviders) {
+      const reloadedGatewayIds = nextProviders.map((provider) => {
+        providers.set(provider.id, provider)
+        return provider.id
+      })
+
+      return { reloadedGatewayIds }
+    },
     async invoke(id, request, context) {
       const provider = providers.get(id)
 
@@ -49,15 +84,17 @@ export function createGatewayRegistry(): GatewayRegistry {
         throw new GatewayProviderError({ errorClass: 'gateway_not_found', message: `Gateway ${id} is not registered`, retryable: false })
       }
 
-      if (!provider.capabilities.includes(request.channel) || provider.modelKeys[request.channel] !== request.modelKey) {
+      const modelKey = resolveModelKey(provider, request)
+
+      if (!provider.capabilities.includes(request.channel) || modelKey.length === 0 || provider.modelKeys[request.channel] !== modelKey) {
         throw new GatewayProviderError({
           errorClass: 'capability_unsupported',
-          message: `Gateway ${id} does not support ${request.channel}:${request.modelKey}`,
+          message: `Gateway ${id} does not support ${request.channel}:${modelKey}`,
           retryable: false
         })
       }
 
-      return provider.invoke(request, context)
+      return provider.invoke({ ...request, modelKey }, context)
     }
   }
 }

@@ -11,6 +11,8 @@ describe('M3 gateway preload bridge', () => {
     expect(source).toContain("invokeMain('gateway.save'")
     expect(source).toContain("invokeMain('gateway.delete'")
     expect(source).toContain("invokeMain('gateway.test'")
+    expect(source).toContain('reloadGateways')
+    expect(source).toContain("invokeMain('gateway.reload'")
     expect(source).not.toContain('ipcRenderer: ipcRenderer')
     expect(source).not.toContain('send: ipcRenderer.send')
   })

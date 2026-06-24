@@ -24,6 +24,13 @@ export interface GatewayProvider {
   invoke(request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult> | GatewayResult
 }
 
+export interface StubProviderOptions {
+  /** Provider ID exposed to the registry. */
+  id?: string
+  /** Optional channel model map overriding local defaults. */
+  modelKeys?: Partial<Record<'text' | 'image' | 'video', string>>
+}
+
 const pngHeader = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 const mp4Header = Uint8Array.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
 
@@ -66,18 +73,19 @@ function orientationSize(orientation: unknown): { width: number; height: number;
 
 /**
  * Creates a deterministic provider for local text, image, and video stubs.
+ * @param options - Optional provider ID and model map overrides.
  * @returns Stub gateway provider.
  * @throws Error when deterministic byte generation fails unexpectedly.
  * @see docs/api-contracts/gateway-providers.md
  */
-export function createStubProvider(): GatewayProvider {
+export function createStubProvider(options: StubProviderOptions = {}): GatewayProvider {
   return {
-    id: 'stub',
+    id: options.id ?? 'stub',
     capabilities: ['text', 'image', 'video'],
     modelKeys: {
-      text: 'stub-text',
-      image: 'stub-image',
-      video: 'stub-video'
+      text: options.modelKeys?.text ?? 'stub-text',
+      image: options.modelKeys?.image ?? 'stub-image',
+      video: options.modelKeys?.video ?? 'stub-video'
     },
     invoke(request) {
       const seed = `${request.channel}:${request.modelKey}:${request.prompt}:${request.idempotencyKey}:${JSON.stringify(request.parameters)}`

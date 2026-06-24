@@ -161,7 +161,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: roundtrip test and grep/log assertions for no plaintext key.
   - Covers: R4.
 
-- [ ] 27. Implement provider hot reload and model map.
+- [x] 27. Implement provider hot reload and model map.
   - Include: `GatewayRegistry.set`, `gateway.reload`, in-flight jobs keep original provider, future jobs use new provider.
   - Verify: integration test switch provider -> new job uses new provider; old job completes with original.
   - Covers: R4.

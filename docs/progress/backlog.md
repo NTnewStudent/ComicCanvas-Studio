@@ -13,8 +13,8 @@
 | **M0** 契约 & 治理 | shared/ 契约、根级 specs/ 全局 spec、Codex 治理、调研汇报 | ✅ |
 | **M1** 骨架可跑 | Electron + DB + 队列 + 一个 stub provider 端到端跑通手动生图 | ✅ |
 | **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | ✅ |
-| **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | 🔵 |
-| **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | ⬜ |
+| **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | ✅ |
+| **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | 🔵 |
 | **M5** Agent 进阶 | super-agent + 子 agent spawn + 工具/agent 管理 UI | ⬜ |
 
 ---
@@ -74,8 +74,8 @@
 | REQ-031 | 异步网关轮询（提交→remote_task_id→查询→落盘） | ✅ |
 | REQ-032 | 设置页：网关配置（URL + Key + 模型映射） | ✅ |
 | REQ-033 | API Key 走 OS safeStorage（不落明文/日志） | ✅ |
-| REQ-034 | 网关热拔插（保存后重新初始化 Provider，不重启） | ⬜ |
-| REQ-035 | 多渠道模型映射（image/video/text 分别指向不同 endpoint） | ⬜ |
+| REQ-034 | 网关热拔插（保存后重新初始化 Provider，不重启） | ✅ |
+| REQ-035 | 多渠道模型映射（image/video/text 分别指向不同 endpoint） | ✅ |
 
 ### M4 — Agent 编排
 
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M3 REQ-034 / REQ-035（provider hot reload and model map）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M3 第 27 项 provider hot reload and model map 开始，验证保存配置后未来任务使用新 provider，已在执行中的任务保留原 provider。
+**当前焦点** → M4 REQ-040（orchestrator AsyncGenerator run）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 28 项 orchestrator AsyncGenerator run 开始，参考 `cc-haha-main` 的 AsyncGenerator 主循环与 Tool/Skill/Hooks 思路，改写为 Electron 主进程内的 CanvasPlan 编排入口。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

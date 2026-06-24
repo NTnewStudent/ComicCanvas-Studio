@@ -4,11 +4,20 @@
  */
 
 import type { GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayType } from '../../../../shared/gateway'
+import type { IpcResponseMap } from '../../../../shared/ipc'
 import type { JobTicket } from '../../../../shared/jobs'
 import { createSafeErrorEnvelope } from './safe-error'
 import type { IpcRegistrar } from './types'
 
 const gatewayConfigs = new Map<string, GatewayConfigView>()
+
+export interface GatewayReloader {
+  reload(configs: GatewayConfigView[]): IpcResponseMap['gateway.reload']
+}
+
+export interface GatewayHandlerOptions {
+  reloader?: GatewayReloader
+}
 
 function createGatewayTicket(gatewayId: string): JobTicket {
   return {
@@ -69,14 +78,34 @@ function viewFromInput(input: GatewayConfigInput): GatewayConfigView {
   }
 }
 
+function selectedConfigs(gatewayId?: string): GatewayConfigView[] {
+  if (gatewayId) {
+    const config = gatewayConfigs.get(gatewayId)
+    return config?.enabled === true ? [config] : []
+  }
+
+  return Array.from(gatewayConfigs.values()).filter((config) => config.enabled)
+}
+
+function reloadGateways(reloader: GatewayReloader | undefined, gatewayId?: string): IpcResponseMap['gateway.reload'] {
+  const configs = selectedConfigs(gatewayId)
+
+  if (!reloader) {
+    return { reloadedGatewayIds: configs.map((config) => config.id) }
+  }
+
+  return reloader.reload(configs)
+}
+
 /**
  * Registers gateway invoke handlers.
  * @param ipcMain - Electron-compatible IPC registrar.
+ * @param options - Optional runtime integrations for hot reload.
  * @returns void.
  * @throws Error when the registrar rejects handler registration.
  * @see docs/api-contracts/gateway-providers.md
  */
-export function registerGatewayHandlers(ipcMain: IpcRegistrar): void {
+export function registerGatewayHandlers(ipcMain: IpcRegistrar, options: GatewayHandlerOptions = {}): void {
   if (gatewayConfigs.size === 0) {
     const stub = createDefaultGateway()
     gatewayConfigs.set(stub.id, stub)
@@ -87,6 +116,7 @@ export function registerGatewayHandlers(ipcMain: IpcRegistrar): void {
     const input = request as GatewayConfigInput
     const saved = viewFromInput(input)
     gatewayConfigs.set(saved.id, saved)
+    reloadGateways(options.reloader, saved.id)
 
     return saved
   })
@@ -100,6 +130,11 @@ export function registerGatewayHandlers(ipcMain: IpcRegistrar): void {
     const gatewayId = typeof request === 'object' && request !== null && 'gatewayId' in request ? String(request.gatewayId) : 'unknown'
 
     return createGatewayTicket(gatewayId)
+  })
+  ipcMain.handle('gateway.reload', (_event, request) => {
+    const gatewayId = typeof request === 'object' && request !== null && 'gatewayId' in request && typeof request.gatewayId === 'string' ? request.gatewayId : undefined
+
+    return reloadGateways(options.reloader, gatewayId)
   })
 }
 

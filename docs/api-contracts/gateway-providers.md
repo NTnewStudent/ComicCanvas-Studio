@@ -81,6 +81,32 @@ Rules:
 - Async media polling SHALL accept a worker-side invocation context with cancellation checks and progress callbacks. Cancellation SHALL raise `provider_canceled` before additional remote work is submitted or polled.
 - Gateway results SHALL be normalized before JobWorker or AssetService consumes them.
 
+### `gateway.reload`
+
+Request:
+
+```ts
+interface GatewayReloadRequest {
+  gatewayId?: string
+}
+```
+
+Response:
+
+```ts
+interface GatewayReloadResponse {
+  reloadedGatewayIds: string[]
+}
+```
+
+Rules:
+
+- Saving an enabled gateway SHALL trigger reload for that gateway without requiring an app restart.
+- Manual reload with `gatewayId` SHALL reload only that enabled gateway; manual reload without `gatewayId` SHALL reload all enabled gateways.
+- Registry reload SHALL replace provider handles for future invocations only.
+- An invocation that already captured a provider handle SHALL continue with that original provider even if reload occurs before it completes.
+- If a request omits `modelKey`, the registry SHALL resolve it from the provider model map for the request channel (`text`, `image`, or `video`) before preflight and invocation.
+
 ## Errors
 
 | Error class | Meaning |

@@ -967,3 +967,47 @@ bunx vitest run tests/tailwind-renderer.test.ts
 Result:
 
 - PASS: Tailwind renderer foundation tests passed, 1 test file and 3 tests.
+
+### M3-27 Provider Hot Reload And Model Map
+
+Scope:
+
+- Added `GatewayRegistry.reload` and model-key fallback so requests that omit `modelKey` resolve from the current provider's per-channel model map.
+- Preserved in-flight invocation behavior by capturing the provider handle at invoke time; reload replaces future registry handles without mutating already-running provider calls.
+- Added `createGatewayConfigReloader` to rebuild stub, OpenAI-compatible, and async media providers from enabled gateway config views.
+- Extended stub provider construction to preserve configured gateway IDs and model maps during reload.
+- Registered `gateway.reload` in the gateway IPC handler and exposed typed `reloadGateways` through preload.
+- Documented `gateway.reload` request/response and reload invariants in `docs/api-contracts/gateway-providers.md`.
+
+Verification:
+
+```bash
+bunx vitest run tests/gateway-hot-reload.test.ts tests/gateway-preload.test.ts
+bunx vitest run tests/gateway-hot-reload.test.ts tests/gateway-preload.test.ts tests/ipc-skeleton.test.ts tests/stub-provider.test.ts
+bunx vitest run tests/openai-compatible-provider.test.ts tests/async-media-provider.test.ts tests/gateway-settings-ui.test.tsx tests/gateway-preload.test.ts tests/gateway-hot-reload.test.ts
+bun run typecheck
+bun run lint
+```
+
+Result:
+
+- RED before implementation: hot reload tests failed because `GatewayRegistry.reload` did not exist.
+- RED before implementation: gateway handler did not trigger reload on save and did not register `gateway.reload`.
+- RED before implementation: preload did not expose `reloadGateways`.
+- RED before stub reload fix: config reload returned provider ID `stub` instead of the configured gateway ID `stub-main`.
+- PASS after implementation: hot reload, preload, IPC skeleton, and stub provider tests passed, 4 test files and 10 tests.
+- PASS: gateway provider/settings regression tests passed, 5 test files and 16 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: full test suite completed with 36 test files and 106 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.

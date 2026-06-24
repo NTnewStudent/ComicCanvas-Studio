@@ -45,6 +45,7 @@ describe('M1 IPC skeleton', () => {
       'canvas.saveGraph',
       'gateway.delete',
       'gateway.list',
+      'gateway.reload',
       'gateway.save',
       'gateway.test',
       'job.enqueue',

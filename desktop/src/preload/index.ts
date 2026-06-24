@@ -14,6 +14,7 @@ export interface ComicCanvasApi {
   saveGateway(input: IpcRequestMap['gateway.save']): Promise<IpcResponseMap['gateway.save']>
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
   testGateway(input: IpcRequestMap['gateway.test']): Promise<IpcResponseMap['gateway.test']>
+  reloadGateways(input: IpcRequestMap['gateway.reload']): Promise<IpcResponseMap['gateway.reload']>
   onJobCompleted(handler: (event: Extract<JobTerminalEvent, { channel: 'job.completed' }>) => void): () => void
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
@@ -34,6 +35,7 @@ function invokeMain<TChannel extends 'gateway.list'>(channel: TChannel, request:
 function invokeMain<TChannel extends 'gateway.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.test'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'gateway.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TResponse>(channel: string, request?: unknown): Promise<TResponse> {
   return ipcRenderer.invoke(channel, request) as Promise<TResponse>
 }
@@ -101,6 +103,14 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/gateway-providers.md
    */
   testGateway: (input) => invokeMain('gateway.test', input),
+  /**
+   * Hot-reloads configured gateway providers for future jobs.
+   * @param input - Optional gateway selection for targeted reload.
+   * @returns Reloaded gateway IDs.
+   * @throws Error when the main process rejects the gateway reload request.
+   * @see docs/api-contracts/gateway-providers.md
+   */
+  reloadGateways: (input) => invokeMain('gateway.reload', input),
   /**
    * Subscribes to completed job terminal events.
    * @param handler - Event payload handler.
