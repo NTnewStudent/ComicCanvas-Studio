@@ -40,6 +40,8 @@ describe('M1 IPC skeleton', () => {
       'asset.get',
       'asset.import',
       'asset.list',
+      'canvas.chatGetPlan',
+      'canvas.chatSend',
       'canvas.loadGraph',
       'canvas.runNode',
       'canvas.saveGraph',
@@ -86,6 +88,39 @@ describe('M1 IPC skeleton', () => {
       relativePath: 'generated/image/asset-1.png'
     })
     expect(serialized).not.toMatch(/bytes|data:|[A-Za-z]:\\\\|\/tmp\/|provider_/u)
+  })
+
+  it('routes canvas chat IPC through an injected orchestrator runtime', () => {
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const plan = {
+      kind: 'clarify' as const,
+      summary: 'Need more information',
+      nodes: [],
+      edges: [],
+      runSteps: [],
+      question: '请补充画面主体。',
+      dropped: []
+    }
+
+    registerCanvasHandlers(ipcMain, {
+      orchestrator: {
+        chatSend(input) {
+          expect(input).toEqual({ message: '生成宇宙飞船', agentId: 'orchestrator', requestedBy: 'user-local' })
+          return { jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' }
+        },
+        getPlan(messageId) {
+          expect(messageId).toBe('message-1')
+          return plan
+        }
+      }
+    })
+
+    expect(handlers.get('canvas.chatSend')?.({}, { message: '生成宇宙飞船', agentId: 'orchestrator' })).toEqual({
+      jobId: 'job-agent-1',
+      messageId: 'message-1',
+      status: 'pending'
+    })
+    expect(handlers.get('canvas.chatGetPlan')?.({}, { messageId: 'message-1' })).toEqual(plan)
   })
 
   it('documents every new IPC handler with API contract anchors', () => {

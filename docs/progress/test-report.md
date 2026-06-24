@@ -1011,3 +1011,49 @@ Result:
 - PASS: full test suite completed with 36 test files and 106 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+## 2026-06-25 - M4 Agent Orchestration
+
+### M4-28 Orchestrator AsyncGenerator Run
+
+Scope:
+
+- Read `cc-haha-main/src/query.ts`, `QueryEngine.ts`, and `query/deps.ts` as conceptual references for an AsyncGenerator-driven loop and dependency injection, without copying source.
+- Added `desktop/src/main/agent/orchestrator.ts` with `runOrchestrator` as a `while (true)` AsyncGenerator state machine that streams progress and returns a declarative `CanvasPlan`.
+- Added `createOrchestratorRuntime` so `canvas.chatSend` enqueues an `agent.run` job and returns a pending ticket before planner/model work starts.
+- Added main-process IPC handlers for `canvas.chatSend` and `canvas.chatGetPlan`, plus typed preload APIs `sendCanvasChat` and `getCanvasPlan`.
+- Documented the chat-to-plan IPC contracts in `docs/api-contracts/canvas-plan.md`.
+
+Verification:
+
+```bash
+bun x vitest run tests/gateway-preload.test.ts
+```
+
+Result:
+
+- RED before preload implementation: failed because `desktop/src/preload/index.ts` did not expose `sendCanvasChat`.
+
+```bash
+bun x vitest run tests/gateway-preload.test.ts tests/ipc-skeleton.test.ts tests/orchestrator-runtime.test.ts
+bun run typecheck
+bun run lint
+```
+
+Result:
+
+- PASS after implementation: preload, IPC skeleton, and orchestrator runtime tests passed, 3 test files and 8 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: full test suite completed with 37 test files and 109 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.

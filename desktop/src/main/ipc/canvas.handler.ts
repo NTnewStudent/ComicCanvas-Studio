@@ -4,10 +4,12 @@
  */
 
 import type { JobTicket } from '../../../../shared/jobs'
+import type { CanvasPlan } from '../../../../shared/plan'
 import { canConnect } from '../../../../shared/connection-matrix'
 import type { CanvasGraphEdge, CanvasGraphSnapshot, CanvasSaveGraphRequest } from '../../../../shared/graph'
 import type { IpcRegistrar } from './types'
 import type { WorkflowRepository } from '../db/repositories/workflow.repo'
+import type { OrchestratorRuntime } from '../agent/orchestrator'
 
 function createPendingTicket(jobId: string): JobTicket {
   return {
@@ -21,6 +23,8 @@ function createPendingTicket(jobId: string): JobTicket {
 export interface CanvasHandlerDependencies {
   /** Workflow repository for graph version persistence. */
   workflows?: WorkflowRepository
+  /** Orchestrator runtime used by chat-to-plan IPC. */
+  orchestrator?: Pick<OrchestratorRuntime, 'chatSend' | 'getPlan'>
   /** Clock used for deterministic version timestamps. */
   clock?: () => number
   /** ID factory used for graph version IDs. */
@@ -35,6 +39,18 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function defaultGraph(): CanvasGraphSnapshot {
   return { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
+}
+
+function defaultClarifyPlan(): CanvasPlan {
+  return {
+    kind: 'clarify',
+    summary: 'The orchestrator runtime is not available.',
+    nodes: [],
+    edges: [],
+    runSteps: [],
+    question: '请稍后重试。',
+    dropped: []
+  }
 }
 
 function sanitizeGraph(graph: CanvasGraphSnapshot): CanvasGraphSnapshot {
@@ -81,6 +97,26 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     const nodeId = typeof request === 'object' && request !== null && 'nodeId' in request ? String(request.nodeId) : 'unknown'
 
     return createPendingTicket(`job-${nodeId}`)
+  })
+
+  ipcMain.handle('canvas.chatSend', (_event, request) => {
+    const message = isObject(request) && typeof request.message === 'string' ? request.message : ''
+    const agentId = isObject(request) && typeof request.agentId === 'string' ? request.agentId : undefined
+
+    if (!dependencies.orchestrator) {
+      return { jobId: 'job-agent-unavailable', messageId: 'message-unavailable', status: 'pending' as const }
+    }
+
+    return dependencies.orchestrator.chatSend({
+      message,
+      ...(agentId ? { agentId } : {}),
+      requestedBy: dependencies.currentUserId ?? 'user-local'
+    })
+  })
+
+  ipcMain.handle('canvas.chatGetPlan', (_event, request) => {
+    const messageId = isObject(request) && typeof request.messageId === 'string' ? request.messageId : 'message-unavailable'
+    return dependencies.orchestrator?.getPlan(messageId) ?? defaultClarifyPlan()
   })
 
   ipcMain.handle('canvas.saveGraph', (_event, request) => {

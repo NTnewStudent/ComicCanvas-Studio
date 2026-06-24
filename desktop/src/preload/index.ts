@@ -10,6 +10,8 @@ import type { JobTerminalEvent } from '../../../shared/jobs'
 
 export interface ComicCanvasApi {
   health(): Promise<{ status: 'ok' | 'degraded' | 'failed'; checkedAt: number }>
+  sendCanvasChat(input: IpcRequestMap['canvas.chatSend']): Promise<IpcResponseMap['canvas.chatSend']>
+  getCanvasPlan(input: IpcRequestMap['canvas.chatGetPlan']): Promise<IpcResponseMap['canvas.chatGetPlan']>
   listGateways(): Promise<IpcResponseMap['gateway.list']>
   saveGateway(input: IpcRequestMap['gateway.save']): Promise<IpcResponseMap['gateway.save']>
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
@@ -31,6 +33,8 @@ type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.
  * @see docs/api-contracts/gateway-providers.md
  */
 function invokeMain<TResponse>(channel: 'app.health'): Promise<TResponse>
+function invokeMain<TChannel extends 'canvas.chatSend'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.chatGetPlan'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -72,6 +76,22 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/audit-observability.md
    */
   health: () => invokeMain<{ status: 'ok' | 'degraded' | 'failed'; checkedAt: number }>('app.health'),
+  /**
+   * Sends a natural-language canvas chat request to the orchestrator runtime.
+   * @param input - Canvas chat message and optional target agent.
+   * @returns Pending agent job ticket and persisted chat message ID.
+   * @throws Error when the main process rejects the chat request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  sendCanvasChat: (input) => invokeMain('canvas.chatSend', input),
+  /**
+   * Retrieves the CanvasPlan produced for a completed chat message.
+   * @param input - Message lookup request.
+   * @returns The available CanvasPlan or a safe clarify plan.
+   * @throws Error when the main process rejects the plan lookup request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  getCanvasPlan: (input) => invokeMain('canvas.chatGetPlan', input),
   /**
    * Lists configured gateway providers.
    * @returns Gateway configuration views.

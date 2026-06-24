@@ -18,6 +18,54 @@ Non-goals:
 
 ## Request/Response Contracts
 
+### `canvas.chatSend`
+
+Request:
+
+```ts
+interface CanvasChatSendRequest {
+  message: string
+  agentId?: string
+}
+```
+
+Response:
+
+```ts
+interface CanvasChatSendResponse {
+  jobId: string
+  messageId: string
+  status: 'pending'
+}
+```
+
+Rules:
+
+- `canvas.chatSend` SHALL enqueue an `agent.run` job and return within one second without returning a CanvasPlan synchronously.
+- The orchestration job SHALL run the orchestrator AsyncGenerator in the main process and emit progress/terminal job events through the local job runtime.
+- The produced CanvasPlan SHALL be retrievable only after async completion through `canvas.chatGetPlan`.
+
+### `canvas.chatGetPlan`
+
+Request:
+
+```ts
+interface CanvasChatGetPlanRequest {
+  messageId: string
+}
+```
+
+Response:
+
+```ts
+type CanvasChatGetPlanResponse = CanvasPlan
+```
+
+Rules:
+
+- `canvas.chatGetPlan` SHALL return the latest stored plan for the message ID after the agent job completes.
+- If a plan is unavailable, the handler SHALL return a safe clarify-style CanvasPlan or a stable safe error envelope; it SHALL NOT expose internal prompts or provider details.
+
 ### `canvas.applyPlan`
 
 Request:

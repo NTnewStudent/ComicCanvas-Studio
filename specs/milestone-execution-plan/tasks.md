@@ -168,7 +168,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
 
 ## M4 - Agent Orchestration
 
-- [ ] 28. Implement orchestrator AsyncGenerator run.
+- [x] 28. Implement orchestrator AsyncGenerator run.
   - File: `desktop/src/main/agent/orchestrator.ts`.
   - Behavior: `canvas.chatSend` returns ticket within one second; orchestration job emits completion event.
   - Verify: mock model test for pending response and async Plan availability.

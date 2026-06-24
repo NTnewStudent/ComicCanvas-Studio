@@ -81,7 +81,7 @@
 
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
-| REQ-040 | Orchestrator AsyncGenerator 主循环 | ⬜ |
+| REQ-040 | Orchestrator AsyncGenerator 主循环 | ✅ |
 | REQ-041 | Tool 统一接口 + ToolRegistry | ⬜ |
 | REQ-042 | Canvas 工具集（queryGraph/proposePlan/createNode/connectNodes/updateNodeData/deleteNode/runNode） | ⬜ |
 | REQ-043 | sanitizePlan（白名单 + 矩阵 + 去代码 + dropped） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M4 REQ-040（orchestrator AsyncGenerator run）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 28 项 orchestrator AsyncGenerator run 开始，参考 `cc-haha-main` 的 AsyncGenerator 主循环与 Tool/Skill/Hooks 思路，改写为 Electron 主进程内的 CanvasPlan 编排入口。
+**当前焦点** → M4 REQ-041 / REQ-042（ToolRuntime + Canvas 工具集）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 29 项 ToolRuntime and canvas tools 开始，参考 `cc-haha-main` 的统一 Tool 接口与 AsyncGenerator 工具调用思路，改写为 Electron 主进程内的 Canvas 工具运行时。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---
