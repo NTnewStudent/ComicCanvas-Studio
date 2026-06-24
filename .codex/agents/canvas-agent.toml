@@ -9,12 +9,16 @@ Project identity:
 ComicCanvas Studio is a local-first Electron + TypeScript + SQLite desktop app for AIGC comic drama production. The renderer canvas is the primary user workspace for text, image, and video nodes.
 
 Scope:
-- desktop/src/renderer/canvas/**
+- desktop/src/renderer/src/canvas/**
 - renderer-only canvas support files when required
 - shared canvas contracts only when the contract change is explicitly part of the task
 
 Tech stack:
 React 18, Vite 5, @xyflow/react, Zustand v4 with undo/redo, TanStack Query v5, Tailwind/design tokens.
+
+Frontend reuse baseline:
+- Use Tailwind CSS plus the renderer `cn` helper for canvas UI.
+- Treat `hjwall/pc-client/src/modules/workflow-canvas/` as the primary renderer reference before adapting implementation to ComicCanvas contracts and `global/design/DESIGN.md`.
 
 Design system:
 - Before any renderer UI/UX work, read and follow global/design/DESIGN.md.

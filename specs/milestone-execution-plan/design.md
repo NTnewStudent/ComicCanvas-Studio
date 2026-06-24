@@ -64,6 +64,8 @@ M1 proves the desktop architecture:
 
 M2 turns the skeleton into a usable manual canvas:
 
+- Renderer canvas UI uses Tailwind CSS plus the shared `cn` helper as the default styling model.
+- `hjwall/pc-client` canvas nodes and components are the primary implementation reference; reuse their component patterns after adapting contracts, copy, and visual tokens to ComicCanvas.
 - Zustand canvas store with undo/redo.
 - Text/Image/Video nodes with domain-specific controls.
 - Connection validation and duplicate-edge handling.

@@ -11,7 +11,7 @@
 
 ## Glossary
 
-- **Canvas**：渲染层 React Flow 画布（`desktop/src/renderer/canvas/`）。
+- **Canvas**：渲染层 React Flow 画布（`desktop/src/renderer/src/canvas/`）。
 - **Orchestrator**：主进程 Agent 运行时（`desktop/src/main/agent/`），AsyncGenerator 主循环。
 - **CanvasPlan**：Orchestrator 产出、清洗后的纯 JSON（`shared/plan.ts`），含 `nodes/edges/runSteps`。
 - **JobQueue**：进程内持久化任务队列（落 SQLite `jobs` 表）。

@@ -61,13 +61,14 @@ Non-goals:
 #### Acceptance Criteria
 
 1. THE canvas store SHALL manage nodes, edges, viewport, undo/redo, and Plan application without direct IPC side effects.
-2. Text nodes SHALL support collapsed label display, expanded editing, outside-click collapse, scrollable content, and inline rename.
-3. Image nodes SHALL support idle, expanded, pending/running, done, and error states with prompt/model/orientation controls.
-4. Video nodes SHALL support prompt/model/orientation/duration controls, optional first/last frame references, and video preview.
-5. WHEN a connection is attempted, THE renderer SHALL use `shared/connection-matrix.ts`, reject invalid or duplicate edges, and show a user-facing reason quickly.
-6. WHEN a generation node has upstream text, THE Connected Inputs Panel SHALL show ordered upstream content and a byte-equivalent final prompt preview.
-7. WHEN canvas is saved and loaded, THE graph SHALL persist through main-process repositories and reload with connection revalidation.
-8. THE renderer SHALL NOT poll generation status with `setInterval` or equivalent asset polling loops.
+2. THE renderer canvas UI SHALL use Tailwind CSS plus the shared `cn` helper, reusing `hjwall/pc-client` canvas component patterns where they fit the current contracts and `global/design/DESIGN.md`.
+3. Text nodes SHALL support collapsed label display, expanded editing, outside-click collapse, scrollable content, and inline rename.
+4. Image nodes SHALL support idle, expanded, pending/running, done, and error states with prompt/model/orientation controls.
+5. Video nodes SHALL support prompt/model/orientation/duration controls, optional first/last frame references, and video preview.
+6. WHEN a connection is attempted, THE renderer SHALL use `shared/connection-matrix.ts`, reject invalid or duplicate edges, and show a user-facing reason quickly.
+7. WHEN a generation node has upstream text, THE Connected Inputs Panel SHALL show ordered upstream content and a byte-equivalent final prompt preview.
+8. WHEN canvas is saved and loaded, THE graph SHALL persist through main-process repositories and reload with connection revalidation.
+9. THE renderer SHALL NOT poll generation status with `setInterval` or equivalent asset polling loops.
 
 ### Requirement 4: M3 Gateway System
 

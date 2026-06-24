@@ -78,26 +78,28 @@
 
 ## M2 - Complete Canvas
 
+Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` helper, and `hjwall/pc-client` canvas component patterns as the primary reference before adapting the implementation to ComicCanvas contracts and `global/design/DESIGN.md`.
+
 - [x] 14. Implement canvas store.
-  - File: `desktop/src/renderer/canvas/store/canvas.store.ts`.
+  - File: `desktop/src/renderer/src/canvas/store/canvas.store.ts`.
   - Include: nodes, edges, viewport, undo/redo, `applyChange`, add/delete node/edge, snapshot folding.
   - Verify: addNode -> deleteNode -> undo restores state.
   - Covers: R3.
 
 - [x] 15. Implement Text node.
-  - File: `desktop/src/renderer/canvas/nodes/TextNode.tsx`.
+  - File: `desktop/src/renderer/src/canvas/nodes/TextNode.tsx`.
   - Include: collapsed label, expanded textarea, outside-click collapse, internal scroll, inline rename hook.
   - Verify: component test click -> expand -> input -> blur -> collapse.
   - Covers: R3.
 
-- [ ] 16. Implement Image node.
-  - File: `desktop/src/renderer/canvas/nodes/ImageNode.tsx`.
+- [x] 16. Implement Image node.
+  - File: `desktop/src/renderer/src/canvas/nodes/ImageNode.tsx`.
   - Include: idle/expanded/pending/running/done/error states, prompt/model/orientation controls, generate button, safe image preview.
   - Verify: four-state rendering tests and run button invokes `canvas.runNode`.
   - Covers: R3.
 
 - [ ] 17. Implement Video node.
-  - File: `desktop/src/renderer/canvas/nodes/VideoNode.tsx`.
+  - File: `desktop/src/renderer/src/canvas/nodes/VideoNode.tsx`.
   - Include: prompt/model/orientation/duration controls, first/last frame selector, safe video preview.
   - Verify: state rendering tests and upstream image selection test.
   - Covers: R3.
@@ -186,13 +188,13 @@
   - Covers: R5.
 
 - [ ] 32. Implement applyPlan and PlanRunner.
-  - Files: `desktop/src/renderer/canvas/lib/apply-plan.ts`, `plan-runner.ts`.
+  - Files: `desktop/src/renderer/src/canvas/lib/apply-plan.ts`, `plan-runner.ts`.
   - Include: revalidation, layered layout, one undo snapshot, serial runSteps, failure short-circuit.
   - Verify: unit tests for legal/illegal Plan, three-step serial run, step two failure.
   - Covers: R5.
 
 - [ ] 33. Implement Chat UI.
-  - Files: `desktop/src/renderer/chat/ChatPanel.tsx`, `PlanCard.tsx`.
+  - Files: `desktop/src/renderer/src/chat/ChatPanel.tsx`, `PlanCard.tsx`.
   - Include: history, Plan summary, dropped warning, apply button, autoExecute, Enter/Shift+Enter.
   - Verify: component tests for PlanCard and apply flow.
   - Covers: R5.
