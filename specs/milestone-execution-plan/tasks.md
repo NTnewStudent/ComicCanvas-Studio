@@ -104,7 +104,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
   - Verify: state rendering tests and upstream image selection test.
   - Covers: R3.
 
-- [ ] 18. Implement connection validation UX.
+- [x] 18. Implement connection validation UX.
   - Include: `onConnect` uses `shared/connection-matrix.ts`, duplicate edge rejection, toast reason within 200ms.
   - Verify: 3x3 connection matrix tests and duplicate rejection test.
   - Covers: R3.

@@ -549,3 +549,45 @@ Result:
 - PASS: TypeScript strict compile completed with exit code 0.
 - PASS: Electron Vite desktop build completed with exit code 0.
 - PASS: full CI completed with 20 test files and 61 tests passing, then lint, typecheck, desktop/shared build, and repository verification completed with exit code 0.
+
+### M2-18 Connection Validation UX
+
+Scope:
+
+- Read `hjwall/pc-client/src/modules/workflow-canvas/lib/connection-toast.ts`, `store.ts`, and connection-rule tests before implementation.
+- Added renderer `createCanvasConnectHandler` so future React Flow `onConnect` calls go through the canonical canvas store instead of duplicating matrix rules.
+- Added `ConnectionFeedback` to render accessible Chinese connection failure feedback for invalid and duplicate connections.
+- Preserved the shared matrix as the rule source: the handler delegates to `CanvasStoreState.addEdge`, which consumes `shared/connection-matrix.ts`.
+
+Verification:
+
+```bash
+bunx vitest run tests/connection-validation-ux.test.tsx
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/renderer/src/canvas/components/ConnectionFeedback` and `canvas/lib/connection-validation` did not exist.
+- PASS after implementation: `tests/connection-validation-ux.test.tsx` passed, 3 tests.
+
+```bash
+bunx vitest run tests/connection-validation-ux.test.tsx tests/connection-matrix.test.ts tests/canvas-store.test.ts tests/video-node.test.tsx tests/image-node.test.tsx tests/text-node.test.tsx tests/tailwind-renderer.test.ts
+```
+
+Result:
+
+- PASS: 7 test files passed, 24 tests passed.
+
+```bash
+bun run lint
+bun run typecheck
+bun run --filter @comic-canvas/desktop build
+bun run ci
+```
+
+Result:
+
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: Electron Vite desktop build completed with exit code 0.
+- PASS: full CI completed with 21 test files and 64 tests passing, then lint, typecheck, desktop/shared build, and repository verification completed with exit code 0.
