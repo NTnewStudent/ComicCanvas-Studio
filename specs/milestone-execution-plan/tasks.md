@@ -71,7 +71,7 @@
   - Verify: handler contract tests and sync response deep-scan for bytes/paths.
   - Covers: R2, INV-2, INV-3.
 
-- [ ] 13. Run M1 smoke path.
+- [x] 13. Run M1 smoke path.
   - Flow: create image node -> `canvas.runNode` -> enqueue -> stub provider -> asset save -> terminal event -> renderer node update.
   - Verify: DB job completed, asset has relative path/orientation, renderer shows safe URL, no polling.
   - Covers: R2, INV-3, INV-5.

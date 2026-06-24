@@ -354,3 +354,23 @@ Result:
 
 - RED before implementation: failed because `desktop/src/main/ipc/*` handler modules were missing.
 - PASS after implementation: `tests/ipc-skeleton.test.ts` passed, 4 tests.
+
+### M1-13 Smoke Path
+
+Scope:
+
+- Added M1 smoke glue for image-node generation through JobQueue, JobWorker,
+  stub Gateway provider, AssetPipeline, and terminal job events.
+- Verified ticket-only enqueue response, completed job state, persisted asset
+  metadata, safe asset URL, relative asset path, and exactly one terminal event.
+
+Verification:
+
+```bash
+bunx vitest run tests/m1-smoke-path.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/smoke/m1-smoke` was missing.
+- PASS after implementation: `tests/m1-smoke-path.test.ts` passed, 1 test.
