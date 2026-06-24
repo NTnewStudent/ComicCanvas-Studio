@@ -374,3 +374,24 @@ Result:
 
 - RED before implementation: failed because `desktop/src/main/smoke/m1-smoke` was missing.
 - PASS after implementation: `tests/m1-smoke-path.test.ts` passed, 1 test.
+
+## 2026-06-25 - M2 Complete Canvas
+
+### M2-14 Canvas Store
+
+Scope:
+
+- Read `hjwall/pc-client/src/modules/workflow-canvas/store.ts` and related store tests before implementation.
+- Added a vanilla Zustand canvas store for nodes, edges, viewport, undo/redo, `applyChange`, add/delete node/edge, duplicate rejection, and shared connection matrix validation.
+- Added deterministic defaults for text, image, and video node data using current `shared/nodes.ts` contracts.
+
+Verification:
+
+```bash
+bunx vitest run tests/canvas-store.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/renderer/src/canvas/store/canvas.store` was missing.
+- PASS after implementation: `tests/canvas-store.test.ts` passed, 5 tests.

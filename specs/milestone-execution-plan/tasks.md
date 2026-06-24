@@ -78,7 +78,7 @@
 
 ## M2 - Complete Canvas
 
-- [ ] 14. Implement canvas store.
+- [x] 14. Implement canvas store.
   - File: `desktop/src/renderer/canvas/store/canvas.store.ts`.
   - Include: nodes, edges, viewport, undo/redo, `applyChange`, add/delete node/edge, snapshot folding.
   - Verify: addNode -> deleteNode -> undo restores state.

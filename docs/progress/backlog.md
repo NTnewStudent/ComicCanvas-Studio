@@ -12,7 +12,7 @@
 | :--- | :--- | :--- |
 | **M0** 契约 & 治理 | shared/ 契约、根级 specs/ 全局 spec、Codex 治理、调研汇报 | ✅ |
 | **M1** 骨架可跑 | Electron + DB + 队列 + 一个 stub provider 端到端跑通手动生图 | ✅ |
-| **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | ⬜ |
+| **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | 🔵 |
 | **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | ⬜ |
 | **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | ⬜ |
 | **M5** Agent 进阶 | super-agent + 子 agent spawn + 工具/agent 管理 UI | ⬜ |
@@ -55,7 +55,7 @@
 
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
-| REQ-020 | React Flow 画布 store（nodes/edges/viewport/undo） | ⬜ |
+| REQ-020 | React Flow 画布 store（nodes/edges/viewport/undo） | ✅ |
 | REQ-021 | Text 节点（折叠/展开，文本输入） | ⬜ |
 | REQ-022 | Image 节点（配置+生成+结果合一，四态） | ⬜ |
 | REQ-023 | Video 节点（含首/尾帧图，时长参数） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M2 REQ-020~029（画布 store / 三节点 / 连接校验 / prompt 预览 / 持久化 / 零轮询）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 14 项 canvas store 开始，并参考 `hjwall` 的画布实现改写到当前 React/Electron 架构。
+**当前焦点** → M2 REQ-021~029（三节点 / 连接校验 / prompt 预览 / 持久化 / 零轮询）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 15 项 Text node 开始，并参考 `hjwall` 的画布实现改写到当前 React/Electron 架构。
 
 ---
 
