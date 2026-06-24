@@ -1,0 +1,92 @@
+import { readFileSync } from 'node:fs'
+
+import { describe, expect, it } from 'vitest'
+
+import type { IpcInvokeChannel } from '../shared/ipc'
+import { registerAssetHandlers } from '../desktop/src/main/ipc/asset.handler'
+import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
+import { createSafeErrorEnvelope, registerGatewayHandlers } from '../desktop/src/main/ipc/gateway.handler'
+import { registerJobHandlers } from '../desktop/src/main/ipc/job.handler'
+
+type Handler = (_event: unknown, request: unknown) => unknown
+
+interface FakeIpcMain {
+  handle(channel: string, handler: Handler): void
+}
+
+function createFakeIpcMain(): { ipcMain: FakeIpcMain; handlers: Map<string, Handler> } {
+  const handlers = new Map<string, Handler>()
+
+  return {
+    handlers,
+    ipcMain: {
+      handle(channel, handler) {
+        handlers.set(channel, handler)
+      }
+    }
+  }
+}
+
+describe('M1 IPC skeleton', () => {
+  it('registers canvas, job, asset, and gateway invoke handlers', () => {
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    registerCanvasHandlers(ipcMain)
+    registerJobHandlers(ipcMain)
+    registerAssetHandlers(ipcMain)
+    registerGatewayHandlers(ipcMain)
+
+    expect(Array.from(handlers.keys()).sort()).toEqual([
+      'asset.get',
+      'asset.import',
+      'asset.list',
+      'canvas.runNode',
+      'gateway.test',
+      'job.enqueue',
+      'job.get',
+      'job.list'
+    ] satisfies IpcInvokeChannel[])
+  })
+
+  it('returns safe error envelopes without stack traces or raw errors', () => {
+    const error = createSafeErrorEnvelope(new Error('provider key sk-test-secret failed'), 'trace-1')
+
+    expect(error).toEqual({
+      errorClass: 'internal_error',
+      message: 'Request failed',
+      traceId: 'trace-1',
+      retryable: false
+    })
+    expect(JSON.stringify(error)).not.toContain('sk-test-secret')
+    expect(JSON.stringify(error)).not.toContain('stack')
+  })
+
+  it('keeps synchronous IPC responses free of bytes and filesystem paths', async () => {
+    const { ipcMain, handlers } = createFakeIpcMain()
+    registerCanvasHandlers(ipcMain)
+    registerGatewayHandlers(ipcMain)
+    registerAssetHandlers(ipcMain)
+
+    const runNode = await handlers.get('canvas.runNode')?.({}, { nodeId: 'image-1' })
+    const gatewayTest = await handlers.get('gateway.test')?.({}, { gatewayId: 'stub-main', channel: 'image' })
+    const assetGet = await handlers.get('asset.get')?.({}, { assetId: 'asset-1' })
+    const serialized = JSON.stringify({ runNode, gatewayTest, assetGet })
+
+    expect(runNode).toMatchObject({ status: 'pending' })
+    expect(gatewayTest).toMatchObject({ status: 'pending' })
+    expect(assetGet).toMatchObject({
+      id: 'asset-1',
+      safeUrl: 'cc-asset://asset/asset-1',
+      relativePath: 'generated/image/asset-1.png'
+    })
+    expect(serialized).not.toMatch(/bytes|data:|[A-Za-z]:\\\\|\/tmp\/|provider_/u)
+  })
+
+  it('documents every new IPC handler with API contract anchors', () => {
+    for (const file of ['canvas.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts']) {
+      const source = readFileSync(`desktop/src/main/ipc/${file}`, 'utf8')
+
+      expect(source, `${file} must link to an API contract`).toMatch(/@see docs\/api-contracts\//u)
+    }
+  })
+})

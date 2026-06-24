@@ -65,7 +65,7 @@
   - Verify: orientation property tests and traversal rejection tests.
   - Covers: R2, INV-3.
 
-- [ ] 12. Implement IPC skeleton.
+- [x] 12. Implement IPC skeleton.
   - Files: `desktop/src/main/ipc/canvas.handler.ts`, `job.handler.ts`, `asset.handler.ts`, `gateway.handler.ts`.
   - Behavior: Zod/schema validation, safe error envelopes, contract anchors.
   - Verify: handler contract tests and sync response deep-scan for bytes/paths.
