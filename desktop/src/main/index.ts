@@ -7,7 +7,10 @@ import { join } from 'node:path'
 
 import { app, BrowserWindow, ipcMain } from 'electron'
 
+import { createMainProcessRuntime, type MainProcessRuntime } from './runtime'
+
 const rendererDevServerUrl = process.env.ELECTRON_RENDERER_URL
+let mainRuntime: MainProcessRuntime | null = null
 
 /**
  * Creates the main application window with renderer isolation enabled.
@@ -50,6 +53,14 @@ ipcMain.handle('app.health', () => ({
 
 app.whenReady()
   .then(async () => {
+    const userData = app.getPath('userData')
+    mainRuntime = createMainProcessRuntime({
+      ipcMain,
+      dbPath: join(userData, 'comiccanvas.sqlite'),
+      assetRoot: join(userData, 'assets'),
+      getWindows: () => BrowserWindow.getAllWindows()
+    })
+
     await createMainWindow()
 
     app.on('activate', () => {
@@ -68,4 +79,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  mainRuntime?.close()
+  mainRuntime = null
 })

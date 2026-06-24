@@ -22,6 +22,7 @@ const executablePatterns: ReadonlyArray<RegExp> = [
   /<\/?script\b[^>]*>/gi,
   /javascript:[^\s?]+/gi,
   /\b(?:import|require|eval|Function)\s*\([^)]*\)/gi,
+  /\b(?:window|document|globalThis|process)\s*\.[A-Za-z_$][\w$]*(?:\s*\([^)]*\))?/gi,
   /\brm\s+-rf\b[^\n\r;]*/gi,
   /\bcurl\b[^\n\r;|]*\|\s*sh\b[^\n\r;]*/gi,
   /\bpowershell(?:\.exe)?\b[^\n\r;]*/gi,
@@ -98,6 +99,11 @@ function sanitizeJsonValue(value: unknown, location: string, dropped: DroppedRec
     for (const [key, entry] of Object.entries(value)) {
       if (DANGEROUS_KEYS.has(key)) {
         dropped.push(`${location}.${key}:unsafe_key`)
+        continue
+      }
+
+      if (/^on[A-Z]/u.test(key)) {
+        dropped.push(`${location}.${key}:executable_string_stripped`)
         continue
       }
 

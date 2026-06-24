@@ -205,7 +205,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: component tests for PlanCard and apply flow.
   - Covers: R5.
 
-- [ ] 34. Run agent orchestration smoke path.
+- [x] 34. Run agent orchestration smoke path.
   - Flow: "生成一个图片节点，内容是：宇宙飞船" -> Plan -> applyPlan -> runNode -> stub asset -> done node.
   - Verify: no synchronous wait, no asset polling, sanitize injection case records dropped item.
   - Covers: R5.

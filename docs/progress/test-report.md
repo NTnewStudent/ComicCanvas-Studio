@@ -1258,3 +1258,56 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 43 test files / 132 tests, build, and repository verification all passing.
+
+### M4-34 Agent Orchestration Smoke Path
+
+Scope:
+
+- Added renderer `createCanvasPlanExecutionController` to bridge `applyPlan`, `PlanRunner`, `canvas.runNode`, and job terminal events.
+- Wired `App.tsx` so Chat `autoExecute` starts runSteps and job completed/failed events update planned nodes to done/error.
+- Exposed `runCanvasNode` through the sandboxed preload bridge.
+- Updated `canvas.runNode` IPC to enqueue through an injected durable queue when available instead of only returning a placeholder ticket.
+- Added `createMainProcessRuntime` and installed it from the Electron main entrypoint so real app startup registers canvas/job/asset/gateway/chat handlers, repositories, queue, worker, stub gateway, asset pipeline, and plan/job IPC fanout.
+- Added runtime auto-drain after durable queue enqueue so real Electron IPC calls process agent/runNode jobs without manual test-only worker calls.
+- Tightened `sanitizePlan` to drop event-handler style keys such as `onRun` and global-object executable strings such as `window.*`.
+
+Verification:
+
+```bash
+bun x vitest run tests/agent-orchestration-smoke.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/renderer/src/canvas/lib/canvas-plan-execution.ts` did not exist.
+- RED before sanitizer hardening: failed because injected `onRun: "window.evil()"` did not produce a dropped record.
+- RED before App/preload wiring: failed because the renderer App did not use the Plan execution controller and preload did not expose `canvas.runNode`.
+- PASS after implementation: agent orchestration smoke tests passed, 1 test file and 2 tests.
+
+```bash
+bun x vitest run tests/main-runtime-wiring.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/runtime.ts` did not exist.
+- RED before entrypoint install: failed because `desktop/src/main/index.ts` did not call `createMainProcessRuntime`.
+- PASS after implementation: main runtime wiring tests passed, 1 test file and 2 tests.
+
+```bash
+bun x vitest run tests/main-runtime-wiring.test.ts tests/agent-orchestration-smoke.test.ts tests/ipc-skeleton.test.ts tests/job-ipc-fanout.test.ts tests/chat-plan-ipc.test.ts
+bun x tsc --noEmit --pretty false
+```
+
+Result:
+
+- PASS: runtime wiring, M4 smoke, IPC skeleton, job fanout, and chat plan IPC tests passed, 5 test files and 15 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 45 test files / 137 tests, build, and repository verification all passing.

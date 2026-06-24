@@ -123,6 +123,35 @@ describe('M1 IPC skeleton', () => {
     expect(handlers.get('canvas.chatGetPlan')?.({}, { messageId: 'message-1' })).toEqual(plan)
   })
 
+  it('enqueues canvas.runNode through the injected durable queue when available', () => {
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const enqueueCalls: unknown[] = []
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      queue: {
+        enqueue(input) {
+          enqueueCalls.push(input)
+          return { jobId: 'job-image-1', status: 'pending', createdAt: 1_783_200_000_000 }
+        }
+      }
+    })
+
+    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-1' })).toEqual({
+      jobId: 'job-image-1',
+      status: 'pending',
+      createdAt: 1_783_200_000_000
+    })
+    expect(enqueueCalls).toEqual([
+      {
+        type: 'canvas.generateImage',
+        targetId: 'image-1',
+        payload: { nodeId: 'image-1' },
+        requestedBy: { type: 'user', id: 'user-1' }
+      }
+    ])
+  })
+
   it('documents every new IPC handler with API contract anchors', () => {
     for (const file of ['canvas.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts']) {
       const source = readFileSync(`desktop/src/main/ipc/${file}`, 'utf8')

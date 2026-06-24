@@ -10,6 +10,7 @@ import type { CanvasGraphEdge, CanvasGraphSnapshot, CanvasSaveGraphRequest } fro
 import type { IpcRegistrar } from './types'
 import type { WorkflowRepository } from '../db/repositories/workflow.repo'
 import type { OrchestratorRuntime } from '../agent/orchestrator'
+import type { JobQueue } from '../jobs/queue'
 
 function createPendingTicket(jobId: string): JobTicket {
   return {
@@ -25,6 +26,8 @@ export interface CanvasHandlerDependencies {
   workflows?: WorkflowRepository
   /** Orchestrator runtime used by chat-to-plan IPC. */
   orchestrator?: Pick<OrchestratorRuntime, 'chatSend' | 'getPlan'>
+  /** Durable local job queue used by runNode IPC. */
+  queue?: Pick<JobQueue, 'enqueue'>
   /** Clock used for deterministic version timestamps. */
   clock?: () => number
   /** ID factory used for graph version IDs. */
@@ -95,6 +98,15 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
 
   ipcMain.handle('canvas.runNode', (_event, request) => {
     const nodeId = typeof request === 'object' && request !== null && 'nodeId' in request ? String(request.nodeId) : 'unknown'
+
+    if (dependencies.queue) {
+      return dependencies.queue.enqueue({
+        type: 'canvas.generateImage',
+        targetId: nodeId,
+        payload: { nodeId },
+        requestedBy: { type: 'user', id: dependencies.currentUserId ?? 'user-local' }
+      })
+    }
 
     return createPendingTicket(`job-${nodeId}`)
   })

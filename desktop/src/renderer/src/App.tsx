@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useCanvasRealtime } from './canvas/hooks/use-canvas-realtime'
-import { applyCanvasPlan } from './canvas/lib/apply-plan'
+import { createCanvasPlanExecutionController } from './canvas/lib/canvas-plan-execution'
 import { canvasStore } from './canvas/store/canvas.store'
 import { ChatPanel } from './chat/ChatPanel'
+import type { ApplyPlanOptions } from './chat/PlanCard'
 import { cn } from './lib/cn'
 import { GatewayList } from './settings/GatewayList'
 import type { CanvasPlan } from '../../../../shared/plan'
@@ -13,13 +14,19 @@ type HealthState = 'checking' | 'ok' | 'degraded' | 'failed'
 /**
  * Applies a chat-produced CanvasPlan to the renderer canvas store.
  * @param plan - Sanitized CanvasPlan fetched after planReady.
+ * @param options - Apply options including auto-execute behavior.
  * @returns void.
- * @throws Error never intentionally; invalid Plan content is recorded as dropped items by applyCanvasPlan.
+ * @throws Error never intentionally; invalid Plan content is recorded as dropped items by the execution controller.
  * @see docs/api-contracts/canvas-plan.md
  */
-function handleApplyPlan(plan: CanvasPlan): void {
-  applyCanvasPlan(plan, canvasStore)
+function applyChatPlan(plan: CanvasPlan, { autoExecute }: ApplyPlanOptions): void {
+  appPlanExecutionController.applyPlan(plan, { autoExecute })
 }
+
+const appPlanExecutionController = createCanvasPlanExecutionController({
+  store: canvasStore,
+  runNode: (nodeId) => window.comicCanvas.runCanvasNode({ nodeId })
+})
 
 /**
  * Renders the desktop renderer shell and main-process health indicator.
@@ -28,6 +35,7 @@ function handleApplyPlan(plan: CanvasPlan): void {
  */
 export function App(): JSX.Element {
   const [health, setHealth] = useState<HealthState>('checking')
+  const planExecutionController = useMemo(() => appPlanExecutionController, [])
   useCanvasRealtime()
 
   useEffect(() => {
@@ -49,6 +57,20 @@ export function App(): JSX.Element {
       isMounted = false
     }
   }, [])
+
+  useEffect(() => {
+    const unsubscribeCompleted = window.comicCanvas.onJobCompleted((event) => {
+      planExecutionController.notifyJobCompleted(event)
+    })
+    const unsubscribeFailed = window.comicCanvas.onJobFailed((event) => {
+      planExecutionController.notifyJobFailed(event)
+    })
+
+    return () => {
+      unsubscribeCompleted()
+      unsubscribeFailed()
+    }
+  }, [planExecutionController])
 
   return (
     <main className="flex min-h-screen items-stretch bg-bg-base text-text-base">
@@ -79,7 +101,7 @@ export function App(): JSX.Element {
         </div>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
           <GatewayList />
-          <ChatPanel onApplyPlan={handleApplyPlan} />
+          <ChatPanel onApplyPlan={applyChatPlan} />
         </div>
       </section>
     </main>

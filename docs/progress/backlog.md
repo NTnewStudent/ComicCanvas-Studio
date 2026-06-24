@@ -14,7 +14,7 @@
 | **M1** 骨架可跑 | Electron + DB + 队列 + 一个 stub provider 端到端跑通手动生图 | ✅ |
 | **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | ✅ |
 | **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | ✅ |
-| **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | 🔵 |
+| **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | ✅ |
 | **M5** Agent 进阶 | super-agent + 子 agent spawn + 工具/agent 管理 UI | ⬜ |
 
 ---
@@ -89,6 +89,7 @@
 | REQ-045 | applyPlan（二次校验 + 分层布局 + 一条 undo） | ✅ |
 | REQ-046 | PlanRunner（串行 + failed 短路保留剩余） | ✅ |
 | REQ-047 | 对话区 UI（消息面板 + Plan 预览 + 应用/执行按钮） | ✅ |
+| REQ-048 | agent orchestration smoke path（自然语言 → Plan → applyPlan → runNode → stub asset → done node） | ✅ |
 
 ### M5 — Agent 进阶
 
@@ -119,8 +120,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M4 第 34 项（agent orchestration smoke path）
-**下一步** → 跑通自然语言 → Plan → applyPlan → runNode → stub asset → done node 的端到端烟测，确认同步响应不等待资产、renderer 无轮询、sanitize 注入记录 dropped。
+**当前焦点** → M5 第 35 项（spawnSubAgent）
+**下一步** → 实现子 agent spawn 的权限子集、深度上限、独立 run trace、结果返回，并补齐对应测试与契约证据。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

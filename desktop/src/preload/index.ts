@@ -10,6 +10,7 @@ import type { JobTerminalEvent } from '../../../shared/jobs'
 
 export interface ComicCanvasApi {
   health(): Promise<{ status: 'ok' | 'degraded' | 'failed'; checkedAt: number }>
+  runCanvasNode(input: IpcRequestMap['canvas.runNode']): Promise<IpcResponseMap['canvas.runNode']>
   sendCanvasChat(input: IpcRequestMap['canvas.chatSend']): Promise<IpcResponseMap['canvas.chatSend']>
   getCanvasPlan(input: IpcRequestMap['canvas.chatGetPlan']): Promise<IpcResponseMap['canvas.chatGetPlan']>
   listGateways(): Promise<IpcResponseMap['gateway.list']>
@@ -34,6 +35,7 @@ type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.
  * @see docs/api-contracts/gateway-providers.md
  */
 function invokeMain<TResponse>(channel: 'app.health'): Promise<TResponse>
+function invokeMain<TChannel extends 'canvas.runNode'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.chatSend'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.chatGetPlan'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -77,6 +79,14 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/audit-observability.md
    */
   health: () => invokeMain<{ status: 'ok' | 'degraded' | 'failed'; checkedAt: number }>('app.health'),
+  /**
+   * Enqueues generation for a renderer canvas node.
+   * @param input - Target canvas node identifier.
+   * @returns Pending generation job ticket.
+   * @throws Error when the main process rejects the run request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  runCanvasNode: (input) => invokeMain('canvas.runNode', input),
   /**
    * Sends a natural-language canvas chat request to the orchestrator runtime.
    * @param input - Canvas chat message and optional target agent.
