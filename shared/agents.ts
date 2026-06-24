@@ -73,12 +73,30 @@ export interface SpawnSubAgentInput {
   depth?: number
 }
 
+export interface SubAgentRunTrace {
+  runId: string
+  parentRunId: string
+  parentTraceId: string
+  depth: number
+  startedAt: number
+  completedAt: number
+  requestedTools: string[]
+  effectiveTools: string[]
+  requestedSkills: string[]
+  effectiveSkills: string[]
+  droppedTools: string[]
+  droppedSkills: string[]
+  status: Exclude<AgentRunStatus, 'pending' | 'running'>
+  error?: string
+}
+
 export interface SpawnSubAgentResult {
   output: string
   status: Exclude<AgentRunStatus, 'pending' | 'running'>
   turnsUsed: number
   droppedTools: string[]
   droppedSkills: string[]
+  trace: SubAgentRunTrace
   error?: string
 }
 

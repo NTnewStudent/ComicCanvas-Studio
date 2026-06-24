@@ -77,6 +77,23 @@ interface SpawnSubAgentResult {
   status: 'completed' | 'failed' | 'aborted' | 'max_turns_exceeded'
   turnsUsed: number
   droppedTools: string[]
+  droppedSkills: string[]
+  trace: {
+    runId: string
+    parentRunId: string
+    parentTraceId: string
+    depth: number
+    startedAt: number
+    completedAt: number
+    requestedTools: string[]
+    effectiveTools: string[]
+    requestedSkills: string[]
+    effectiveSkills: string[]
+    droppedTools: string[]
+    droppedSkills: string[]
+    status: 'completed' | 'failed' | 'aborted' | 'max_turns_exceeded'
+    error?: string
+  }
   error?: string
 }
 ```
@@ -87,6 +104,7 @@ Rules:
 - Agent runs are asynchronous and return tickets.
 - Agent-produced CanvasPlan SHALL be sanitized before application.
 - Child permissions SHALL be parent permissions intersected with target/requested policy.
+- Sub-agent spawn results SHALL include an independent trace with run ID, parent run/trace IDs, effective permissions, dropped permissions, terminal status, and timings.
 
 ## Errors
 

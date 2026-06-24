@@ -78,6 +78,23 @@ interface Tool<I, O> {
   status: 'completed' | 'failed' | 'aborted' | 'max_turns_exceeded'
   turnsUsed: number
   droppedTools: string[]      // 越权被剔除的工具（审计）
+  droppedSkills: string[]     // 越权被剔除的 skill（审计）
+  trace: {
+    runId: string
+    parentRunId: string
+    parentTraceId: string
+    depth: number
+    startedAt: number
+    completedAt: number
+    requestedTools: string[]
+    effectiveTools: string[]
+    requestedSkills: string[]
+    effectiveSkills: string[]
+    droppedTools: string[]
+    droppedSkills: string[]
+    status: 'completed' | 'failed' | 'aborted' | 'max_turns_exceeded'
+    error?: string
+  }
   error?: string
 }
 ```
@@ -92,7 +109,7 @@ interface Tool<I, O> {
 
 | 红线 | 实现 |
 | :--- | :--- |
-| 权限继承 | 子 agent `allowedTools` = 父 ∩ 请求；越界静默剔除 → `droppedTools` |
+| 权限继承 | 子 agent `allowedTools`/`allowedSkills` = 父 ∩ 请求；越界拒绝并记录 → `droppedTools` / `droppedSkills` |
 | 递归深度 | `depth > MAX_SPAWN_DEPTH(2)` 时，该 agent 不持有 spawnSubAgent 工具 |
 | turn 预算 | 独立 `maxTurns`，超出 → `status='max_turns_exceeded'` 并终止 |
 | 可中止 | 走任务队列语义，用户可中止 → `status='aborted'` |

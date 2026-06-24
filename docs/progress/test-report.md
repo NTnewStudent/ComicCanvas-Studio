@@ -1311,3 +1311,42 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 45 test files / 137 tests, build, and repository verification all passing.
+
+## 2026-06-25 - M5 Advanced Platform
+
+### M5-35 spawnSubAgent
+
+Scope:
+
+- Read `docs/api-contracts/agents.md`, `shared/agents.ts`, and current M4 agent/tool runtime before implementation.
+- Referenced `cc-haha-main` agent notes conceptually for isolated child runs, per-child tool pools, max-turn boundaries, and traceable task execution without copying source.
+- Added `desktop/src/main/agent/spawn-sub-agent.ts` with parent/child permission intersection, depth enforcement through `MAX_SPAWN_DEPTH`, child-run dependency injection, safe error classes, and independent child trace metadata.
+- Extended `shared/agents.ts`, the compatibility `shared/tools-agents.ts` barrel, `docs/api-contracts/agents.md`, and legacy `docs/api-contracts/tools-agents.md` so `SpawnSubAgentResult` carries `droppedSkills` and an auditable `trace`.
+
+Verification:
+
+```bash
+bun x vitest run tests/spawn-sub-agent.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/agent/spawn-sub-agent.ts` did not exist.
+- PASS after implementation: spawnSubAgent tests passed, 1 test file and 3 tests.
+
+```bash
+bun x tsc --noEmit --pretty false
+```
+
+Result:
+
+- RED before exact optional property fix: failed because optional `modelId` was passed as explicit `undefined`.
+- PASS after narrowing optional child-run fields: TypeScript strict compile completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 46 test files / 140 tests, build, and repository verification all passing.

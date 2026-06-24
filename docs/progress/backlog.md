@@ -96,7 +96,7 @@
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
 | REQ-050 | super-agent（allowedTools '*'，默认入口） | ⬜ |
-| REQ-051 | agent.spawnSubAgent（内联定义 + 权限继承 + 深度上限） | ⬜ |
+| REQ-051 | agent.spawnSubAgent（内联定义 + 权限继承 + 深度上限） | ✅ |
 | REQ-052 | 子 agent 隔离上下文执行 + 结果返回 | ⬜ |
 | REQ-053 | 用户自定义 agent（设置页创建 + DB 持久化 + AgentRegistry） | ⬜ |
 | REQ-054 | 对话区 agent 选择器（@mention 风格） | ⬜ |
@@ -111,8 +111,8 @@
 - [ ] 连接矩阵唯一真源，前后端 canConnect 等价（PBT 穷举）
 - [ ] 确定性 prompt 前后端字节等价（PBT）
 - [ ] 终态事件唯一性：每 jobId completed+failed 恰好 1 次
-- [ ] 子 agent 权限 ⊆ 父 agent，禁止提权
-- [ ] 子 agent 递归深度 ≤ MAX_SPAWN_DEPTH(2)
+- [x] 子 agent 权限 ⊆ 父 agent，禁止提权
+- [x] 子 agent 递归深度 ≤ MAX_SPAWN_DEPTH(2)
 - [ ] 渲染进程沙箱（contextIsolation/nodeIntegration/sandbox）
 - [ ] API Key 不落明文 / 日志 / LTM
 
@@ -120,8 +120,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M5 第 35 项（spawnSubAgent）
-**下一步** → 实现子 agent spawn 的权限子集、深度上限、独立 run trace、结果返回，并补齐对应测试与契约证据。
+**当前焦点** → M5 第 36 项（sub-agent isolation and merge）
+**下一步** → 实现子 agent 隔离草稿图/上下文副本、父级 merge 前禁止写入持久化 graph，并补齐 `applySubAgentResult` 清洗与测试。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

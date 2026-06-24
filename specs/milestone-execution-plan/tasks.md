@@ -212,7 +212,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
 
 ## M5 - Advanced Platform
 
-- [ ] 35. Implement spawnSubAgent.
+- [x] 35. Implement spawnSubAgent.
   - File: `desktop/src/main/agent/spawn-sub-agent.ts`.
   - Include: child permission subset, depth limit, independent run trace, result return to parent.
   - Verify: superset tools rejected, depth exceeded rejected, normal child result accepted.

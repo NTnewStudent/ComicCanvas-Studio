@@ -41,6 +41,7 @@ export type {
   AgentSource as AgentType,
   SpawnSubAgentInput,
   SpawnSubAgentResult,
+  SubAgentRunTrace,
   SubAgentSpec
 } from './agents'
 
