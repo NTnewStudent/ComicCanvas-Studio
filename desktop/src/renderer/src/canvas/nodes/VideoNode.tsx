@@ -8,6 +8,7 @@ import { Clapperboard, Film, Image as ImageIcon, Loader2, Sparkles, XCircle } fr
 import { useState } from 'react'
 
 import type { Orientation, VideoNodeData } from '../../../../../../shared/nodes'
+import { ConnectedInputsPanel } from '../components/ConnectedInputsPanel'
 import { cn } from '../../lib/cn'
 
 /** Selectable video model option shown by the video node controls. */
@@ -185,6 +186,8 @@ export function VideoNode({
 
         {isExpanded && (
           <div className="mt-3 flex flex-col gap-3 border-t border-border-secondary pt-3">
+            <ConnectedInputsPanel nodeId={id} />
+
             <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
               Prompt override
               <textarea

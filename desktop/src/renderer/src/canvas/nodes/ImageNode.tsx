@@ -8,6 +8,7 @@ import { Image as ImageIcon, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { useState } from 'react'
 
 import type { ImageNodeData, Orientation } from '../../../../../../shared/nodes'
+import { ConnectedInputsPanel } from '../components/ConnectedInputsPanel'
 import { cn } from '../../lib/cn'
 
 /** Selectable image model option shown by the image node controls. */
@@ -169,6 +170,8 @@ export function ImageNode({
 
         {isExpanded && (
           <div className="mt-3 flex flex-col gap-3 border-t border-border-secondary pt-3">
+            <ConnectedInputsPanel nodeId={id} />
+
             <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
               Prompt override
               <textarea

@@ -591,3 +591,47 @@ Result:
 - PASS: TypeScript strict compile completed with exit code 0.
 - PASS: Electron Vite desktop build completed with exit code 0.
 - PASS: full CI completed with 21 test files and 64 tests passing, then lint, typecheck, desktop/shared build, and repository verification completed with exit code 0.
+
+### M2-19 Connected Inputs Panel
+
+Scope:
+
+- Read `hjwall/pc-client/src/modules/workflow-canvas/components/ConnectedInputsPanel.tsx` and `lib/composed-prompt.ts` before implementation.
+- Added a pure renderer `buildConnectedInputsView` adapter that projects the canvas store graph into the shared `composeFinalPrompt` contract instead of duplicating prompt composition.
+- Added `ConnectedInputsPanel` with Tailwind + `cn`, ordered upstream text items, reference-image count, and a final prompt preview that is byte-equivalent to `shared/composed-prompt.ts`.
+- Mounted the panel in Image and Video node expanded configuration areas above `Prompt override`; zero upstream text nodes still render no panel.
+- Added store-subscription behavior through Zustand selectors while preserving controlled graph props for tests and alternate canvas instances.
+
+Verification:
+
+```bash
+bunx vitest run tests/connected-inputs-panel.test.tsx
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/renderer/src/canvas/components/ConnectedInputsPanel` and `canvas/lib/connected-inputs` did not exist.
+- RED for live updates: failed when graph props were omitted because the component did not subscribe to the canvas store.
+- PASS after implementation: `tests/connected-inputs-panel.test.tsx` passed, 4 tests.
+
+```bash
+bunx vitest run tests/connected-inputs-panel.test.tsx tests/composed-prompt.test.ts tests/canvas-store.test.ts tests/text-node.test.tsx tests/image-node.test.tsx tests/video-node.test.tsx tests/tailwind-renderer.test.ts
+```
+
+Result:
+
+- PASS: 7 test files passed, 24 tests passed.
+
+```bash
+bunx vitest run tests/connected-inputs-panel.test.tsx tests/image-node.test.tsx tests/video-node.test.tsx tests/composed-prompt.test.ts tests/canvas-store.test.ts tests/tailwind-renderer.test.ts
+bun run lint
+bun run typecheck
+bun run ci
+```
+
+Result:
+
+- PASS: integrated Image/Video node regression completed with 6 test files and 20 tests passing.
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full CI completed with 22 test files and 68 tests passing, then lint, typecheck, desktop/shared build, and repository verification completed with exit code 0.

@@ -109,7 +109,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
   - Verify: 3x3 connection matrix tests and duplicate rejection test.
   - Covers: R3.
 
-- [ ] 19. Implement Connected Inputs Panel.
+- [x] 19. Implement Connected Inputs Panel.
   - Component: `ConnectedInputsPanel`.
   - Include: ordered upstream text list, final prompt preview using shared `composeFinalPrompt`, live updates from store selectors.
   - Verify: two upstream text nodes produce byte-equivalent preview.
