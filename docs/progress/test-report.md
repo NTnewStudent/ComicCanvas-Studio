@@ -670,3 +670,56 @@ Result:
 - PASS: lint completed with exit code 0.
 - PASS: TypeScript strict compile completed with exit code 0.
 - PASS: full CI completed with 25 test files and 73 tests passing, then lint, typecheck, desktop/shared build, and repository verification completed with exit code 0.
+
+### M2-21 Graph Save And Load
+
+Scope:
+
+- Added `shared/graph.ts` as the persisted canvas graph contract with nodes, positions, edges, and viewport.
+- Added `canvas.saveGraph` and `canvas.loadGraph` IPC handlers backed by `WorkflowRepository`.
+- Persisted graph saves now run through a repository transaction that inserts a graph version and refreshes the workflow timestamp together.
+- Revalidated saved edges through `shared/connection-matrix.ts`, dropping missing-node or illegal edges before persistence.
+- Documented save/load request, response, error, permission, and test rules in `docs/api-contracts/canvas-plan.md`.
+
+Verification:
+
+```bash
+bun run typecheck
+```
+
+Result:
+
+- RED before graph position support: TypeScript failed because `CanvasGraphNode` did not accept `position`, and an older repository test still used a graph without `viewport`.
+- PASS after implementation: TypeScript strict compile completed with exit code 0.
+
+```bash
+bunx vitest run tests/canvas-graph-persistence.test.ts
+```
+
+Result:
+
+- PASS: graph save/load integration passed, covering latest-version load after handler recreation, node positions, viewport, legal-edge preservation, illegal-edge drop, and workflow timestamp refresh.
+
+```bash
+bunx vitest run tests/ipc-skeleton.test.ts tests/repository-boundaries.test.ts
+```
+
+Result:
+
+- PASS: IPC registration and repository boundary regressions passed, 2 test files and 7 tests.
+
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full test suite completed with 26 test files and 74 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.

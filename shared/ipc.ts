@@ -11,7 +11,7 @@
  * @see docs/api-contracts/audit-observability.md
  */
 
-import type { GraphSnapshot } from './composed-prompt'
+import type { CanvasGraphSnapshot, CanvasLoadGraphRequest, CanvasSaveGraphRequest, CanvasSaveGraphResponse } from './graph'
 import type { AssetFolder, AssetImportRequest, AssetMoveRequest, AssetRecord, AssetTrashRequest, AssetTrashResponse } from './assets'
 import type { GatewayConfigInput, GatewayConfigView } from './gateway'
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
@@ -147,8 +147,8 @@ export interface IpcRequestMap {
   'canvas.applyPlan': CanvasApplyPlanRequest
   'canvas.runPlan': CanvasRunPlanRequest
   'canvas.runNode': { nodeId: string }
-  'canvas.saveGraph': { graph: GraphSnapshot }
-  'canvas.loadGraph': { projectId: string }
+  'canvas.saveGraph': CanvasSaveGraphRequest
+  'canvas.loadGraph': CanvasLoadGraphRequest
   'job.enqueue': JobCreateInput
   'job.get': { jobId: string }
   'job.list': JobListFilter
@@ -194,8 +194,8 @@ export interface IpcResponseMap {
   'canvas.applyPlan': CanvasApplyPlanResponse
   'canvas.runPlan': CanvasRunPlanResponse
   'canvas.runNode': JobTicket
-  'canvas.saveGraph': { graphVersion: string }
-  'canvas.loadGraph': GraphSnapshot
+  'canvas.saveGraph': CanvasSaveGraphResponse
+  'canvas.loadGraph': CanvasGraphSnapshot
   'job.enqueue': JobTicket
   'job.get': JobRecord
   'job.list': JobRecord[]

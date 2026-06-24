@@ -120,7 +120,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
   - Verify: Enter saves, Escape cancels, empty value rejected; skeleton size matches final media ratio.
   - Covers: R3.
 
-- [ ] 21. Implement graph save/load.
+- [x] 21. Implement graph save/load.
   - IPC: `canvas.saveGraph`, `canvas.loadGraph`.
   - Behavior: repository transaction, reload latest graph, revalidate edges.
   - Verify: save -> app restart/load simulation -> nodes/edges/viewport match.

@@ -63,7 +63,7 @@
 | REQ-025 | Connected Inputs Panel + 确定性 prompt 预览（字节等价） | ✅ |
 | REQ-026 | 节点画幅自适应（orientation 切换 + contain + 骨架） | ✅ |
 | REQ-027 | 节点 inline 改名（双击 label） | ✅ |
-| REQ-028 | 画布保存/加载（持久化 graph JSON） | ⬜ |
+| REQ-028 | 画布保存/加载（持久化 graph JSON） | ✅ |
 | REQ-029 | 零轮询验证（IPC 事件 + query 失效，无 setInterval） | ⬜ |
 
 ### M3 — 网关系统
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M2 REQ-028~029（画布持久化 / 零轮询）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 21 项 graph save/load 开始，并参考 `hjwall/pc-client` 的画布实现改写到当前 React/Electron 架构。
+**当前焦点** → M2 REQ-029（零轮询）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 22 项 zero polling 开始，并参考 `hjwall/pc-client` 的画布实现改写到当前 React/Electron 架构。
 **前端路线** → M2 画布 UI 以 `hjwall/pc-client` 的 Tailwind + `cn` 组件模式为复用基线，仅按当前 `global/design/DESIGN.md` 重构视觉 token 和产品外观。
 
 ---

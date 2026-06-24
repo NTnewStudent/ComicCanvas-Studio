@@ -5,7 +5,7 @@
 
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 
-import type { GraphSnapshot } from '../../../../../shared/composed-prompt'
+import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
 import { decodeJson, encodeJson } from './json'
 
 export interface WorkflowCreateRecord {
@@ -18,7 +18,7 @@ export interface WorkflowCreateRecord {
 export interface WorkflowVersionCreateRecord {
   id: string
   workflowId: string
-  graph: GraphSnapshot
+  graph: CanvasGraphSnapshot
   createdAt: number
   createdBy: string
 }
@@ -52,14 +52,19 @@ export function createWorkflowRepository(db: BetterSqliteDatabase): WorkflowRepo
     INSERT INTO workflow_versions (id, workflow_id, graph_json, created_at, created_by)
     VALUES (@id, @workflowId, @graphJson, @createdAt, @createdBy)
   `)
+  const updateWorkflowTimestamp = db.prepare('UPDATE workflows SET updated_at = @createdAt WHERE id = @workflowId')
   const selectLatest = db.prepare('SELECT * FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 1')
+  const addVersionTransaction = db.transaction((record: WorkflowVersionCreateRecord) => {
+    insertVersion.run({ ...record, graphJson: encodeJson(record.graph) })
+    updateWorkflowTimestamp.run(record)
+  })
 
   return {
     create(record) {
       insertWorkflow.run(record)
     },
     addVersion(record) {
-      insertVersion.run({ ...record, graphJson: encodeJson(record.graph) })
+      addVersionTransaction(record)
     },
     getLatestVersion(workflowId) {
       const row = selectLatest.get(workflowId) as WorkflowVersionRow | undefined
@@ -71,7 +76,7 @@ export function createWorkflowRepository(db: BetterSqliteDatabase): WorkflowRepo
       return {
         id: row.id,
         workflowId: row.workflow_id,
-        graph: decodeJson<GraphSnapshot>(row.graph_json) ?? { nodes: [], edges: [] },
+        graph: decodeJson<CanvasGraphSnapshot>(row.graph_json) ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
         createdAt: row.created_at,
         createdBy: row.created_by
       }

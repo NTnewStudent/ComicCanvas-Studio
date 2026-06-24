@@ -98,7 +98,7 @@ describe('M1 repository boundaries', () => {
       workflows.addVersion({
         id: 'workflow-version-1',
         workflowId: 'workflow-1',
-        graph: { nodes: [], edges: [] },
+        graph: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
         createdAt: now,
         createdBy: 'test'
       })
@@ -112,7 +112,7 @@ describe('M1 repository boundaries', () => {
 
       expect(jobs.getById('job-1')?.payload).toEqual({ nodeId: 'image-1' })
       expect(assets.getById('asset-1')?.safeUrl).toBe('cc-asset://asset/asset-1')
-      expect(workflows.getLatestVersion('workflow-1')?.graph).toEqual({ nodes: [], edges: [] })
+      expect(workflows.getLatestVersion('workflow-1')?.graph).toEqual({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } })
       expect(chatMessages.listByWorkflowId('workflow-1')).toHaveLength(1)
     } finally {
       db.close()
