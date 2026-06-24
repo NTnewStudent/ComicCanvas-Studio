@@ -70,7 +70,7 @@
 
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
-| REQ-030 | OpenAI 兼容 Provider（/v1/images、/v1/chat 等） | ⬜ |
+| REQ-030 | OpenAI 兼容 Provider（/v1/images、/v1/chat 等） | ✅ |
 | REQ-031 | 异步网关轮询（提交→remote_task_id→查询→落盘） | ⬜ |
 | REQ-032 | 设置页：网关配置（URL + Key + 模型映射） | ⬜ |
 | REQ-033 | API Key 走 OS safeStorage（不落明文/日志） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M3 REQ-030（OpenAI 兼容 Provider）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M3 第 23 项 OpenAI-compatible provider adapter 开始，并参考 `docs/api-contracts/gateway-providers.md` 落实真实网关适配。
+**当前焦点** → M3 REQ-031（异步媒体任务适配器）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M3 第 24 项 async media task adapter 开始，并参考 `docs/api-contracts/gateway-providers.md` 落实 submit / poll / timeout / cancellation 归一化。
 **前端路线** → M2 画布 UI 以 `hjwall/pc-client` 的 Tailwind + `cn` 组件模式为复用基线，仅按当前 `global/design/DESIGN.md` 重构视觉 token 和产品外观。
 
 ---

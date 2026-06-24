@@ -132,7 +132,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
 
 ## M3 - Gateway System
 
-- [ ] 23. Implement OpenAI-compatible provider adapter.
+- [x] 23. Implement OpenAI-compatible provider adapter.
   - File: `desktop/src/main/providers/openai-compatible.provider.ts`.
   - Include: request schema, response schema, base64 and URL result handling, normalized GatewayResult.
   - Verify: mock fetch tests and key redaction assertions.

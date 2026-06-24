@@ -765,3 +765,40 @@ Result:
 - PASS: full test suite completed with 29 test files and 78 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+### M3-23 OpenAI-Compatible Provider
+
+Scope:
+
+- Added `createOpenAICompatibleProvider` implementing the existing `GatewayProvider` interface.
+- Supported OpenAI-compatible `/images/generations` and `/chat/completions` requests through normalized `GatewayRequest`.
+- Normalized image `b64_json` and temporary image URL responses into provider-independent `assetBytes` results.
+- Normalized chat completion content and token usage into provider-independent `text` results.
+- Rejected unsupported video requests before remote submission and redacted API keys from provider errors.
+
+Verification:
+
+```bash
+bunx vitest run tests/openai-compatible-provider.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/providers/openai-compatible.provider.ts` did not exist.
+- PASS after implementation: OpenAI-compatible provider tests passed, 1 test file and 4 tests.
+
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full test suite completed with 30 test files and 82 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
