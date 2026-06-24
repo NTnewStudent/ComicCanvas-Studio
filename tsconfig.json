@@ -15,5 +15,13 @@
     "types": ["node", "vitest/globals"],
     "baseUrl": "."
   },
-  "include": ["shared/**/*.ts", "desktop/src/**/*.ts", "desktop/src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "vitest.config.ts"]
+  "include": [
+    "shared/**/*.ts",
+    "desktop/src/**/*.ts",
+    "desktop/src/**/*.tsx",
+    "desktop/tailwind.config.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "vitest.config.ts"
+  ]
 }

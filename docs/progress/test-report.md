@@ -425,3 +425,42 @@ Result:
 
 - RED before dependency fix: failed because root TSX tests lacked React type declarations.
 - PASS after adding root `@types/react` and `@types/react-dom`.
+
+### M2 Tailwind Renderer Foundation Correction
+
+Scope:
+
+- Rechecked `hjwall/pc-client` renderer styling architecture after user feedback that canvas UI should reuse existing implementation patterns.
+- Added Tailwind v3, PostCSS, Autoprefixer, `clsx`, and `tailwind-merge` to the desktop workspace.
+- Added `desktop/tailwind.config.ts`, `desktop/postcss.config.js`, and renderer `cn` helper matching the `pc-client` reuse pattern.
+- Converted renderer stylesheet to Tailwind layers plus current ComicCanvas `global/design/DESIGN.md` token values.
+- Migrated the M2 Text node and desktop shell from hand-written component CSS to Tailwind utility classes.
+
+Verification:
+
+```bash
+bunx vitest run tests/tailwind-renderer.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because desktop Tailwind/PostCSS config, Tailwind stylesheet layers, and renderer `cn` helper were missing.
+- PASS after implementation: `tests/tailwind-renderer.test.ts` passed, 2 tests.
+
+```bash
+bun run --filter @comic-canvas/desktop build
+```
+
+Result:
+
+- PASS: Electron Vite processed Tailwind CSS in the renderer build.
+
+```bash
+bun run lint
+bun run typecheck
+```
+
+Result:
+
+- RED before `tsconfig.json` update: lint failed because `desktop/tailwind.config.ts` was not included in the TypeScript project service.
+- PASS after adding the Tailwind config to root TypeScript include.

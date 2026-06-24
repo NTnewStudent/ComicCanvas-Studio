@@ -121,6 +121,7 @@
 
 **当前焦点** → M2 REQ-022~029（Image / Video 节点 / 连接校验 / prompt 预览 / 持久化 / 零轮询）
 **下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 16 项 Image node 开始，并参考 `hjwall` 的画布实现改写到当前 React/Electron 架构。
+**前端路线** → M2 画布 UI 以 `hjwall/pc-client` 的 Tailwind + `cn` 组件模式为复用基线，仅按当前 `global/design/DESIGN.md` 重构视觉 token 和产品外观。
 
 ---
 

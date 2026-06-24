@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { TextNodeData } from '../../../../../../shared/nodes'
+import { cn } from '../../lib/cn'
 
 export interface TextNodeProps {
   id: string
@@ -94,13 +95,20 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
   }
 
   return (
-    <article ref={nodeRef} className={`text-node${selected ? ' is-selected' : ''}`} data-node-id={id}>
-      <header className="text-node__header">
+    <article
+      ref={nodeRef}
+      className={cn(
+        'flex min-h-[168px] w-[320px] flex-col gap-2.5 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        selected && 'border-border-primary shadow-active'
+      )}
+      data-node-id={id}
+    >
+      <header className="flex min-h-7 items-center">
         {isRenaming ? (
           <input
             ref={renameRef}
             aria-label="Rename text node"
-            className="text-node__rename"
+            className="w-full min-w-0 rounded-sm border border-border-input bg-bg-input px-2 py-1.5 text-[16px] font-semibold leading-[1.35] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
             value={draftLabel}
             onChange={(event) => setDraftLabel(event.target.value)}
             onBlur={cancelRename}
@@ -116,7 +124,7 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
         ) : (
           <button
             type="button"
-            className="text-node__label"
+            className="cursor-text bg-transparent p-0 text-left text-[16px] font-semibold leading-[1.35] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
             onClick={() => setIsExpanded(true)}
             onDoubleClick={() => setIsRenaming(true)}
           >
@@ -129,13 +137,17 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
         <textarea
           ref={textareaRef}
           aria-label="Text content"
-          className="text-node__textarea"
+          className="min-h-28 flex-1 resize-none rounded-sm border border-border-input bg-bg-input p-2.5 text-[14px] leading-relaxed text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
           value={content}
           onChange={(event) => updateContent(event.target.value)}
           onBlur={() => setIsExpanded(false)}
         />
       ) : (
-        <button type="button" className="text-node__preview" onClick={() => setIsExpanded(true)}>
+        <button
+          type="button"
+          className="min-h-[102px] flex-1 cursor-text overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border-input bg-bg-input p-2.5 text-left text-[14px] leading-relaxed text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
+          onClick={() => setIsExpanded(true)}
+        >
           {content || 'Write a beat, prompt, or scene note'}
         </button>
       )}
