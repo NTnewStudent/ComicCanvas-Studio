@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    name: Build release artifact manifest
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run CI gate
+        run: npm run ci
+
+      - name: Prepare release dry-run
+        run: npm run release:dry-run
+
+      - name: Upload release dry-run artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: comiccanvas-release-dry-run-${{ github.ref_name }}
+          path: |
+            dist/release-manifest.json
+            dist/shared/**

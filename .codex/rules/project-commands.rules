@@ -1,0 +1,87 @@
+# Codex exec policy rules for ComicCanvas Studio.
+# These rules control commands requested outside the sandbox. They are loaded
+# only when the project .codex layer is trusted.
+
+prefix_rule(
+    pattern = ["npm", "run"],
+    decision = "allow",
+    justification = "Project npm scripts are expected verification and development commands.",
+    match = ["npm run test", "npm run build", "npm run lint"],
+)
+
+prefix_rule(
+    pattern = ["npx"],
+    decision = "allow",
+    justification = "npx is allowed for local project tooling and one-off verification.",
+    match = ["npx tsc --noEmit", "npx vitest run"],
+)
+
+prefix_rule(
+    pattern = ["node"],
+    decision = "allow",
+    justification = "Node is required for repository scripts and Codex documentation helpers.",
+    match = ["node scripts/check.js"],
+)
+
+prefix_rule(
+    pattern = ["python", "ltm/bin/ltm.py"],
+    decision = "allow",
+    justification = "LTM project memory commands are part of this repository workflow.",
+    match = [
+        "python ltm/bin/ltm.py files --limit 10",
+        "python ltm/bin/ltm.py capture-turn",
+        "python ltm/bin/ltm.py checkpoint --from-json checkpoint.json",
+    ],
+)
+
+prefix_rule(
+    pattern = ["python3", "ltm/bin/ltm.py"],
+    decision = "allow",
+    justification = "LTM project memory commands are part of this repository workflow.",
+    match = [
+        "python3 ltm/bin/ltm.py files --limit 10",
+        "python3 ltm/bin/ltm.py capture-turn",
+    ],
+)
+
+prefix_rule(
+    pattern = ["git", ["status", "log", "diff"]],
+    decision = "allow",
+    justification = "Read-only git inspection is safe and expected.",
+    match = ["git status --short", "git log --oneline -5", "git diff -- shared/plan.ts"],
+)
+
+prefix_rule(
+    pattern = ["git", "add"],
+    decision = "prompt",
+    justification = "Staging changes is allowed after review, but should remain explicit.",
+    match = ["git add AGENTS.md"],
+)
+
+prefix_rule(
+    pattern = ["git", "commit"],
+    decision = "prompt",
+    justification = "Committing is allowed only after explicit user intent and verification.",
+    match = ["git commit -m update"],
+)
+
+prefix_rule(
+    pattern = ["git", "push", "--force"],
+    decision = "forbidden",
+    justification = "Force push is forbidden by project safety rules.",
+    match = ["git push --force", "git push --force-with-lease"],
+)
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "forbidden",
+    justification = "Hard reset can destroy user work. Ask the user for an explicit recovery plan instead.",
+    match = ["git reset --hard", "git reset --hard HEAD"],
+)
+
+prefix_rule(
+    pattern = ["rm", "-rf", "/"],
+    decision = "forbidden",
+    justification = "Destructive root deletion is forbidden.",
+    match = ["rm -rf /"],
+)

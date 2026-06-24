@@ -1,0 +1,17 @@
+{
+  "created_by": "ltm-power",
+  "version": "1.0.0",
+  "created_at": "2026-06-24T00:00:00Z",
+  "ltm_py_hash": "pending-init",
+  "files": [
+    "ltm/README.md", "ltm/config.json", "ltm/manifest.json",
+    "ltm/store/events.jsonl", "ltm/store/checkpoints.jsonl",
+    "ltm/store/sessions.jsonl", "ltm/store/open_threads.jsonl",
+    "ltm/runtime/active-context.json", "ltm/runtime/last-recall.md",
+    "ltm/runtime/current-session.json", "ltm/runtime/health.json",
+    "ltm/bin/ltm.py"
+  ],
+  "hooks": [".claude/settings.json#hooks.Stop"],
+  "steering": [".claude/rules/ltm-operations.md", ".claude/rules/ltm-memory-format.md"],
+  "managed_patches": [{"file": ".gitignore", "start_delimiter": "# --- ltm-power ---", "end_delimiter": "# --- /ltm-power ---"}]
+}
