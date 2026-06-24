@@ -67,4 +67,4 @@
 
 ## 6. 里程碑
 
-M1 Electron 骨架 + SQLite + DB 抽象 → M2 画布 + 手动生成 → M3 队列 + provider + 资产 + IPC → M4 Agent + Tool + Plan + applyPlan + PlanRunner → M5 Agent 进阶（super-agent / spawnSubAgent / 工具·agent 管理 UI）端到端。详见 `.claude/specs/canvas-agent-orchestration/tasks.md`。
+M1 Electron 骨架 + SQLite + DB 抽象 → M2 画布 + 手动生成 → M3 队列 + provider + 资产 + IPC → M4 Agent + Tool + Plan + applyPlan + PlanRunner → M5 Agent 进阶（super-agent / spawnSubAgent / 工具·agent 管理 UI）端到端。详见 `specs/canvas-agent-orchestration/tasks.md`。

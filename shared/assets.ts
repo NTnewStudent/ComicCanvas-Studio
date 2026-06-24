@@ -1,0 +1,78 @@
+/**
+ * Local asset and file-library contracts shared across ComicCanvas surfaces.
+ * @see docs/api-contracts/assets-files.md
+ */
+
+import type { Orientation } from './nodes'
+
+export type AssetMediaType = 'image' | 'video' | 'text' | 'document' | 'other'
+
+export type AssetStatus = 'pending' | 'ready' | 'failed' | 'trashed' | 'tombstoned'
+
+export type AssetFolderType = 'image' | 'video' | 'mixed'
+
+export interface AssetMetadata {
+  width?: number
+  height?: number
+  durationMs?: number
+  orientation?: Orientation
+  mimeType?: string
+  sizeBytes?: number
+  hash?: string
+}
+
+export interface AssetRecord {
+  id: string
+  mediaType: AssetMediaType
+  status: AssetStatus
+  relativePath: string
+  safeUrl: string
+  metadata: AssetMetadata
+  folderId?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface AssetRef {
+  assetId: string
+  mediaType: AssetMediaType
+}
+
+export interface AssetReference {
+  assetId: string
+  refType: 'node' | 'job' | 'chatMessage' | 'knowledgeDocument'
+  refId: string
+}
+
+export interface AssetFolder {
+  id: string
+  name: string
+  parentId: string | null
+  type: AssetFolderType
+  relativePath: string
+  createdAt: number
+  updatedAt?: number
+  deletedAt?: number
+}
+
+export interface AssetImportRequest {
+  sourcePath: string
+  folderId?: string
+  mediaType: AssetMediaType
+}
+
+export interface AssetMoveRequest {
+  assetId: string
+  folderId: string | null
+}
+
+export interface AssetTrashRequest {
+  assetId: string
+  mode: 'safe' | 'force-tombstone'
+}
+
+export interface AssetTrashResponse {
+  assetId: string
+  status: 'trashed' | 'tombstoned' | 'rejected'
+  blockingReferences: AssetReference[]
+}

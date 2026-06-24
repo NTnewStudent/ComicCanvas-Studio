@@ -9,6 +9,9 @@ export default tseslint.config(
       'dist/**',
       'build/**',
       'out/**',
+      '**/dist/**',
+      '**/build/**',
+      '**/out/**',
       'release/**',
       '.vite/**',
       'hjwall/**',
@@ -32,7 +35,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: {

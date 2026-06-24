@@ -10,8 +10,8 @@
 
 | 里程碑 | 目标 | 状态 |
 | :--- | :--- | :--- |
-| **M0** 契约 & 治理 | shared/ 契约、根级 specs/ 全局 spec、Codex 治理、调研汇报 | 🔵 进行中 |
-| **M1** 骨架可跑 | Electron + DB + 队列 + 一个 stub provider 端到端跑通手动生图 | ⬜ |
+| **M0** 契约 & 治理 | shared/ 契约、根级 specs/ 全局 spec、Codex 治理、调研汇报 | ✅ |
+| **M1** 骨架可跑 | Electron + DB + 队列 + 一个 stub provider 端到端跑通手动生图 | 🔵 |
 | **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | ⬜ |
 | **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | ⬜ |
 | **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | ⬜ |
@@ -32,17 +32,17 @@
 | REQ-005 | `shared/tools-agents.ts` Tool/Agent/Gateway/Folder 类型 + spawnSubAgent | ✅ |
 | REQ-006 | Codex/GPT 原生治理层（`.codex/` + `.agents/`，`.claude/` 仅兼容归档） | ✅ |
 | REQ-007 | `docs/api-contracts/tools-agents.md` 工具集契约 | ✅ |
-| REQ-008 | `shared/composed-prompt.ts` 确定性 prompt 拼接纯函数 | ⬜ |
-| REQ-009 | LTM 初始化（ltm/bin/ltm.py selftest 通过） | ⬜ |
-| REQ-018 | `specs/core-platform-foundation/` 核心平台基础契约（画布 / 队列 / 资产 / 网关 / Tools / Plugins / Agents / Skills / Knowledge/RAG） | 🔵 |
-| REQ-019 | `docs/api-contracts/*` 模块契约拆分登记（jobs/assets/gateway/tools/agents/skills/knowledge/audit） | ⬜ |
+| REQ-008 | `shared/composed-prompt.ts` 确定性 prompt 拼接纯函数 | ✅ |
+| REQ-009 | LTM 初始化（ltm/bin/ltm.py selftest 通过） | ✅ |
+| REQ-018 | `specs/core-platform-foundation/` 核心平台基础契约（画布 / 队列 / 资产 / 网关 / Tools / Plugins / Agents / Skills / Knowledge/RAG） | ✅ |
+| REQ-019 | `docs/api-contracts/*` 模块契约拆分登记（jobs/assets/gateway/tools/agents/skills/knowledge/audit） | ✅ |
 | REQ-057 | `specs/milestone-execution-plan/` 从 `task/M0-M5` 迁移执行任务并查缺补漏 | ✅ |
 
 ### M1 — 骨架可跑
 
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
-| REQ-010 | Electron 脚手架（main + preload + renderer + electron-vite） | ⬜ |
+| REQ-010 | Electron 脚手架（main + preload + renderer + electron-vite） | ✅ |
 | REQ-011 | Drizzle schema + DB 抽象层（sqlite 默认 / mysql 可切） | ⬜ |
 | REQ-012 | 仓储层（workflow / jobs / asset / chat_message） | ⬜ |
 | REQ-013 | JobQueue + JobWorker 骨架（入队返票据，worker 占位） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**M0 收尾** → REQ-018（核心平台基础 spec）+ REQ-019（模块 API 契约拆分）+ REQ-008（composed-prompt）+ REQ-009（LTM 初始化）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 完成 M0 Foundation Gate 后，再进入 M1 REQ-010（Electron 脚手架）
+**当前焦点** → M1 REQ-011~017（DB / 队列 / Provider / 资产 / IPC / stub 生图烟测）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M1 第 6 项 renderer security 静态验证开始，并继续每步更新进度与测试报告。
 
 ---
 

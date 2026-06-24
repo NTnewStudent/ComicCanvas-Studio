@@ -9,24 +9,24 @@
   - Verify: `rg -n "source of truth|canonical" task/README.md`.
   - Covers: R1, INV-1.
 
-- [ ] 2. Complete foundation API contract docs.
+- [x] 2. Complete foundation API contract docs.
   - Required docs: `canvas-plan.md`, `jobs.md`, `assets-files.md`, `gateway-providers.md`, `tools-plugins.md`, `agents.md`, `skills.md`, `knowledge-context.md`, `audit-observability.md`.
   - Verify: each doc includes request/response, errors, permissions, tests, and owner.
   - Covers: R1, INV-2.
 
-- [ ] 3. Split shared platform contracts.
+- [x] 3. Split shared platform contracts.
   - Create or update: `shared/jobs.ts`, `shared/assets.ts`, `shared/gateway.ts`, `shared/tools.ts`, `shared/agents.ts`, `shared/skills.ts`, `shared/knowledge.ts`, `shared/ipc.ts`.
   - Verify: TypeScript strict compile; no duplicate authoritative definitions.
   - Covers: R1.
 
-- [ ] 4. Reconcile M0 backlog status.
+- [x] 4. Reconcile M0 backlog status.
   - Check actual files/tests for REQ-001..009 instead of trusting historical task status.
   - Verify: backlog status reflects current repo evidence.
   - Covers: R1.
 
 ## M1 - Runnable Electron Skeleton
 
-- [ ] 5. Create Electron/Vite/React skeleton.
+- [x] 5. Create Electron/Vite/React skeleton.
   - Files: `desktop/src/main/`, `desktop/src/preload/`, `desktop/src/renderer/`, `electron.vite.config.ts`, `tsconfig.json`.
   - Verify: `bun run dev` opens BrowserWindow; `bun run build` compiles.
   - Covers: R2.
