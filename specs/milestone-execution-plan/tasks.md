@@ -180,7 +180,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: schema validation, permission rejection, read parallel/write serial behavior.
   - Covers: R5.
 
-- [ ] 30. Implement sanitizePlan.
+- [x] 30. Implement sanitizePlan.
   - File: `desktop/src/main/agent/sanitize-plan.ts`.
   - Include: node whitelist, connection matrix, run action whitelist, executable-string stripping, dropped records.
   - Verify: property/injection tests with at least 100 generated cases.

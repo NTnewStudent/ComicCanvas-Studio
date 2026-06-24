@@ -1096,3 +1096,44 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 39 test files / 115 tests, build, and repository verification all passing.
+
+### M4-30 sanitizePlan
+
+Scope:
+
+- Added `desktop/src/main/agent/sanitize-plan.ts` as the main-process safety gate for untrusted CanvasPlan output.
+- Sanitizer enforces the shared node whitelist, edge type whitelist, `shared/connection-matrix.ts`, run action whitelist, and nested executable-string stripping.
+- Dropped records are preserved and merged into `plan.dropped` for audit.
+- Connected `runOrchestrator` to sanitize planner output before yielding/storing the final Plan.
+
+Verification:
+
+```bash
+bun x vitest run tests/sanitize-plan.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/agent/sanitize-plan.ts` did not exist.
+- PASS after implementation: sanitizePlan tests passed, 1 test file and 5 tests.
+- PASS: property/injection coverage generated 120 cases and verified no executable strings survived sanitized output.
+
+```bash
+bun x vitest run tests/orchestrator-runtime.test.ts tests/sanitize-plan.test.ts
+bun x tsc --noEmit --pretty false
+bun x eslint . --max-warnings=0
+```
+
+Result:
+
+- PASS: orchestrator runtime and sanitizePlan regression tests passed, 2 test files and 7 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 40 test files / 120 tests, build, and repository verification all passing.

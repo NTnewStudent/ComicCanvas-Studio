@@ -10,6 +10,7 @@ import type { CanvasPlan } from '../../../../shared/plan'
 import type { PersistedJobRecord } from '../db/repositories/job.repo'
 import type { JobEventBus } from '../jobs/events'
 import type { JobQueue } from '../jobs/queue'
+import { sanitizePlan } from './sanitize-plan'
 
 export interface OrchestratorProgressDraft {
   type: 'progress'
@@ -124,7 +125,7 @@ export async function* runOrchestrator(options: OrchestratorRunOptions): AsyncGe
         next = await stream.next()
       }
 
-      plan = next.value
+      plan = sanitizePlan(next.value)
       planId = options.planIdFactory()
       yield { type: 'plan', runId: options.runId, messageId: options.messageId, planId, plan }
       state = 'completed'

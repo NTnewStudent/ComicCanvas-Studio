@@ -84,7 +84,7 @@
 | REQ-040 | Orchestrator AsyncGenerator 主循环 | ✅ |
 | REQ-041 | Tool 统一接口 + ToolRegistry | ✅ |
 | REQ-042 | Canvas 工具集（queryGraph/proposePlan/createNode/connectNodes/updateNodeData/deleteNode/runNode） | ✅ |
-| REQ-043 | sanitizePlan（白名单 + 矩阵 + 去代码 + dropped） | ⬜ |
+| REQ-043 | sanitizePlan（白名单 + 矩阵 + 去代码 + dropped） | ✅ |
 | REQ-044 | chatSend 异步入队 + IPC 终态 + chatGetPlan | ⬜ |
 | REQ-045 | applyPlan（二次校验 + 分层布局 + 一条 undo） | ⬜ |
 | REQ-046 | PlanRunner（串行 + failed 短路保留剩余） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M4 REQ-043（sanitizePlan）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 30 项 sanitizePlan 开始，实现节点白名单、连接矩阵校验、run action 白名单和可执行字符串剥离，并补 property/injection 测试。
+**当前焦点** → M4 REQ-044（chatSend 异步入队 + IPC 终态 + chatGetPlan）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 31 项 chat plan IPC 开始，实现 planReady 或等价终态事件、chat_message 持久化、completion 后 plan fetch，并验证同步响应不携带 Plan。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---
