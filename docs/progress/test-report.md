@@ -395,3 +395,33 @@ Result:
 
 - RED before implementation: failed because `desktop/src/renderer/src/canvas/store/canvas.store` was missing.
 - PASS after implementation: `tests/canvas-store.test.ts` passed, 5 tests.
+
+### M2-15 Text Node
+
+Scope:
+
+- Read `hjwall/pc-client/src/modules/workflow-canvas/nodes/TextNode.tsx` and related tests before implementation.
+- Added renderer `TextNode` with collapsed label/preview, expanded textarea editing, outside-click collapse, scrollable preview/editing area, and inline rename.
+- Added TSX component testing support through Testing Library, jsdom, React DOM compiler settings, and root React type dependencies.
+- Tokenized Text node styling against the ComicCanvas `--cc-*` design system variables for node card, selected state, input, and focus states.
+
+Verification:
+
+```bash
+bunx vitest run tests/text-node.test.tsx
+```
+
+Result:
+
+- RED before fix: failed because previous jsdom renders were not cleaned up between tests, causing duplicate `Text 1` buttons.
+- RED for new acceptance test: outside-click collapse failed because expanded textarea stayed mounted after `mousedown(document.body)`.
+- PASS after implementation: `tests/text-node.test.tsx` passed, 4 tests.
+
+```bash
+bun run typecheck
+```
+
+Result:
+
+- RED before dependency fix: failed because root TSX tests lacked React type declarations.
+- PASS after adding root `@types/react` and `@types/react-dom`.

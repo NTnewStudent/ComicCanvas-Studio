@@ -56,7 +56,7 @@
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
 | REQ-020 | React Flow 画布 store（nodes/edges/viewport/undo） | ✅ |
-| REQ-021 | Text 节点（折叠/展开，文本输入） | ⬜ |
+| REQ-021 | Text 节点（折叠/展开，文本输入） | ✅ |
 | REQ-022 | Image 节点（配置+生成+结果合一，四态） | ⬜ |
 | REQ-023 | Video 节点（含首/尾帧图，时长参数） | ⬜ |
 | REQ-024 | 连接校验（onConnect 调 canConnect + toast） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M2 REQ-021~029（三节点 / 连接校验 / prompt 预览 / 持久化 / 零轮询）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 15 项 Text node 开始，并参考 `hjwall` 的画布实现改写到当前 React/Electron 架构。
+**当前焦点** → M2 REQ-022~029（Image / Video 节点 / 连接校验 / prompt 预览 / 持久化 / 零轮询）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 16 项 Image node 开始，并参考 `hjwall` 的画布实现改写到当前 React/Electron 架构。
 
 ---
 

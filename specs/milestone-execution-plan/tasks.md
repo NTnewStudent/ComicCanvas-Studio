@@ -84,7 +84,7 @@
   - Verify: addNode -> deleteNode -> undo restores state.
   - Covers: R3.
 
-- [ ] 15. Implement Text node.
+- [x] 15. Implement Text node.
   - File: `desktop/src/renderer/canvas/nodes/TextNode.tsx`.
   - Include: collapsed label, expanded textarea, outside-click collapse, internal scroll, inline rename hook.
   - Verify: component test click -> expand -> input -> blur -> collapse.

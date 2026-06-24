@@ -10,9 +10,10 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
     "types": ["node", "vitest/globals"],
     "baseUrl": "."
   },
-  "include": ["shared/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": ["shared/**/*.ts", "desktop/src/**/*.ts", "desktop/src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "vitest.config.ts"]
 }
