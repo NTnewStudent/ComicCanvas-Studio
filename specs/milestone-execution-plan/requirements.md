@@ -12,6 +12,7 @@ Scope:
 - M3 gateway settings and real provider adapters.
 - M4 agent orchestration and chat-to-plan workflow.
 - M5 advanced agent, tool, skill, plugin, asset library, and knowledge/RAG product surfaces.
+- A shared renderer UI reuse baseline for all M2-M5 product surfaces.
 
 Non-goals:
 
@@ -25,6 +26,7 @@ Non-goals:
 - **Milestone Spec**: This canonical spec under `specs/milestone-execution-plan/`.
 - **Foundation Gate**: The contract, shared type, API document, security, and recovery work required before feature implementation.
 - **Smoke Path**: A minimal end-to-end path proving a milestone is runnable.
+- **Renderer UI Reuse Baseline**: All renderer UI work uses Tailwind CSS, the shared `cn` helper, `global/design/DESIGN.md` tokens, and `hjwall/pc-client` component patterns as the first implementation reference.
 
 ## Requirements
 
@@ -79,7 +81,7 @@ Non-goals:
 1. THE OpenAI-compatible adapter SHALL support image generation request/response normalization through the Gateway contract.
 2. WHEN a provider returns base64 or URL output, THE adapter SHALL normalize bytes for AssetService without leaking temporary URLs to renderer.
 3. THE async media adapter SHALL support submit, backoff poll, terminal normalize, timeout, and worker-side cancellation checks.
-4. Settings UI SHALL let users create, edit, enable/disable, test, and delete gateway configurations.
+4. Settings UI SHALL let users create, edit, enable/disable, test, and delete gateway configurations while following the Renderer UI Reuse Baseline.
 5. API keys SHALL be encrypted through Electron safeStorage or an approved local secret store, and SHALL NOT appear in DB plaintext, logs, traces, or LTM.
 6. WHEN gateway config changes, THE GatewayRegistry SHALL hot-reload future jobs while allowing in-flight jobs to finish with their original provider.
 7. Gateway model mapping SHALL support separate image/video/text model keys with default fallback.
@@ -95,7 +97,7 @@ Non-goals:
 3. THE model-produced CanvasPlan SHALL pass through sanitizePlan before the renderer can apply it.
 4. THE renderer SHALL apply a Plan with node/edge/action revalidation, layered layout, and one undo snapshot.
 5. THE PlanRunner SHALL execute runSteps serially and short-circuit on failure while preserving unrun steps for manual execution.
-6. THE Chat UI SHALL show conversation history, Plan summary, dropped-item warnings, apply/execute controls, and auto-execute behavior.
+6. THE Chat UI SHALL show conversation history, Plan summary, dropped-item warnings, apply/execute controls, and auto-execute behavior while following the Renderer UI Reuse Baseline.
 7. THE end-to-end agent smoke path SHALL create an image node from a natural-language request, run it through the stub provider, and show a completed node.
 
 ### Requirement 6: M5 Advanced Agent And Product Surfaces
@@ -106,12 +108,12 @@ Non-goals:
 
 1. WHEN an agent spawns a sub-agent, THE child effective permissions SHALL be a subset of the parent and depth SHALL not exceed the configured limit.
 2. Sub-agents SHALL operate on isolated draft context/graph state unless the parent explicitly merges sanitized results.
-3. Settings UI SHALL support user-defined agents while protecting built-in agents from deletion.
-4. Chat input SHALL support @mention agent selection with keyboard navigation and explicit `agentId` routing.
-5. Settings UI SHALL expose registered tools and allow enable/disable behavior through ToolRuntime permissions.
-6. The asset library SHALL support nested folders, asset moves, delete-to-trash/tombstone semantics, and reference integrity checks.
-7. Skill management SHALL support built-in and user-defined skills with metadata-first discovery, lazy reference loading, and permission checks.
-8. Plugin tool management SHALL support local plugin manifest validation, tool registration, disable/unload, and quarantine diagnostics.
+3. Settings UI SHALL support user-defined agents while protecting built-in agents from deletion and following the Renderer UI Reuse Baseline.
+4. Chat input SHALL support @mention agent selection with keyboard navigation, explicit `agentId` routing, and the Renderer UI Reuse Baseline.
+5. Settings UI SHALL expose registered tools and allow enable/disable behavior through ToolRuntime permissions while following the Renderer UI Reuse Baseline.
+6. The asset library SHALL support nested folders, asset moves, delete-to-trash/tombstone semantics, reference integrity checks, and the Renderer UI Reuse Baseline.
+7. Skill management SHALL support built-in and user-defined skills with metadata-first discovery, lazy reference loading, permission checks, and the Renderer UI Reuse Baseline.
+8. Plugin tool management SHALL support local plugin manifest validation, tool registration, disable/unload, quarantine diagnostics, and the Renderer UI Reuse Baseline.
 9. Knowledge/RAG management SHALL support ingest, retrieve, delete, rebuild, citation metadata, and scoped Context Pack inclusion.
 10. Audit/observability SHALL provide traces and health checks across jobs, assets, gateways, tools, agents, skills, plugins, and knowledge indexes.
 
@@ -146,3 +148,9 @@ Non-goals:
 *For any* renderer feature, THE renderer SHALL not import main-process modules, access filesystem paths directly, use raw IPC, or poll generated asset state.
 
 **Validates:** Requirements 2-3.
+
+### INV-6: Renderer UI Reuse Baseline
+
+*For any* renderer UI task in M2-M5, THE implementation SHALL use Tailwind CSS plus the shared `cn` helper, consume `global/design/DESIGN.md` tokens, and check the relevant `hjwall/pc-client` module before introducing new local UI patterns.
+
+**Validates:** Requirements 3-6.

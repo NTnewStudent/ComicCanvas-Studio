@@ -15,6 +15,8 @@ The execution model is:
 5. Build M4 agent orchestration and Chat UI.
 6. Build M5 advanced agents, skills, plugins, asset library, knowledge/RAG, and observability.
 
+All renderer UI work shares one implementation baseline: Tailwind CSS, the renderer `cn` helper, `global/design/DESIGN.md` tokens, and relevant `hjwall/pc-client` component patterns before adding new local UI primitives.
+
 ## Source Mapping
 
 | Historical Source | Canonical Destination | Action |
@@ -25,6 +27,20 @@ The execution model is:
 | `task/M3-gateway.md` | this spec M3 + `core-platform-foundation` gateway contracts | Preserve provider/settings/safeStorage/hot-reload details |
 | `task/M4-agent-orchestration.md` | this spec M4 + `canvas-agent-orchestration` | Preserve orchestrator/tool/chat/applyPlan details |
 | `task/M5-agent-advanced.md` | this spec M5 + `core-platform-foundation` agent/tool/asset contracts | Preserve advanced UI/runtime tasks and extend missing Skills/Plugins/RAG/Audit |
+
+## Frontend Reuse Baseline
+
+The desktop renderer already has Tailwind, PostCSS, and the shared `cn` helper wired. New UI should extend that pipeline instead of adding another styling system.
+
+| ComicCanvas Surface | Primary `hjwall/pc-client` Reference | Adaptation Rule |
+| :--- | :--- | :--- |
+| Canvas nodes and edges | `src/modules/workflow-canvas/nodes`, `edges`, `components`, `hooks` | Reuse interaction patterns and tests, but bind to ComicCanvas shared contracts and design tokens. |
+| Gateway settings | `src/modules/project/components`, `src/components/common`, layout components | Reuse form, select, dialog, confirmation, badge, and task feedback patterns; bind to gateway IPC contracts. |
+| Chat and Plan UI | `src/modules/workflow-canvas/components/CanvasChatBox.tsx`, `BottomInputPanel.tsx`, `MentionTextarea.tsx`, `CommandPalette.tsx` | Reuse chat/input ergonomics and keyboard behavior; bind to sanitized CanvasPlan flow. |
+| Agent, tool, skill, plugin management | `src/components/layout`, `src/components/common`, project form components | Reuse dense desktop management patterns; keep built-ins read-only and permission state explicit. |
+| Asset library and local file management | `src/modules/asset`, `src/modules/workflow-canvas/components/AssetLibraryPanel.tsx`, `NodeAssetPickerModal.tsx` | Reuse grid, filter, preview, picker, and upload patterns; bind to local-first asset contracts. |
+
+Reference projects remain excluded from commits. If a `pc-client` component is useful, port the pattern deliberately into ComicCanvas with current contracts, copy, accessibility, tests, and `global/design/DESIGN.md` tokens.
 
 ## Milestone Gates
 
@@ -79,7 +95,7 @@ M3 replaces stub-only generation with real provider infrastructure:
 
 - OpenAI-compatible adapter.
 - Async media task adapter with worker-side polling.
-- Gateway settings UI.
+- Gateway settings UI using the shared renderer Tailwind/`cn` baseline and relevant `pc-client` form/dialog patterns.
 - KeyVault using Electron safeStorage or approved encrypted local storage.
 - Provider hot reload and per-channel model maps.
 
@@ -92,7 +108,7 @@ M4 wires natural language to the canvas:
 - sanitizePlan.
 - chatSend/chatGetPlan IPC.
 - applyPlan and PlanRunner.
-- Chat UI with PlanCard and auto-execute.
+- Chat UI with PlanCard and auto-execute, adapted from relevant `pc-client` chat/input patterns.
 - End-to-end natural-language-to-generated-node smoke test.
 
 ### M5: Advanced Platform
@@ -101,10 +117,10 @@ M5 extends beyond the old task directory:
 
 - spawnSubAgent and isolated draft graph behavior.
 - Custom agent settings and @mention routing.
-- Tool management UI.
-- Asset folders with reference integrity.
-- SkillRegistry and skill settings.
-- PluginLoader and plugin tool management.
+- Tool management UI using the shared renderer Tailwind/`cn` baseline.
+- Asset folders with reference integrity, adapted from `pc-client` asset library patterns.
+- SkillRegistry and skill settings using shared management UI primitives.
+- PluginLoader and plugin tool management using shared management UI primitives.
 - KnowledgeStore/RAG and ContextBuilder.
 - Audit, tracing, redaction, and health checks.
 

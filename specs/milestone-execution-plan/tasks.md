@@ -2,6 +2,10 @@
 
 > Canonical execution tasks migrated from historical `task/M0-M5` and extended with missing platform work from `specs/core-platform-foundation/`. Do not execute from `task/`; use this file plus the module contracts in `docs/api-contracts/`.
 
+## Global Frontend UI Baseline
+
+All renderer UI tasks in M2-M5 must use the desktop Tailwind pipeline, the shared `cn` helper, and `global/design/DESIGN.md` tokens. Before implementing any renderer surface, read the closest `hjwall/pc-client` module and adapt its component, interaction, and test patterns to ComicCanvas contracts. Reference projects must remain outside commits.
+
 ## M0 - Foundation Closeout
 
 - [x] 1. Mark `task/` as historical reference.
@@ -78,7 +82,7 @@
 
 ## M2 - Complete Canvas
 
-Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` helper, and `hjwall/pc-client` canvas component patterns as the primary reference before adapting the implementation to ComicCanvas contracts and `global/design/DESIGN.md`.
+M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the primary renderer reference before adapting implementation to ComicCanvas contracts and `global/design/DESIGN.md`.
 
 - [x] 14. Implement canvas store.
   - File: `desktop/src/renderer/src/canvas/store/canvas.store.ts`.
@@ -146,6 +150,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
 
 - [ ] 25. Implement Gateway settings UI.
   - Files: `desktop/src/renderer/settings/GatewayList.tsx`, `GatewayForm.tsx`.
+  - Reference: `hjwall/pc-client/src/modules/project/components/` and `hjwall/pc-client/src/components/common/` for form, select, dialog, and feedback patterns.
   - Include: add/edit/delete/test, enabled switch, masked key display, model mapping fields.
   - Verify: component tests for save/delete/test IPC calls.
   - Covers: R4.
@@ -195,6 +200,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
 
 - [ ] 33. Implement Chat UI.
   - Files: `desktop/src/renderer/src/chat/ChatPanel.tsx`, `PlanCard.tsx`.
+  - Reference: `hjwall/pc-client/src/modules/workflow-canvas/components/CanvasChatBox.tsx`, `BottomInputPanel.tsx`, `MentionTextarea.tsx`, and `CommandPalette.tsx`.
   - Include: history, Plan summary, dropped warning, apply button, autoExecute, Enter/Shift+Enter.
   - Verify: component tests for PlanCard and apply flow.
   - Covers: R5.
@@ -219,6 +225,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
 
 - [ ] 37. Implement custom Agent settings.
   - Files: `AgentList.tsx`, `AgentForm.tsx`; IPC/domain APIs from `docs/api-contracts/agents.md`.
+  - Reference: `hjwall/pc-client/src/components/layout/`, `src/components/common/`, and project form components for dense settings UI patterns.
   - Include: create/edit/delete user agents, built-in read-only protection, allowed tool/skill selection.
   - Verify: form validation and IPC tests.
   - Covers: R6.
@@ -231,23 +238,27 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
 
 - [ ] 39. Implement Tool management UI.
   - File: `desktop/src/renderer/settings/ToolList.tsx`.
+  - Reference: `hjwall/pc-client/src/components/common/` and project form/list patterns.
   - Include: tool list, read/write/concurrency badges, enable/disable, permission integration.
   - Verify: disabling tool causes ToolRuntime permission rejection.
   - Covers: R6.
 
 - [ ] 40. Implement asset library folders.
   - File: `desktop/src/renderer/assets/AssetPanel.tsx`.
+  - Reference: `hjwall/pc-client/src/modules/asset/` and `hjwall/pc-client/src/modules/workflow-canvas/components/AssetLibraryPanel.tsx`.
   - Include: nested folder tree, move assets, delete folder with reference-safe behavior, tombstones.
   - Verify: create -> move -> delete parent -> references remain valid or tombstoned.
   - Covers: R6.
 
 - [ ] 41. Implement SkillRegistry and skill management.
+  - Reference: shared settings/list/detail patterns from `hjwall/pc-client/src/components/common/` and project form components.
   - Include: built-in/user/plugin skill discovery, metadata-first list, lazy reference load, permission checks, reload consistency.
   - UI: skill list/detail and enable/disable if supported by contract.
   - Verify: failed reload keeps previous valid skill; permission overreach rejected.
   - Covers: R6, INV-4.
 
 - [ ] 42. Implement PluginLoader and plugin tool management.
+  - Reference: shared settings/list/detail patterns from `hjwall/pc-client/src/components/common/` and project form components.
   - Include: local manifest validation, plugin permissions, tool schema validation, register/disable/unload, quarantine diagnostics.
   - Verify: invalid manifest quarantined; disabled plugin tool cannot be invoked; running invocation policy tested.
   - Covers: R6, INV-4.

@@ -802,3 +802,24 @@ Result:
 - PASS: full test suite completed with 30 test files and 82 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+### Frontend UI Baseline Alignment
+
+Scope:
+
+- Promoted the renderer UI route from an M2-only canvas note to a global M2-M5 baseline.
+- Required all renderer UI tasks to use Tailwind CSS, the shared `cn` helper, `global/design/DESIGN.md` tokens, and the closest `hjwall/pc-client` module before introducing new local UI patterns.
+- Added explicit `pc-client` reference paths for gateway settings, Chat/Plan UI, agent settings, tool management, asset library, skill management, and plugin management tasks.
+- Updated backlog current frontend route so it matches the canonical milestone spec.
+
+Verification:
+
+```bash
+bunx vitest run tests/tailwind-renderer.test.ts
+git diff --check
+```
+
+Result:
+
+- PASS: Tailwind renderer baseline tests passed, 1 test file and 3 tests.
+- PASS: `git diff --check` completed with exit code 0.

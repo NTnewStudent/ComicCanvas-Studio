@@ -121,7 +121,7 @@
 
 **当前焦点** → M3 REQ-031（异步媒体任务适配器）
 **下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M3 第 24 项 async media task adapter 开始，并参考 `docs/api-contracts/gateway-providers.md` 落实 submit / poll / timeout / cancellation 归一化。
-**前端路线** → M2 画布 UI 以 `hjwall/pc-client` 的 Tailwind + `cn` 组件模式为复用基线，仅按当前 `global/design/DESIGN.md` 重构视觉 token 和产品外观。
+**前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---
 
