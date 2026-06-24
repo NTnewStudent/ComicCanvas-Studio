@@ -8,8 +8,10 @@ import type { AgentRunStatus } from '../../../../shared/agents'
 import type { JobResult } from '../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../shared/plan'
 import type { PersistedJobRecord } from '../db/repositories/job.repo'
+import type { ChatMessageRepository } from '../db/repositories/chat-message.repo'
 import type { JobEventBus } from '../jobs/events'
 import type { JobQueue } from '../jobs/queue'
+import type { CanvasPlanEventBus } from './plan-events'
 import { sanitizePlan } from './sanitize-plan'
 
 export interface OrchestratorProgressDraft {
@@ -61,8 +63,12 @@ export interface OrchestratorRuntimeOptions {
   queue: JobQueue
   events: JobEventBus
   planner: OrchestratorPlanner
+  chatMessages?: ChatMessageRepository
+  planEvents?: CanvasPlanEventBus
   idFactory?: (prefix: 'message' | 'run') => string
   planIdFactory?: () => string
+  workflowId?: string
+  clock?: () => number
 }
 
 export interface OrchestratorRuntime {
@@ -155,6 +161,7 @@ export async function* runOrchestrator(options: OrchestratorRunOptions): AsyncGe
 export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): OrchestratorRuntime {
   const idFactory = options.idFactory ?? ((prefix: 'message' | 'run') => `${prefix}-${crypto.randomUUID()}`)
   const planIdFactory = options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`)
+  const clock = options.clock ?? Date.now
   const plansByMessage = new Map<string, CanvasPlan>()
   const runsById = new Map<string, StoredRun>()
 
@@ -175,11 +182,36 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       })
 
       runsById.set(runId, { runId, messageId, status: 'pending' })
+      options.chatMessages?.create({
+        id: messageId,
+        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+        agentRunId: runId,
+        role: 'user',
+        content: input.message,
+        createdAt: clock()
+      })
 
       return { jobId: ticket.jobId, messageId, status: 'pending' }
     },
     getPlan(messageId) {
-      return plansByMessage.get(messageId) ?? null
+      const storedPlan = plansByMessage.get(messageId)
+
+      if (storedPlan) {
+        return storedPlan
+      }
+
+      const planJson = options.chatMessages?.getById(messageId)?.planJson
+
+      if (!planJson) {
+        return null
+      }
+
+      try {
+        return sanitizePlan(JSON.parse(planJson) as unknown)
+      } catch {
+        // Corrupt stored plan JSON must not leak parser errors through chatGetPlan.
+        return null
+      }
     },
     createJobHandler() {
       return async (job) => {
@@ -215,6 +247,8 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         }
 
         plansByMessage.set(messageId, next.value.plan)
+        options.chatMessages?.updatePlan(messageId, JSON.stringify(next.value.plan), 'draft')
+        options.planEvents?.emitPlanReady({ messageId, planId: next.value.planId })
         runsById.set(runId, { runId, messageId, planId: next.value.planId, status: 'completed' })
 
         return { kind: 'agentRun', runId, planId: next.value.planId }

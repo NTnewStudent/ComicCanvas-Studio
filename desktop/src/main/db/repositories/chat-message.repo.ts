@@ -31,7 +31,25 @@ interface ChatMessageRow {
 
 export interface ChatMessageRepository {
   create(record: ChatMessageCreateRecord): void
+  getById(id: string): ChatMessageRecord | null
+  updatePlan(id: string, planJson: string, applyStatus: string): void
   listByWorkflowId(workflowId: string): ChatMessageRecord[]
+}
+
+function toRecord(row: ChatMessageRow): ChatMessageRecord {
+  const record: ChatMessageRecord = {
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    createdAt: row.created_at
+  }
+
+  if (row.workflow_id) record.workflowId = row.workflow_id
+  if (row.agent_run_id) record.agentRunId = row.agent_run_id
+  if (row.plan_json) record.planJson = row.plan_json
+  if (row.apply_status) record.applyStatus = row.apply_status
+
+  return record
 }
 
 /**
@@ -50,6 +68,8 @@ export function createChatMessageRepository(db: BetterSqliteDatabase): ChatMessa
     )
   `)
   const selectByWorkflow = db.prepare('SELECT * FROM chat_messages WHERE workflow_id = ? ORDER BY created_at ASC')
+  const selectById = db.prepare('SELECT * FROM chat_messages WHERE id = ?')
+  const updatePlan = db.prepare('UPDATE chat_messages SET plan_json = @planJson, apply_status = @applyStatus WHERE id = @id')
 
   return {
     create(record) {
@@ -61,24 +81,18 @@ export function createChatMessageRepository(db: BetterSqliteDatabase): ChatMessa
         applyStatus: record.applyStatus ?? null
       })
     },
+    getById(id) {
+      const row = selectById.get(id) as ChatMessageRow | undefined
+
+      return row ? toRecord(row) : null
+    },
+    updatePlan(id, planJson, applyStatus) {
+      updatePlan.run({ id, planJson, applyStatus })
+    },
     listByWorkflowId(workflowId) {
       const rows = selectByWorkflow.all(workflowId) as ChatMessageRow[]
 
-      return rows.map((row) => {
-        const record: ChatMessageRecord = {
-          id: row.id,
-          role: row.role,
-          content: row.content,
-          createdAt: row.created_at
-        }
-
-        if (row.workflow_id) record.workflowId = row.workflow_id
-        if (row.agent_run_id) record.agentRunId = row.agent_run_id
-        if (row.plan_json) record.planJson = row.plan_json
-        if (row.apply_status) record.applyStatus = row.apply_status
-
-        return record
-      })
+      return rows.map(toRecord)
     }
   }
 }

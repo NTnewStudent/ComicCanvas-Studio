@@ -85,7 +85,7 @@
 | REQ-041 | Tool 统一接口 + ToolRegistry | ✅ |
 | REQ-042 | Canvas 工具集（queryGraph/proposePlan/createNode/connectNodes/updateNodeData/deleteNode/runNode） | ✅ |
 | REQ-043 | sanitizePlan（白名单 + 矩阵 + 去代码 + dropped） | ✅ |
-| REQ-044 | chatSend 异步入队 + IPC 终态 + chatGetPlan | ⬜ |
+| REQ-044 | chatSend 异步入队 + IPC 终态 + chatGetPlan | ✅ |
 | REQ-045 | applyPlan（二次校验 + 分层布局 + 一条 undo） | ⬜ |
 | REQ-046 | PlanRunner（串行 + failed 短路保留剩余） | ⬜ |
 | REQ-047 | 对话区 UI（消息面板 + Plan 预览 + 应用/执行按钮） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M4 REQ-044（chatSend 异步入队 + IPC 终态 + chatGetPlan）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 31 项 chat plan IPC 开始，实现 planReady 或等价终态事件、chat_message 持久化、completion 后 plan fetch，并验证同步响应不携带 Plan。
+**当前焦点** → M4 REQ-045 / REQ-046（applyPlan + PlanRunner）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 32 项开始，实现 renderer `apply-plan.ts` 与 `plan-runner.ts`，包括二次校验、分层布局、一条 undo、串行 runSteps 和失败短路。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

@@ -186,7 +186,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: property/injection tests with at least 100 generated cases.
   - Covers: R5.
 
-- [ ] 31. Implement chat plan IPC.
+- [x] 31. Implement chat plan IPC.
   - IPC: `canvas.chatSend`, `canvas.chatGetPlan`, `canvas.planReady` or documented equivalent.
   - Persist: `chat_message` rows with plan JSON and apply status.
   - Verify: synchronous response has no Plan; completion event allows plan fetch.

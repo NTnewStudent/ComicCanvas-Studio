@@ -1137,3 +1137,43 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 40 test files / 120 tests, build, and repository verification all passing.
+
+### M4-31 Chat Plan IPC
+
+Scope:
+
+- Extended `chat-message.repo.ts` with message lookup and plan/apply-status update APIs so chat persistence stays behind the repository boundary.
+- Added `CanvasPlanEventBus` plus Electron `canvas.planReady` fanout for async Plan completion notification.
+- Updated `createOrchestratorRuntime` to persist the user chat message on `chatSend`, keep the synchronous response plan-free, store sanitized Plan JSON after the agent job completes, and emit `canvas.planReady`.
+- Exposed `onCanvasPlanReady` through the sandboxed preload bridge.
+
+Verification:
+
+```bash
+bun x vitest run tests/chat-plan-ipc.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/agent/plan-events.ts` did not exist.
+- PASS after implementation: chat plan IPC tests passed, 1 test file and 3 tests.
+
+```bash
+bun x vitest run tests/chat-plan-ipc.test.ts tests/orchestrator-runtime.test.ts tests/repository-boundaries.test.ts tests/gateway-preload.test.ts
+bun x eslint . --max-warnings=0
+bun x tsc --noEmit --pretty false
+```
+
+Result:
+
+- PASS: chat plan IPC, orchestrator runtime, repository boundary, and preload regression tests passed, 4 test files and 9 tests.
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 41 test files / 123 tests, build, and repository verification all passing.

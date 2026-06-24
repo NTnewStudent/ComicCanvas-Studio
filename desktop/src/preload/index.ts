@@ -20,9 +20,10 @@ export interface ComicCanvasApi {
   onJobCompleted(handler: (event: Extract<JobTerminalEvent, { channel: 'job.completed' }>) => void): () => void
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
+  onCanvasPlanReady(handler: (event: IpcEventMap['canvas.planReady']) => void): () => void
 }
 
-type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.failed' | 'asset.changed'>
+type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady'>
 
 /**
  * Invokes a whitelisted main-process channel from typed preload APIs only.
@@ -155,6 +156,15 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/assets-files.md
    */
   onAssetChanged: (handler) => subscribeMain('asset.changed', handler)
+  ,
+  /**
+   * Subscribes to CanvasPlan readiness events after async orchestration completes.
+   * @param handler - Event payload handler.
+   * @returns Unsubscribe callback.
+   * @throws Error when Electron listener registration fails.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  onCanvasPlanReady: (handler) => subscribeMain('canvas.planReady', handler)
 }
 
 contextBridge.exposeInMainWorld('comicCanvas', api)
