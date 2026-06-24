@@ -1057,3 +1057,42 @@ Result:
 - PASS: full test suite completed with 37 test files and 109 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+### M4-29 ToolRuntime And Canvas Tools
+
+Scope:
+
+- Read `cc-haha-main/src/Tool.ts` and representative read/write tools for the reusable shape: schema-backed tool definitions, permission checks, read/write concurrency, and optional progress streaming.
+- Added `desktop/src/main/tools/runtime.ts` with `defineTool`, `createToolRuntime`, schema validation, safe invocation records, permission policy hooks, read-only parallel execution, and serial write execution.
+- Added `desktop/src/main/tools/canvas/index.ts` with built-in canvas tools: `queryGraph`, `proposePlan`, `createNode`, `connectNodes`, `updateNodeData`, `deleteNode`, and `runNode`.
+- Ensured `connectNodes` uses `shared/connection-matrix.ts` and `runNode` only enqueues a local job ticket without waiting for generated assets.
+- Added `zod` as the schema validation dependency for ToolRuntime and future plugin/custom tool contracts.
+
+Verification:
+
+```bash
+bun x vitest run tests/tool-runtime.test.ts tests/canvas-tools.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/tools/canvas` did not exist and `zod` was not available to the test/runtime boundary.
+- PASS after implementation: ToolRuntime and canvas tools tests passed, 2 test files and 6 tests.
+
+```bash
+bun run typecheck
+bun run lint
+```
+
+Result:
+
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 39 test files / 115 tests, build, and repository verification all passing.

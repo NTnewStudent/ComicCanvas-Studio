@@ -174,7 +174,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: mock model test for pending response and async Plan availability.
   - Covers: R5.
 
-- [ ] 29. Implement ToolRuntime and canvas tools.
+- [x] 29. Implement ToolRuntime and canvas tools.
   - Files: `desktop/src/main/tools/`, `desktop/src/main/tools/canvas/`.
   - Tools: queryGraph/getGraph, proposePlan, createNode/addNode, connectNodes/addEdge, updateNodeData, deleteNode, runNode.
   - Verify: schema validation, permission rejection, read parallel/write serial behavior.
