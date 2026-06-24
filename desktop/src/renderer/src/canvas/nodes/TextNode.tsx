@@ -3,9 +3,12 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
+import { NodeResizer } from '@xyflow/react'
 import { useEffect, useRef, useState } from 'react'
 
 import type { TextNodeData } from '../../../../../../shared/nodes'
+import { useInlineRename } from '../hooks/use-inline-rename'
+import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
 import { cn } from '../../lib/cn'
 
 export interface TextNodeProps {
@@ -26,9 +29,10 @@ export interface TextNodeProps {
 export function TextNode({ id, data, selected = false, onChange, onRename }: TextNodeProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false)
   const [content, setContent] = useState(data.content)
-  const [label, setLabel] = useState(data.label)
-  const [isRenaming, setIsRenaming] = useState(false)
-  const [draftLabel, setDraftLabel] = useState(data.label)
+  const rename = useInlineRename({
+    value: data.label,
+    onCommit: (next) => onRename?.(id, next)
+  })
   const nodeRef = useRef<HTMLElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
@@ -38,22 +42,17 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
   }, [data.content])
 
   useEffect(() => {
-    setLabel(data.label)
-    setDraftLabel(data.label)
-  }, [data.label])
-
-  useEffect(() => {
     if (isExpanded) {
       textareaRef.current?.focus()
     }
   }, [isExpanded])
 
   useEffect(() => {
-    if (isRenaming) {
+    if (rename.isRenaming) {
       renameRef.current?.focus()
       renameRef.current?.select()
     }
-  }, [isRenaming])
+  }, [rename.isRenaming])
 
   useEffect(() => {
     if (!isExpanded) return
@@ -70,25 +69,6 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
     return () => document.removeEventListener('mousedown', collapseOnOutsidePointer)
   }, [isExpanded])
 
-  function commitRename(): void {
-    const next = draftLabel.trim()
-    if (!next) {
-      setDraftLabel(label)
-      setIsRenaming(false)
-      return
-    }
-
-    setLabel(next)
-    setDraftLabel(next)
-    setIsRenaming(false)
-    onRename?.(id, next)
-  }
-
-  function cancelRename(): void {
-    setDraftLabel(label)
-    setIsRenaming(false)
-  }
-
   function updateContent(next: string): void {
     setContent(next)
     onChange?.(id, { content: next })
@@ -98,37 +78,38 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
     <article
       ref={nodeRef}
       className={cn(
-        'flex min-h-[168px] w-[320px] flex-col gap-2.5 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'relative flex min-h-[168px] w-[320px] flex-col gap-2.5 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
     >
+      <NodeResizer
+        isVisible={selected}
+        minWidth={NODE_MIN_WIDTH.text}
+        minHeight={NODE_MIN_HEIGHT.text}
+        lineClassName={NODE_RESIZER_CLASS_NAMES.line}
+        handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
+      />
+
       <header className="flex min-h-7 items-center">
-        {isRenaming ? (
+        {rename.isRenaming ? (
           <input
             ref={renameRef}
             aria-label="Rename text node"
             className="w-full min-w-0 rounded-sm border border-border-input bg-bg-input px-2 py-1.5 text-[16px] font-semibold leading-[1.35] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
-            value={draftLabel}
-            onChange={(event) => setDraftLabel(event.target.value)}
-            onBlur={cancelRename}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                commitRename()
-              }
-              if (event.key === 'Escape') {
-                cancelRename()
-              }
-            }}
+            value={rename.draft}
+            onChange={(event) => rename.setDraft(event.target.value)}
+            onBlur={rename.cancel}
+            onKeyDown={rename.handleKeyDown}
           />
         ) : (
           <button
             type="button"
             className="cursor-text bg-transparent p-0 text-left text-[16px] font-semibold leading-[1.35] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
             onClick={() => setIsExpanded(true)}
-            onDoubleClick={() => setIsRenaming(true)}
+            onDoubleClick={rename.start}
           >
-            {label}
+            {rename.value}
           </button>
         )}
       </header>

@@ -635,3 +635,38 @@ Result:
 - PASS: lint completed with exit code 0.
 - PASS: TypeScript strict compile completed with exit code 0.
 - PASS: full CI completed with 22 test files and 68 tests passing, then lint, typecheck, desktop/shared build, and repository verification completed with exit code 0.
+
+### M2-20 Node Sizing And Inline Rename Primitives
+
+Scope:
+
+- Read `hjwall/pc-client/src/modules/workflow-canvas/nodes/TextNode.tsx`, `ImageGenerationNode.tsx`, and orientation component tests before implementation.
+- Installed `@xyflow/react` with Bun and integrated real `NodeResizer` into Text, Image, and Video nodes.
+- Added shared `node-sizing` primitives for orientation aspect ratios, preview width, node minimum sizes, and NodeResizer Tailwind classes.
+- Added reusable `useInlineRename` hook and migrated `TextNode` inline rename behavior to the shared hook.
+- Kept Image and Video preview frames width-stable with orientation-driven `aspect-ratio`, and kept media `object-fit: contain`.
+
+Verification:
+
+```bash
+bunx vitest run tests/node-sizing.test.ts tests/inline-rename-hook.test.tsx tests/node-resizer-integration.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `canvas/lib/node-sizing`, `canvas/hooks/use-inline-rename`, and NodeResizer integration did not exist.
+- PASS after implementation: 3 test files passed, 5 tests passed.
+
+```bash
+bunx vitest run tests/text-node.test.tsx tests/image-node.test.tsx tests/video-node.test.tsx tests/tailwind-renderer.test.ts
+bun run lint
+bun run typecheck
+bun run ci
+```
+
+Result:
+
+- PASS: node regression completed with 4 test files and 14 tests passing.
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full CI completed with 25 test files and 73 tests passing, then lint, typecheck, desktop/shared build, and repository verification completed with exit code 0.

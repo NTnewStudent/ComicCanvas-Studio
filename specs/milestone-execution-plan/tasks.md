@@ -115,7 +115,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
   - Verify: two upstream text nodes produce byte-equivalent preview.
   - Covers: R3.
 
-- [ ] 20. Implement node sizing and inline rename primitives.
+- [x] 20. Implement node sizing and inline rename primitives.
   - Files: orientation-size constants, `useInlineRename`, NodeResizer integration.
   - Verify: Enter saves, Escape cancels, empty value rejected; skeleton size matches final media ratio.
   - Covers: R3.

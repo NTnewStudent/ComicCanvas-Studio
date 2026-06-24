@@ -5,10 +5,17 @@
  */
 
 import { Image as ImageIcon, Loader2, Sparkles, XCircle } from 'lucide-react'
+import { NodeResizer } from '@xyflow/react'
 import { useState } from 'react'
 
 import type { ImageNodeData, Orientation } from '../../../../../../shared/nodes'
 import { ConnectedInputsPanel } from '../components/ConnectedInputsPanel'
+import {
+  getOrientationPreviewStyle,
+  NODE_MIN_HEIGHT,
+  NODE_MIN_WIDTH,
+  NODE_RESIZER_CLASS_NAMES
+} from '../lib/node-sizing'
 import { cn } from '../../lib/cn'
 
 /** Selectable image model option shown by the image node controls. */
@@ -35,12 +42,6 @@ export interface ImageNodeProps {
   onChange?: (id: string, patch: Partial<ImageNodeData>) => void
   /** Called when the user requests asynchronous generation for this node. */
   onRun?: (id: string) => void
-}
-
-const orientationAspect: Record<Orientation, string> = {
-  landscape: '16 / 9',
-  portrait: '9 / 16',
-  square: '1 / 1'
 }
 
 const orientationLabels: Record<Orientation, string> = {
@@ -85,11 +86,19 @@ export function ImageNode({
   return (
     <article
       className={cn(
-        'flex w-[340px] flex-col gap-2 select-none text-text-base',
+        'relative flex w-[340px] flex-col gap-2 select-none text-text-base',
         selected && 'drop-shadow-[0_0_18px_var(--cc-active-glow)]'
       )}
       data-node-id={id}
     >
+      <NodeResizer
+        isVisible={selected}
+        minWidth={NODE_MIN_WIDTH.image}
+        minHeight={NODE_MIN_HEIGHT.image}
+        lineClassName={NODE_RESIZER_CLASS_NAMES.line}
+        handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
+      />
+
       <header className="flex items-center gap-2 px-1 text-[12px] font-medium text-text-muted">
         <ImageIcon className="h-3.5 w-3.5 text-semantic-info" />
         <span className="max-w-[190px] truncate">{data.label}</span>
@@ -115,7 +124,7 @@ export function ImageNode({
         <div
           className="relative flex w-full items-center justify-center overflow-hidden rounded-lg border border-border-input bg-bg-input"
           data-testid="image-preview-frame"
-          style={{ aspectRatio: orientationAspect[data.orientation] }}
+          style={getOrientationPreviewStyle(data.orientation)}
         >
           {canPreview ? (
             <img
