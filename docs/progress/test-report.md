@@ -1217,3 +1217,44 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 42 test files / 127 tests, build, and repository verification all passing.
+
+### M4-33 Chat UI
+
+Scope:
+
+- Read `global/design/DESIGN.md` before renderer UI work and used the existing Tailwind + `cn` renderer pipeline.
+- Referenced `hjwall/pc-client/src/modules/workflow-canvas/components/CanvasChatBox.tsx`, `BottomInputPanel.tsx`, `MentionTextarea.tsx`, and `CommandPalette.tsx` for chat composer, auto-execute, keyboard, and command affordance patterns.
+- Added `desktop/src/renderer/src/chat/ChatPanel.tsx` for async canvas chat send, `canvas.planReady` subscription, plan fetch, message history, Enter/Shift+Enter behavior, and auto-execute state.
+- Added `desktop/src/renderer/src/chat/PlanCard.tsx` for sanitized Plan summary, node/edge/run-step counts, dropped warnings, clarify display, and apply controls.
+- Mounted `ChatPanel` in `App.tsx` and wired Apply Plan to `applyCanvasPlan(plan, canvasStore)`.
+
+Verification:
+
+```bash
+bun x vitest run tests/chat-ui.test.tsx
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/renderer/src/chat/ChatPanel.tsx` did not exist.
+- PASS after implementation: ChatPanel and PlanCard component tests passed, 1 test file and 5 tests.
+
+```bash
+bun x vitest run tests/chat-ui.test.tsx tests/apply-plan-runner.test.ts tests/tailwind-renderer.test.ts
+bun x tsc --noEmit --pretty false
+bun x eslint . --max-warnings=0
+```
+
+Result:
+
+- PASS: Chat UI, applyPlan/PlanRunner, and Tailwind renderer baseline tests passed, 3 test files and 12 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 43 test files / 132 tests, build, and repository verification all passing.

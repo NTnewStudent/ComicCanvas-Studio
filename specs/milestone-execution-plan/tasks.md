@@ -198,7 +198,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: unit tests for legal/illegal Plan, three-step serial run, step two failure.
   - Covers: R5.
 
-- [ ] 33. Implement Chat UI.
+- [x] 33. Implement Chat UI.
   - Files: `desktop/src/renderer/src/chat/ChatPanel.tsx`, `PlanCard.tsx`.
   - Reference: `hjwall/pc-client/src/modules/workflow-canvas/components/CanvasChatBox.tsx`, `BottomInputPanel.tsx`, `MentionTextarea.tsx`, and `CommandPalette.tsx`.
   - Include: history, Plan summary, dropped warning, apply button, autoExecute, Enter/Shift+Enter.

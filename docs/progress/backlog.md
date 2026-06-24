@@ -88,7 +88,7 @@
 | REQ-044 | chatSend 异步入队 + IPC 终态 + chatGetPlan | ✅ |
 | REQ-045 | applyPlan（二次校验 + 分层布局 + 一条 undo） | ✅ |
 | REQ-046 | PlanRunner（串行 + failed 短路保留剩余） | ✅ |
-| REQ-047 | 对话区 UI（消息面板 + Plan 预览 + 应用/执行按钮） | ⬜ |
+| REQ-047 | 对话区 UI（消息面板 + Plan 预览 + 应用/执行按钮） | ✅ |
 
 ### M5 — Agent 进阶
 
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M4 REQ-047（对话区 UI）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M4 第 33 项开始，实现 ChatPanel / PlanCard，使用 Tailwind + `cn` + `global/design/DESIGN.md`，并参考 `hjwall/pc-client` 的 CanvasChatBox、BottomInputPanel、MentionTextarea、CommandPalette 模式。
+**当前焦点** → M4 第 34 项（agent orchestration smoke path）
+**下一步** → 跑通自然语言 → Plan → applyPlan → runNode → stub asset → done node 的端到端烟测，确认同步响应不等待资产、renderer 无轮询、sanitize 注入记录 dropped。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

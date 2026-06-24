@@ -1,10 +1,25 @@
 import { useEffect, useState } from 'react'
 
 import { useCanvasRealtime } from './canvas/hooks/use-canvas-realtime'
+import { applyCanvasPlan } from './canvas/lib/apply-plan'
+import { canvasStore } from './canvas/store/canvas.store'
+import { ChatPanel } from './chat/ChatPanel'
 import { cn } from './lib/cn'
 import { GatewayList } from './settings/GatewayList'
+import type { CanvasPlan } from '../../../../shared/plan'
 
 type HealthState = 'checking' | 'ok' | 'degraded' | 'failed'
+
+/**
+ * Applies a chat-produced CanvasPlan to the renderer canvas store.
+ * @param plan - Sanitized CanvasPlan fetched after planReady.
+ * @returns void.
+ * @throws Error never intentionally; invalid Plan content is recorded as dropped items by applyCanvasPlan.
+ * @see docs/api-contracts/canvas-plan.md
+ */
+function handleApplyPlan(plan: CanvasPlan): void {
+  applyCanvasPlan(plan, canvasStore)
+}
 
 /**
  * Renders the desktop renderer shell and main-process health indicator.
@@ -62,7 +77,10 @@ export function App(): JSX.Element {
             <span>{health}</span>
           </div>
         </div>
-        <GatewayList />
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
+          <GatewayList />
+          <ChatPanel onApplyPlan={handleApplyPlan} />
+        </div>
       </section>
     </main>
   )
