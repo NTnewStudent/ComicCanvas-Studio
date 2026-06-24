@@ -908,3 +908,44 @@ Result:
 - PASS: full test suite completed with 34 test files and 98 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+### M3-26 Encrypted Key Vault
+
+Scope:
+
+- Added `createKeyVault` under `desktop/src/main/security/key-vault.ts`.
+- Implemented a safeStorage-compatible adapter boundary with `isEncryptionAvailable`, `encryptString`, and `decryptString`.
+- Stored encrypted provider secrets as base64 ciphertext with stable `gateway:<providerId>` key refs.
+- Added refusal paths for unavailable encryption and decrypt/encrypt failures using `gateway_secret_unavailable`.
+- Ensured native storage failures do not echo plaintext secrets through thrown messages.
+
+Verification:
+
+```bash
+bunx vitest run tests/key-vault.test.ts
+bun run typecheck
+bun run lint
+```
+
+Result:
+
+- RED before implementation: key vault tests failed because `desktop/src/main/security/key-vault.ts` did not exist.
+- PASS after implementation: key vault tests passed, 1 test file and 4 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full test suite completed with 35 test files and 102 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.

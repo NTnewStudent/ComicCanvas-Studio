@@ -155,7 +155,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: component tests for save/delete/test IPC calls.
   - Covers: R4.
 
-- [ ] 26. Implement encrypted key vault.
+- [x] 26. Implement encrypted key vault.
   - File: `desktop/src/main/security/key-vault.ts`.
   - Include: safeStorage availability check, encrypt/decrypt, refusal path when unavailable.
   - Verify: roundtrip test and grep/log assertions for no plaintext key.
