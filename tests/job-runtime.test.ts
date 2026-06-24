@@ -1,0 +1,170 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { describe, expect, it } from 'vitest'
+
+import type { JobCreateInput } from '../shared/jobs'
+import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
+import { createJobRepository, type JobRepository } from '../desktop/src/main/db/repositories/job.repo'
+import { createJobEventBus } from '../desktop/src/main/jobs/events'
+import { createJobQueue } from '../desktop/src/main/jobs/queue'
+import { recoverProcessingJobs } from '../desktop/src/main/jobs/recovery'
+import { createJobWorker } from '../desktop/src/main/jobs/worker'
+
+interface RuntimeFixture {
+  db: ReturnType<typeof openDatabaseAtPath>
+  jobs: JobRepository
+}
+
+async function withRuntimeFixture<T>(run: (fixture: RuntimeFixture) => Promise<T> | T): Promise<T> {
+  const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-jobs-'))
+  const dbPath = join(tempDir, 'jobs.sqlite')
+  migrateDatabaseAtPath(dbPath)
+  const db = openDatabaseAtPath(dbPath)
+
+  try {
+    return await run({ db, jobs: createJobRepository(db) })
+  } finally {
+    db.close()
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
+function createImageJobInput(): JobCreateInput {
+  return {
+    type: 'canvas.generateImage',
+    targetId: 'image-node-1',
+    payload: { prompt: 'red spaceship' },
+    requestedBy: { type: 'user', id: 'user-1' }
+  }
+}
+
+describe('M1 JobRuntime skeleton', () => {
+  it('enqueues a durable pending job and returns only a ticket', () =>
+    withRuntimeFixture(({ jobs }) => {
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-enqueue-1',
+        clock: () => 1_782_400_000_000
+      })
+
+      const ticket = queue.enqueue(createImageJobInput())
+      const stored = jobs.getById(ticket.jobId)
+
+      expect(Object.keys(ticket).sort()).toEqual(['createdAt', 'jobId', 'status'])
+      expect(ticket).toEqual({ jobId: 'job-enqueue-1', status: 'pending', createdAt: 1_782_400_000_000 })
+      expect(stored?.status).toBe('pending')
+      expect(stored?.type).toBe('canvas.generateImage')
+      expect(stored?.targetId).toBe('image-node-1')
+      expect(stored?.payload).toEqual({ prompt: 'red spaceship' })
+      expect(stored?.progress).toBe(0)
+    }))
+
+  it('moves a pending job through processing to completed and emits one completed event', async () =>
+    withRuntimeFixture(async ({ jobs }) => {
+      const events = createJobEventBus()
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-complete-1',
+        clock: () => 1_782_400_000_001
+      })
+      queue.enqueue(createImageJobInput())
+
+      const worker = createJobWorker({
+        jobs,
+        events,
+        leaseOwner: 'worker-1',
+        clock: () => 1_782_400_000_002,
+        handlers: {
+          'canvas.generateImage': (job) => {
+            expect(jobs.getById(job.id)?.status).toBe('processing')
+            return { kind: 'asset', assetId: 'asset-1', metadata: { orientation: 'landscape' } }
+          }
+        }
+      })
+
+      expect(await worker.runNext()).toBe('job-complete-1')
+      expect(jobs.getById('job-complete-1')?.status).toBe('completed')
+      expect(jobs.getById('job-complete-1')?.result).toEqual({
+        kind: 'asset',
+        assetId: 'asset-1',
+        metadata: { orientation: 'landscape' }
+      })
+      expect(events.getTerminalEvents()).toEqual([
+        {
+          channel: 'job.completed',
+          jobId: 'job-complete-1',
+          result: { kind: 'asset', assetId: 'asset-1', metadata: { orientation: 'landscape' } },
+          emittedAt: 1_782_400_000_002
+        }
+      ])
+
+      expect(await worker.runNext()).toBeNull()
+      expect(events.getTerminalEvents()).toHaveLength(1)
+    }))
+
+  it('moves a pending job through processing to failed and emits one failed event', async () =>
+    withRuntimeFixture(async ({ jobs }) => {
+      const events = createJobEventBus()
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-fail-1',
+        clock: () => 1_782_400_000_003
+      })
+      queue.enqueue(createImageJobInput())
+
+      const worker = createJobWorker({
+        jobs,
+        events,
+        leaseOwner: 'worker-1',
+        clock: () => 1_782_400_000_004,
+        handlers: {
+          'canvas.generateImage': () => {
+            // Simulates the provider boundary throwing during worker-owned execution.
+            throw new Error('provider failed')
+          }
+        }
+      })
+
+      expect(await worker.runNext()).toBe('job-fail-1')
+      expect(jobs.getById('job-fail-1')?.status).toBe('failed')
+      expect(jobs.getById('job-fail-1')?.error).toEqual({
+        errorClass: 'job_worker_error',
+        message: 'provider failed',
+        retryable: false
+      })
+      expect(events.getTerminalEvents()).toEqual([
+        {
+          channel: 'job.failed',
+          jobId: 'job-fail-1',
+          error: { errorClass: 'job_worker_error', message: 'provider failed', retryable: false },
+          emittedAt: 1_782_400_000_004
+        }
+      ])
+
+      expect(await worker.runNext()).toBeNull()
+      expect(events.getTerminalEvents()).toHaveLength(1)
+    }))
+
+  it('requeues abandoned processing jobs during startup recovery', () =>
+    withRuntimeFixture(({ jobs }) => {
+      jobs.create({
+        id: 'job-stale-1',
+        type: 'canvas.generateImage',
+        status: 'processing',
+        payload: { prompt: 'abandoned' },
+        progress: 25,
+        attempts: 1,
+        retryable: true,
+        createdAt: 1_782_400_000_005,
+        updatedAt: 1_782_400_000_005
+      })
+
+      const report = recoverProcessingJobs({ jobs, clock: () => 1_782_400_000_006 })
+
+      expect(report).toEqual({ inspected: 1, requeued: ['job-stale-1'], failed: [] })
+      expect(jobs.getById('job-stale-1')?.status).toBe('pending')
+      expect(jobs.getById('job-stale-1')?.progress).toBe(0)
+    }))
+})

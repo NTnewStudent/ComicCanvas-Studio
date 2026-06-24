@@ -5,7 +5,7 @@
 
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 
-import type { JobRecord, JobStatus, JobType } from '../../../../../shared/jobs'
+import type { JobError, JobRecord, JobResult, JobStatus, JobType } from '../../../../../shared/jobs'
 import { decodeJson, encodeJson } from './json'
 
 export interface JobCreateRecord {
@@ -20,6 +20,13 @@ export interface JobCreateRecord {
   createdAt: number
   updatedAt: number
 }
+
+export interface JobClaimInput {
+  leaseOwner: string
+  claimedAt: number
+}
+
+export type PersistedJobRecord = JobRecord & { payload: Record<string, unknown> }
 
 interface JobRow {
   id: string
@@ -40,7 +47,11 @@ interface JobRow {
 
 export interface JobRepository {
   create(record: JobCreateRecord): void
-  getById(id: string): (JobRecord & { payload: Record<string, unknown> }) | null
+  getById(id: string): PersistedJobRecord | null
+  claimNextPending(input: JobClaimInput): PersistedJobRecord | null
+  complete(id: string, result: JobResult, completedAt: number): void
+  fail(id: string, error: JobError, failedAt: number): void
+  requeueProcessing(requeuedAt: number): string[]
 }
 
 /**
@@ -59,6 +70,76 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
     )
   `)
   const select = db.prepare('SELECT * FROM jobs WHERE id = ?')
+  const selectNextPending = db.prepare("SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1")
+  const claimPending = db.prepare(`
+    UPDATE jobs
+    SET status = 'processing',
+      lease_owner = @leaseOwner,
+      attempts = attempts + 1,
+      updated_at = @claimedAt
+    WHERE id = @id AND status = 'pending'
+  `)
+  const complete = db.prepare(`
+    UPDATE jobs
+    SET status = 'completed',
+      result_json = @resultJson,
+      progress = 100,
+      lease_owner = NULL,
+      updated_at = @completedAt
+    WHERE id = @id AND status = 'processing'
+  `)
+  const fail = db.prepare(`
+    UPDATE jobs
+    SET status = 'failed',
+      error_class = @errorClass,
+      error_message = @errorMessage,
+      retryable = @retryable,
+      lease_owner = NULL,
+      updated_at = @failedAt
+    WHERE id = @id AND status = 'processing'
+  `)
+  const selectProcessing = db.prepare("SELECT id FROM jobs WHERE status = 'processing' ORDER BY created_at ASC")
+  const requeueProcessing = db.prepare(`
+    UPDATE jobs
+    SET status = 'pending',
+      progress = 0,
+      lease_owner = NULL,
+      updated_at = @requeuedAt
+    WHERE status = 'processing'
+  `)
+
+  function mapRow(row: JobRow): PersistedJobRecord {
+    const job: PersistedJobRecord = {
+      id: row.id,
+      type: row.type,
+      status: row.status,
+      progress: row.progress,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      payload: decodeJson<Record<string, unknown>>(row.payload_json) ?? {}
+    }
+
+    if (row.target_id) {
+      job.targetId = row.target_id
+    }
+
+    const result = decodeJson<JobRecord['result']>(row.result_json)
+    if (result) {
+      job.result = result
+    }
+
+    if (row.error_class) {
+      job.error = { errorClass: row.error_class, message: row.error_message ?? row.error_class, retryable: Boolean(row.retryable) }
+    }
+
+    return job
+  }
+
+  function assertTransition(changes: number, message: string): void {
+    if (changes !== 1) {
+      throw new Error(message)
+    }
+  }
 
   return {
     create(record) {
@@ -76,30 +157,42 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
         return null
       }
 
-      const job: JobRecord & { payload: Record<string, unknown> } = {
-        id: row.id,
-        type: row.type,
-        status: row.status,
-        progress: row.progress,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        payload: decodeJson<Record<string, unknown>>(row.payload_json) ?? {}
+      return mapRow(row)
+    },
+    claimNextPending(input) {
+      const row = selectNextPending.get() as JobRow | undefined
+
+      if (!row) {
+        return null
       }
 
-      if (row.target_id) {
-        job.targetId = row.target_id
+      const result = claimPending.run({ id: row.id, leaseOwner: input.leaseOwner, claimedAt: input.claimedAt })
+
+      if (result.changes !== 1) {
+        return null
       }
 
-      const result = decodeJson<JobRecord['result']>(row.result_json)
-      if (result) {
-        job.result = result
-      }
+      return this.getById(row.id)
+    },
+    complete(id, result, completedAt) {
+      const updateResult = complete.run({ id, resultJson: encodeJson(result), completedAt })
+      assertTransition(updateResult.changes, 'job_transition_invalid')
+    },
+    fail(id, error, failedAt) {
+      const updateResult = fail.run({
+        id,
+        errorClass: error.errorClass,
+        errorMessage: error.message,
+        retryable: error.retryable ? 1 : 0,
+        failedAt
+      })
+      assertTransition(updateResult.changes, 'job_transition_invalid')
+    },
+    requeueProcessing(requeuedAt) {
+      const rows = selectProcessing.all() as Array<{ id: string }>
+      requeueProcessing.run({ requeuedAt })
 
-      if (row.error_class) {
-        job.error = { errorClass: row.error_class, message: row.error_message ?? row.error_class, retryable: Boolean(row.retryable) }
-      }
-
-      return job
+      return rows.map((row) => row.id)
     }
   }
 }

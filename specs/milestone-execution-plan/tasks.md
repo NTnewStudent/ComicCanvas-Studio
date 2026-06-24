@@ -47,7 +47,7 @@
   - Verify: service/IPC layers do not contain raw SQL/Drizzle queries.
   - Covers: R2.
 
-- [ ] 9. Implement JobRuntime skeleton.
+- [x] 9. Implement JobRuntime skeleton.
   - Files: `desktop/src/main/jobs/queue.ts`, `worker.ts`, `recovery.ts`, `events.ts`.
   - Behavior: enqueue writes pending row and returns ticket; worker consumes pending; startup reconciles processing jobs.
   - Verify: unit test pending -> processing -> completed/failed with exactly one terminal event.

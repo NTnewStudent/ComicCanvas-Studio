@@ -276,3 +276,23 @@ bun run ci
 Result:
 
 - PASS: lint, typecheck, 10 test files / 21 tests, desktop build, shared build, and repository hygiene completed with exit code 0.
+
+### M1-9 JobRuntime Skeleton
+
+Scope:
+
+- Added `JobQueue` to persist pending jobs before returning ticket-only responses.
+- Added repository-owned job state transitions for claim, complete, fail, and startup requeue.
+- Added `JobWorker` to claim one pending job, run a registered handler, persist terminal state, and emit exactly one terminal event.
+- Added `JobEventBus` and startup recovery for abandoned processing jobs.
+
+Verification:
+
+```bash
+bunx vitest run tests/job-runtime.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/jobs/events` and the rest of the JobRuntime modules were missing.
+- PASS after implementation: `tests/job-runtime.test.ts` passed, 4 tests.
