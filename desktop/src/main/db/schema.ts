@@ -53,6 +53,7 @@ export const assets = sqliteTable('assets', {
   durationMs: integer('duration_ms'),
   orientation: text('orientation'),
   mimeType: text('mime_type'),
+  sizeBytes: integer('size_bytes'),
   hash: text('hash'),
   folderId: text('folder_id'),
   createdAt: integer('created_at').notNull(),

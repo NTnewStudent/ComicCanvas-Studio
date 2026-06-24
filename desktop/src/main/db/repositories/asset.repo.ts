@@ -30,6 +30,7 @@ interface AssetRow {
   duration_ms: number | null
   orientation: NonNullable<AssetMetadata['orientation']> | null
   mime_type: string | null
+  size_bytes: number | null
   hash: string | null
   folder_id: string | null
   created_at: number
@@ -52,10 +53,10 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
   const insert = db.prepare(`
     INSERT INTO assets (
       id, media_type, status, rel_path, safe_url, width, height, duration_ms, orientation,
-      mime_type, hash, folder_id, created_at, updated_at
+      mime_type, size_bytes, hash, folder_id, created_at, updated_at
     ) VALUES (
       @id, @mediaType, @status, @relativePath, @safeUrl, @width, @height, @durationMs, @orientation,
-      @mimeType, @hash, @folderId, @createdAt, @updatedAt
+      @mimeType, @sizeBytes, @hash, @folderId, @createdAt, @updatedAt
     )
   `)
   const select = db.prepare('SELECT * FROM assets WHERE id = ?')
@@ -69,6 +70,7 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
         durationMs: record.metadata.durationMs ?? null,
         orientation: record.metadata.orientation ?? null,
         mimeType: record.metadata.mimeType ?? null,
+        sizeBytes: record.metadata.sizeBytes ?? null,
         hash: record.metadata.hash ?? null,
         folderId: record.folderId ?? null
       })
@@ -86,6 +88,7 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
       if (row.duration_ms !== null) metadata.durationMs = row.duration_ms
       if (row.orientation !== null) metadata.orientation = row.orientation
       if (row.mime_type !== null) metadata.mimeType = row.mime_type
+      if (row.size_bytes !== null) metadata.sizeBytes = row.size_bytes
       if (row.hash !== null) metadata.hash = row.hash
 
       const asset: AssetRecord = {

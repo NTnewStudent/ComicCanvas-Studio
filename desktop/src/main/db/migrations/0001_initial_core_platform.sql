@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS assets (
   duration_ms INTEGER,
   orientation TEXT,
   mime_type TEXT,
+  size_bytes INTEGER,
   hash TEXT,
   folder_id TEXT,
   created_at INTEGER NOT NULL,

@@ -315,3 +315,23 @@ Result:
 
 - RED before implementation: failed because `desktop/src/main/providers/registry` and `stub.provider` were missing.
 - PASS after implementation: `tests/stub-provider.test.ts` passed, 3 tests.
+
+### M1-11 AssetService Baseline
+
+Scope:
+
+- Added generated asset byte pipeline with content-hash based relative storage paths.
+- Added orientation classification and invalid metadata rejection.
+- Added `cc-asset://asset/<assetId>` safe URL records and safe protocol path resolution.
+- Persisted asset `sizeBytes` metadata through the SQLite baseline.
+
+Verification:
+
+```bash
+bunx vitest run tests/asset-service.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/assets/pipeline` and `protocol` were missing.
+- PASS after implementation: `tests/asset-service.test.ts` passed, 9 tests.

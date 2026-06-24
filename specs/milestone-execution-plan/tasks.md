@@ -59,7 +59,7 @@
   - Verify: unit test stable result envelope and no provider-specific leak into renderer response.
   - Covers: R2.
 
-- [ ] 11. Implement AssetService baseline.
+- [x] 11. Implement AssetService baseline.
   - Files: `desktop/src/main/assets/pipeline.ts`, `protocol.ts`.
   - Behavior: save bytes by hash, classify orientation, expose safe asset protocol, reject traversal.
   - Verify: orientation property tests and traversal rejection tests.
