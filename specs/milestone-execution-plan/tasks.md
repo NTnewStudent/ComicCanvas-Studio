@@ -126,7 +126,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
   - Verify: save -> app restart/load simulation -> nodes/edges/viewport match.
   - Covers: R3.
 
-- [ ] 22. Enforce zero polling in renderer.
+- [x] 22. Enforce zero polling in renderer.
   - Verify: static scan for asset status `setInterval`/polling loops; e2e confirms updates via IPC/query invalidation.
   - Covers: R3, INV-5.
 

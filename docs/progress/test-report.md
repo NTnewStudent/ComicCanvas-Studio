@@ -723,3 +723,45 @@ Result:
 - PASS: full test suite completed with 26 test files and 74 tests passing.
 - PASS: desktop/shared build completed with exit code 0.
 - PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
+
+### M2-22 Renderer Zero Polling
+
+Scope:
+
+- Read `hjwall/pc-client/src/modules/workflow-canvas/__tests__/no-polling.static.spec.ts` and `hooks/useWorkflowTaskRealtime.ts` before implementation.
+- Installed `@tanstack/react-query` with Bun and wrapped the renderer root in `QueryClientProvider`.
+- Added a typed preload event bridge for `job.completed`, `job.failed`, and `asset.changed`, returning unsubscribe callbacks without exposing raw `ipcRenderer`.
+- Added `createIpcJobEventBus` so worker terminal events can fan out to live renderer windows over Electron IPC while preserving duplicate-terminal-event rejection.
+- Added `useCanvasRealtime` and `registerCanvasRealtimeInvalidation` so job and asset terminal events invalidate job/asset queries instead of relying on renderer polling.
+- Added a renderer static guard that fails on `setInterval`, `refetchInterval`, or asset/job polling-loop literals in production renderer source.
+
+Verification:
+
+```bash
+bunx vitest run tests/renderer-zero-polling.test.ts
+bunx vitest run tests/canvas-realtime-invalidation.test.ts
+bunx vitest run tests/job-ipc-fanout.test.ts
+```
+
+Result:
+
+- RED before implementation: zero-polling test failed because preload lacked `subscribeMain`/typed event helpers.
+- RED before implementation: realtime invalidation test failed because `canvas/hooks/use-canvas-realtime` did not exist.
+- RED before implementation: job IPC fanout test failed because `desktop/src/main/jobs/ipc-fanout.ts` did not exist.
+- PASS after implementation: 3 test files passed, 4 tests passed.
+
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full test suite completed with 29 test files and 78 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.

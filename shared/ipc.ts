@@ -258,3 +258,5 @@ export interface IpcEventMap {
 export type IpcInvokeChannel = keyof IpcRequestMap
 
 export type IpcEventChannel = keyof IpcEventMap
+
+export type AssetChangedEvent = IpcEventMap['asset.changed']

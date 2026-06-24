@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { useCanvasRealtime } from './canvas/hooks/use-canvas-realtime'
 import { cn } from './lib/cn'
 
 type HealthState = 'checking' | 'ok' | 'degraded' | 'failed'
@@ -11,6 +12,7 @@ type HealthState = 'checking' | 'ok' | 'degraded' | 'failed'
  */
 export function App(): JSX.Element {
   const [health, setHealth] = useState<HealthState>('checking')
+  useCanvasRealtime()
 
   useEffect(() => {
     let isMounted = true

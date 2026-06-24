@@ -12,8 +12,8 @@
 | :--- | :--- | :--- |
 | **M0** 契约 & 治理 | shared/ 契约、根级 specs/ 全局 spec、Codex 治理、调研汇报 | ✅ |
 | **M1** 骨架可跑 | Electron + DB + 队列 + 一个 stub provider 端到端跑通手动生图 | ✅ |
-| **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | 🔵 |
-| **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | ⬜ |
+| **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | ✅ |
+| **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | 🔵 |
 | **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | ⬜ |
 | **M5** Agent 进阶 | super-agent + 子 agent spawn + 工具/agent 管理 UI | ⬜ |
 
@@ -64,7 +64,7 @@
 | REQ-026 | 节点画幅自适应（orientation 切换 + contain + 骨架） | ✅ |
 | REQ-027 | 节点 inline 改名（双击 label） | ✅ |
 | REQ-028 | 画布保存/加载（持久化 graph JSON） | ✅ |
-| REQ-029 | 零轮询验证（IPC 事件 + query 失效，无 setInterval） | ⬜ |
+| REQ-029 | 零轮询验证（IPC 事件 + query 失效，无 setInterval） | ✅ |
 
 ### M3 — 网关系统
 
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M2 REQ-029（零轮询）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 22 项 zero polling 开始，并参考 `hjwall/pc-client` 的画布实现改写到当前 React/Electron 架构。
+**当前焦点** → M3 REQ-030（OpenAI 兼容 Provider）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M3 第 23 项 OpenAI-compatible provider adapter 开始，并参考 `docs/api-contracts/gateway-providers.md` 落实真实网关适配。
 **前端路线** → M2 画布 UI 以 `hjwall/pc-client` 的 Tailwind + `cn` 组件模式为复用基线，仅按当前 `global/design/DESIGN.md` 重构视觉 token 和产品外观。
 
 ---
