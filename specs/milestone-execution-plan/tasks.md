@@ -53,7 +53,7 @@
   - Verify: unit test pending -> processing -> completed/failed with exactly one terminal event.
   - Covers: R2, INV-3.
 
-- [ ] 10. Implement stub Gateway/provider.
+- [x] 10. Implement stub Gateway/provider.
   - Files: `desktop/src/main/providers/stub.provider.ts`, `registry.ts`.
   - Behavior: returns deterministic image bytes and metadata within test timeout.
   - Verify: unit test stable result envelope and no provider-specific leak into renderer response.

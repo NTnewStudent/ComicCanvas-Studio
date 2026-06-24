@@ -46,7 +46,7 @@
 | REQ-011 | Drizzle schema + DB 抽象层（sqlite 默认 / mysql 可切） | ✅ |
 | REQ-012 | 仓储层（workflow / jobs / asset / chat_message） | ✅ |
 | REQ-013 | JobQueue + JobWorker 骨架（入队返票据，worker 占位） | ✅ |
-| REQ-014 | Provider 接口 + stub provider | ⬜ |
+| REQ-014 | Provider 接口 + stub provider | ✅ |
 | REQ-015 | 资产管线（saveBytes + classifyOrientation + cc-asset:// 越界校验） | ⬜ |
 | REQ-016 | IPC handler 骨架（canvas.* / job.* 订阅） | ⬜ |
 | REQ-017 | 端到端：手动 createNode → runNode → stub 生图 → 节点刷新 | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M1 REQ-014~017（Provider / 资产 / IPC / stub 生图烟测）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M1 第 10 项 stub Gateway/provider 开始，并继续每步更新进度与测试报告。
+**当前焦点** → M1 REQ-015~017（资产 / IPC / stub 生图烟测）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M1 第 11 项 AssetService baseline 开始，并继续每步更新进度与测试报告。
 
 ---
 

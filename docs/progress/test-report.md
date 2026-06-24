@@ -296,3 +296,22 @@ Result:
 
 - RED before implementation: failed because `desktop/src/main/jobs/events` and the rest of the JobRuntime modules were missing.
 - PASS after implementation: `tests/job-runtime.test.ts` passed, 4 tests.
+
+### M1-10 Stub Gateway Provider
+
+Scope:
+
+- Added deterministic `stub` provider for text, image, and video channels.
+- Added provider registry with gateway lookup and channel/model preflight.
+- Ensured provider invocation returns normalized `GatewayResult` envelopes without provider-specific response fields.
+
+Verification:
+
+```bash
+bunx vitest run tests/stub-provider.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/providers/registry` and `stub.provider` were missing.
+- PASS after implementation: `tests/stub-provider.test.ts` passed, 3 tests.
