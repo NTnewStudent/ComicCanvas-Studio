@@ -98,7 +98,7 @@ Renderer UI tasks in M2 must use the desktop Tailwind pipeline, the shared `cn` 
   - Verify: four-state rendering tests and run button invokes `canvas.runNode`.
   - Covers: R3.
 
-- [ ] 17. Implement Video node.
+- [x] 17. Implement Video node.
   - File: `desktop/src/renderer/src/canvas/nodes/VideoNode.tsx`.
   - Include: prompt/model/orientation/duration controls, first/last frame selector, safe video preview.
   - Verify: state rendering tests and upstream image selection test.

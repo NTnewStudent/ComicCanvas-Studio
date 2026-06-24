@@ -1,0 +1,305 @@
+/**
+ * Video canvas node for video generation configuration and preview.
+ * @see docs/api-contracts/canvas-plan.md
+ * @see docs/api-contracts/assets-files.md
+ */
+
+import { Clapperboard, Film, Image as ImageIcon, Loader2, Sparkles, XCircle } from 'lucide-react'
+import { useState } from 'react'
+
+import type { Orientation, VideoNodeData } from '../../../../../../shared/nodes'
+import { cn } from '../../lib/cn'
+
+/** Selectable video model option shown by the video node controls. */
+export interface VideoModelOption {
+  /** Stable model identifier passed back through node data updates. */
+  id: string
+  /** Human-readable model name rendered in the control. */
+  label: string
+}
+
+/** Image asset option that can be assigned as the video first or last frame. */
+export interface VideoFrameOption {
+  /** Stable asset identifier stored in the video node data. */
+  assetId: string
+  /** Human-readable frame label rendered in the selector. */
+  label: string
+  /** Safe renderer URL for the image thumbnail. */
+  safeUrl?: string
+}
+
+/** Renderer props for the video generation canvas node. */
+export interface VideoNodeProps {
+  /** Canvas node identifier used by change and run callbacks. */
+  id: string
+  /** Shared video node data contract. */
+  data: VideoNodeData
+  /** Whether the canvas currently marks this node as selected. */
+  selected?: boolean
+  /** Safe renderer URL for the generated asset, normally `cc-asset://asset/<assetId>`. */
+  assetSafeUrl?: string
+  /** Available model choices for the video generation control. */
+  modelOptions?: VideoModelOption[]
+  /** Upstream image assets available for first and last frame selection. */
+  frameOptions?: VideoFrameOption[]
+  /** Called when the renderer edits node data. */
+  onChange?: (id: string, patch: Partial<VideoNodeData>) => void
+  /** Called when the user requests asynchronous generation for this node. */
+  onRun?: (id: string) => void
+}
+
+const orientationAspect: Record<Orientation, string> = {
+  landscape: '16 / 9',
+  portrait: '9 / 16',
+  square: '1 / 1'
+}
+
+const orientationLabels: Record<Orientation, string> = {
+  landscape: '16:9',
+  portrait: '9:16',
+  square: '1:1'
+}
+
+const statusLabel: Record<VideoNodeData['status'], string> = {
+  idle: 'Idle',
+  pending: 'Pending',
+  running: 'Running',
+  done: 'Done',
+  error: 'Error'
+}
+
+const durationOptions = [3, 5, 8, 10]
+
+/**
+ * Renders a video node with prompt/model/orientation/duration/frame controls and async generation states.
+ * @param props - Video node ID, shared node data, safe asset URLs, and callbacks.
+ * @returns Video node React element.
+ * @throws Error never intentionally; invalid user actions are represented as disabled controls.
+ * @see docs/api-contracts/canvas-plan.md
+ * @see docs/api-contracts/assets-files.md
+ */
+export function VideoNode({
+  id,
+  data,
+  selected = false,
+  assetSafeUrl,
+  modelOptions = [{ id: data.modelId, label: data.modelId }],
+  frameOptions = [],
+  onChange,
+  onRun
+}: VideoNodeProps): JSX.Element {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const isGenerating = data.status === 'pending' || data.status === 'running'
+  const canPreview = data.status === 'done' && data.assetId !== null && typeof assetSafeUrl === 'string'
+
+  function update(patch: Partial<VideoNodeData>): void {
+    onChange?.(id, patch)
+  }
+
+  return (
+    <article
+      className={cn(
+        'flex w-[360px] flex-col gap-2 select-none text-text-base',
+        selected && 'drop-shadow-[0_0_18px_var(--cc-active-glow)]'
+      )}
+      data-node-id={id}
+    >
+      <header className="flex items-center gap-2 px-1 text-[12px] font-medium text-text-muted">
+        <Clapperboard className="h-3.5 w-3.5 text-semantic-warning" />
+        <span className="max-w-[200px] truncate">{data.label}</span>
+        <span
+          className={cn(
+            'ml-auto inline-flex items-center rounded-pill bg-bg-input px-2 py-0.5 text-[12px] font-medium',
+            data.status === 'done' && 'text-semantic-success',
+            isGenerating && 'text-brand',
+            data.status === 'error' && 'text-semantic-negative'
+          )}
+        >
+          {statusLabel[data.status]}
+        </span>
+      </header>
+
+      <section
+        className={cn(
+          'rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+          selected && 'border-border-primary shadow-active',
+          isGenerating && 'border-brand'
+        )}
+      >
+        <div
+          className="relative flex w-full items-center justify-center overflow-hidden rounded-lg border border-border-input bg-bg-input"
+          data-testid="video-preview-frame"
+          style={{ aspectRatio: orientationAspect[data.orientation] }}
+        >
+          {canPreview ? (
+            <video
+              data-testid="video-preview"
+              src={assetSafeUrl}
+              controls
+              preload="metadata"
+              className="h-full w-full object-contain"
+              style={{ objectFit: 'contain' }}
+            />
+          ) : data.status === 'error' ? (
+            <div role="alert" className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-text-secondary">
+              <XCircle className="h-7 w-7 text-semantic-negative" />
+              <span className="text-[13px]">Generation failed</span>
+            </div>
+          ) : (
+            <div
+              role="status"
+              aria-label={`Video generation ${data.status}`}
+              className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-text-muted"
+            >
+              {isGenerating ? (
+                <Loader2 className="h-7 w-7 animate-spin text-brand" />
+              ) : (
+                <Film className="h-7 w-7 text-semantic-warning opacity-70" />
+              )}
+              <span className="text-[13px]">{isGenerating ? 'Generating video' : 'No video yet'}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => onRun?.(id)}
+            disabled={isGenerating}
+            aria-label="Generate video"
+          >
+            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Generate video
+          </button>
+          <button
+            type="button"
+            className="inline-flex min-h-8 items-center justify-center rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base transition hover:bg-bg-hover"
+            aria-expanded={isExpanded}
+            aria-label="Configure video node"
+            onClick={() => setIsExpanded((value) => !value)}
+          >
+            Configure
+          </button>
+        </div>
+
+        {isExpanded && (
+          <div className="mt-3 flex flex-col gap-3 border-t border-border-secondary pt-3">
+            <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+              Prompt override
+              <textarea
+                aria-label="Prompt override"
+                className="min-h-24 resize-none rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] leading-relaxed text-text-base outline-none focus:ring-1 focus:ring-brand"
+                value={data.promptOverride}
+                onChange={(event) => update({ promptOverride: event.target.value })}
+                placeholder="Describe motion, camera path, timing, and mood."
+              />
+            </label>
+
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="text-[12px] font-medium text-text-muted">Model</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {modelOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-label={`Use model ${option.label}`}
+                    className={cn(
+                      'rounded-lg border border-border-input bg-bg-input px-3 py-2 text-left text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base',
+                      data.modelId === option.id && 'border-brand text-brand'
+                    )}
+                    onClick={() => update({ modelId: option.id })}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="text-[12px] font-medium text-text-muted">Orientation</legend>
+              <div className="grid grid-cols-3 gap-2">
+                {(Object.keys(orientationLabels) as Orientation[]).map((orientation) => (
+                  <button
+                    key={orientation}
+                    type="button"
+                    aria-label={`Use ${orientation} orientation`}
+                    className={cn(
+                      'rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base',
+                      data.orientation === orientation && 'border-brand text-brand'
+                    )}
+                    onClick={() => update({ orientation })}
+                  >
+                    {orientationLabels[orientation]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="text-[12px] font-medium text-text-muted">Duration</legend>
+              <div className="grid grid-cols-4 gap-2">
+                {durationOptions.map((duration) => (
+                  <button
+                    key={duration}
+                    type="button"
+                    aria-label={`Use ${duration} seconds duration`}
+                    className={cn(
+                      'rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base',
+                      data.durationSeconds === duration && 'border-brand text-brand'
+                    )}
+                    onClick={() => update({ durationSeconds: duration })}
+                  >
+                    {duration}s
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="flex flex-col gap-1.5">
+              <legend className="text-[12px] font-medium text-text-muted">Frames</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {frameOptions.map((option) => (
+                  <div key={option.assetId} className="rounded-lg border border-border-input bg-bg-input p-2">
+                    <div className="mb-2 flex h-16 items-center justify-center overflow-hidden rounded-md border border-border-secondary bg-bg-card">
+                      {option.safeUrl ? (
+                        <img src={option.safeUrl} alt={`${option.label} thumbnail`} className="h-full w-full object-contain" />
+                      ) : (
+                        <ImageIcon className="h-5 w-5 text-text-muted" />
+                      )}
+                    </div>
+                    <div className="mb-2 truncate text-[12px] font-medium text-text-secondary">{option.label}</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        aria-label={`Use ${option.label} as first frame`}
+                        className={cn(
+                          'rounded-md border border-border-input px-2 py-1.5 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base',
+                          data.firstFrameAssetId === option.assetId && 'border-brand text-brand'
+                        )}
+                        onClick={() => update({ firstFrameAssetId: option.assetId })}
+                      >
+                        First
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Use ${option.label} as last frame`}
+                        className={cn(
+                          'rounded-md border border-border-input px-2 py-1.5 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base',
+                          data.lastFrameAssetId === option.assetId && 'border-brand text-brand'
+                        )}
+                        onClick={() => update({ lastFrameAssetId: option.assetId })}
+                      >
+                        Last
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+        )}
+      </section>
+    </article>
+  )
+}

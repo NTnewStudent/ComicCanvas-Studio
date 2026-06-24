@@ -58,7 +58,7 @@
 | REQ-020 | React Flow 画布 store（nodes/edges/viewport/undo） | ✅ |
 | REQ-021 | Text 节点（折叠/展开，文本输入） | ✅ |
 | REQ-022 | Image 节点（配置+生成+结果合一，四态） | ✅ |
-| REQ-023 | Video 节点（含首/尾帧图，时长参数） | ⬜ |
+| REQ-023 | Video 节点（含首/尾帧图，时长参数） | ✅ |
 | REQ-024 | 连接校验（onConnect 调 canConnect + toast） | ⬜ |
 | REQ-025 | Connected Inputs Panel + 确定性 prompt 预览（字节等价） | ⬜ |
 | REQ-026 | 节点画幅自适应（orientation 切换 + contain + 骨架） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M2 REQ-023~029（Video 节点 / 连接校验 / prompt 预览 / 持久化 / 零轮询）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 17 项 Video node 开始，并参考 `hjwall/pc-client` 的画布实现改写到当前 React/Electron 架构。
+**当前焦点** → M2 REQ-024~029（连接校验 / prompt 预览 / 持久化 / 零轮询）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M2 第 18 项 connection validation UX 开始，并参考 `hjwall/pc-client` 的画布实现改写到当前 React/Electron 架构。
 **前端路线** → M2 画布 UI 以 `hjwall/pc-client` 的 Tailwind + `cn` 组件模式为复用基线，仅按当前 `global/design/DESIGN.md` 重构视觉 token 和产品外观。
 
 ---
