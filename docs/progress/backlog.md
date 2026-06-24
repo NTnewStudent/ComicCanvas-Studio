@@ -128,4 +128,5 @@
 
 | ID | Requirement | Status |
 | :--- | :--- | :--- |
-| REQ-058 | Repository CI/CD foundation: reproducible npm lockfile, lint/typecheck/test/build scripts, GitHub Actions CI, release dry-run, and repository hygiene checks that exclude local reference projects. | ✅ |
+| REQ-058 | Repository CI/CD foundation: reproducible Bun lockfile, lint/typecheck/test/build scripts, GitHub Actions CI, release dry-run, and repository hygiene checks that exclude local reference projects. | ✅ |
+| REQ-059 | Frontend/backend build entry migration to Bun: pin `.bun-version`, use `bun.lock`, run CI/CD through `bun run`, and reject npm lock/config drift. | ✅ |

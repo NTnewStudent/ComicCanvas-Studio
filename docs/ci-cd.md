@@ -1,6 +1,6 @@
 # CI/CD
 
-ComicCanvas Studio uses a repository-level CI/CD gate from the first pushed version.
+ComicCanvas Studio uses a repository-level Bun-powered CI/CD gate from the first pushed version.
 The current product is still in the M0 foundation phase, so the first pipeline validates
 contracts, tests, repository hygiene, and a release dry-run instead of producing Electron
 installers.
@@ -10,23 +10,23 @@ installers.
 Run the same checks locally before pushing:
 
 ```bash
-npm ci
-npm run ci
+bun install --frozen-lockfile
+bun run ci
 ```
 
-`npm run ci` executes:
+`bun run ci` executes:
 
-- `npm run lint`
-- `npm run typecheck`
-- `npm run test`
-- `npm run build`
-- `npm run verify:repo`
+- `bun run lint`
+- `bun run typecheck`
+- `bun run test`
+- `bun run build`
+- `bun run verify:repo`
 
 ## GitHub Actions
 
 | Workflow | Trigger | Purpose |
 | :--- | :--- | :--- |
-| `.github/workflows/ci.yml` | Pull requests and pushes to `main` | Validate on Ubuntu and Windows with Node.js 20. |
+| `.github/workflows/ci.yml` | Pull requests and pushes to `main` | Install Bun from `.bun-version` and validate on Ubuntu and Windows. |
 | `.github/workflows/release.yml` | Tags matching `v*.*.*` | Run the full gate and upload a release dry-run manifest. |
 
 ## Repository Hygiene
@@ -40,6 +40,9 @@ The CI gate intentionally excludes local reference repositories from source cont
 
 It also rejects tracked `.claude/specs/` files because the canonical project spec root is
 `specs/`.
+
+The repository uses `bun.lock` as its only dependency lockfile. `package-lock.json` and
+`.npmrc` must not be tracked.
 
 ## Next CD Milestone
 

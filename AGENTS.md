@@ -83,6 +83,8 @@ Codex/GPT 环境的原生入口是 `.codex/config.toml`、`.codex/agents/*.toml`
 | 任务队列 + 模型适配 | `desktop/src/main/jobs/`、`desktop/src/main/providers/` | 进程内持久化队列 + 模型网关适配器 |
 | 共享契约 | `shared/` | 连接矩阵 / Plan 类型 / IPC 契约（前后端唯一真源） |
 
+> 包管理、依赖锁定、前端/后端构建与 CI/CD 命令统一使用 **Bun 1.3.14**（`.bun-version` + `bun.lock`）。Electron 主进程运行时仍是 Electron/Node 环境；不要重新引入 `package-lock.json`、`.npmrc`、`npm run` 或 `npx` 作为项目入口。
+
 > ⚠️ 桌面端**无 Redis / 无 BullMQ / 无 WS**：用进程内持久化任务队列 + Electron IPC 事件替代。
 > ⚠️ 资产**不走 COS**：生成字节落本地 `appData/assets/`，DB 存相对路径，渲染走自定义安全协议。
 

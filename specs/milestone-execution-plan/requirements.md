@@ -46,7 +46,7 @@ Non-goals:
 
 #### Acceptance Criteria
 
-1. WHEN `npm run dev` starts, THE app SHALL open a BrowserWindow and load the renderer without console startup errors.
+1. WHEN `bun run dev` starts, THE app SHALL open a BrowserWindow and load the renderer without console startup errors.
 2. THE BrowserWindow SHALL keep `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`.
 3. THE preload SHALL expose only typed whitelist APIs and SHALL NOT expose raw Node or raw `ipcRenderer`.
 4. WHEN DB initializes, THE main process SHALL use Drizzle migrations and repository boundaries; service and IPC layers SHALL NOT contain raw SQL/Drizzle queries.

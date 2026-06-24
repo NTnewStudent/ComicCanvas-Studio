@@ -121,7 +121,7 @@ M5 extends beyond the old task directory:
 | Milestone | Required Verification |
 | :--- | :--- |
 | M0 | Link scans, placeholder scans, contract docs exist, shared contracts compile |
-| M1 | `npm run dev`, `npm run build`, DB migration test, job terminal uniqueness, stub e2e |
+| M1 | `bun run dev`, `bun run build`, DB migration test, job terminal uniqueness, stub e2e |
 | M2 | Component tests for nodes, connection PBT, prompt byte equivalence, save/load integration, no polling scan |
 | M3 | Provider mock tests, Zod response validation, key redaction tests, hot reload integration |
 | M4 | Orchestrator mock tests, sanitizePlan property tests, PlanRunner tests, agent e2e |

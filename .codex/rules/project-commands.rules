@@ -3,24 +3,24 @@
 # only when the project .codex layer is trusted.
 
 prefix_rule(
-    pattern = ["npm", "run"],
+    pattern = ["bun", "run"],
     decision = "allow",
-    justification = "Project npm scripts are expected verification and development commands.",
-    match = ["npm run test", "npm run build", "npm run lint"],
+    justification = "Project Bun scripts are expected verification and development commands.",
+    match = ["bun run test", "bun run build", "bun run lint", "bun run ci"],
 )
 
 prefix_rule(
-    pattern = ["npx"],
+    pattern = ["bun", "x"],
     decision = "allow",
-    justification = "npx is allowed for local project tooling and one-off verification.",
-    match = ["npx tsc --noEmit", "npx vitest run"],
+    justification = "bun x is allowed for local project tooling and one-off verification.",
+    match = ["bun x tsc --noEmit", "bun x vitest run"],
 )
 
 prefix_rule(
-    pattern = ["node"],
+    pattern = ["bun"],
     decision = "allow",
-    justification = "Node is required for repository scripts and Codex documentation helpers.",
-    match = ["node scripts/check.js"],
+    justification = "Bun is the repository package manager and script runner.",
+    match = ["bun install --frozen-lockfile", "bun scripts/verify-repo.mjs"],
 )
 
 prefix_rule(

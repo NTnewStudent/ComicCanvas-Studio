@@ -22,6 +22,7 @@
 | 数据库 | SQLite（better-sqlite3 + Drizzle ORM），DB 抽象层（可切 MySQL） |
 | 任务 / 实时 | 进程内持久化任务队列 + Electron IPC 事件 |
 | Agent | AsyncGenerator 主循环 + 统一 Tool 接口 + Skills |
+| 包管理 / 构建入口 | Bun 1.3.14（见 `.bun-version` 与 `bun.lock`） |
 
 ## 仓库布局（规划）
 
@@ -50,8 +51,8 @@ comic-canvas/
 第一版仓库已经提供可执行的 CI/CD foundation：
 
 ```bash
-npm ci
-npm run ci
+bun install --frozen-lockfile
+bun run ci
 ```
 
 GitHub Actions 会在 push/PR 上运行 lint、typecheck、unit tests、build 和仓库卫生检查；tag `v*.*.*` 会运行 release dry-run。详见 [`docs/ci-cd.md`](docs/ci-cd.md)。

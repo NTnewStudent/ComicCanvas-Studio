@@ -13,20 +13,20 @@
 **User Story**：作为开发者，我需要一个能打包的 Electron + Vite + TypeScript 骨架，main/preload/renderer 分层明确。
 
 **Acceptance Criteria**：
-1. `npm run dev` 启动后出现 BrowserWindow，renderer 加载正常。
-2. `npm run build` 生成可执行文件，无编译报错。
+1. `bun run dev` 启动后出现 BrowserWindow，renderer 加载正常。
+2. `bun run build` 生成可执行文件，无编译报错。
 3. THE main 进程 SHALL 开启 `contextIsolation: true`，`nodeIntegration: false`，`sandbox: true`。
 4. THE preload SHALL 仅通过 `contextBridge.exposeInMainWorld` 暴露白名单 API，不暴露 Node API。
 5. Vite dev-server 热更新在 renderer 正常工作。
 
-**技术选型**：electron-vite + TypeScript strict + React 18。
+**技术选型**：Bun script runner + electron-vite + TypeScript strict + React 18。
 
 **任务**：
-- [ ] `npm create electron-vite` 或手工搭建 monorepo 结构
+- [ ] 使用 Bun 驱动 electron-vite 脚手架或手工搭建 monorepo 结构
 - [ ] 配置 `electron.vite.config.ts`（main / preload / renderer 三入口）
 - [ ] `tsconfig.json` strict 模式，paths alias `@shared → shared/`
 - [ ] 验证 contextIsolation/sandbox 配置
-- [ ] `npm run dev` smoke test
+- [ ] `bun run dev` smoke test
 
 ---
 
@@ -47,7 +47,7 @@
 - [ ] `desktop/src/main/db/index.ts` — `getDb()` 工厂（better-sqlite3 + drizzle-orm/sqlite-core）
 - [ ] 初始 migration 文件
 - [ ] 单元测试：建表 + 简单 CRUD 验证
-- [ ] `npm run db:migrate` 脚本
+- [ ] `bun run db:migrate` 脚本
 
 ---
 
@@ -164,7 +164,7 @@
 
 ## 完成标准
 
-- [ ] `npm run dev` 出现 BrowserWindow，无控制台报错
+- [ ] `bun run dev` 出现 BrowserWindow，无控制台报错
 - [ ] 端到端 Smoke Test（REQ-017）通过
 - [ ] `tsc --noEmit` 无报错
 - [ ] 终态唯一性单元测试通过

@@ -28,7 +28,7 @@
 
 - [ ] 5. Create Electron/Vite/React skeleton.
   - Files: `desktop/src/main/`, `desktop/src/preload/`, `desktop/src/renderer/`, `electron.vite.config.ts`, `tsconfig.json`.
-  - Verify: `npm run dev` opens BrowserWindow; `npm run build` compiles.
+  - Verify: `bun run dev` opens BrowserWindow; `bun run build` compiles.
   - Covers: R2.
 
 - [ ] 6. Enforce Electron renderer security.
