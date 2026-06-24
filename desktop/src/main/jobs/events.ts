@@ -3,11 +3,13 @@
  * @see docs/api-contracts/jobs.md
  */
 
-import type { JobTerminalEvent } from '../../../../shared/jobs'
+import type { JobProgressEvent, JobTerminalEvent } from '../../../../shared/jobs'
 
 export interface JobEventBus {
   emitTerminal(event: JobTerminalEvent): void
+  emitProgress(event: JobProgressEvent): void
   getTerminalEvents(): JobTerminalEvent[]
+  getProgressEvents(): JobProgressEvent[]
 }
 
 /**
@@ -18,6 +20,7 @@ export interface JobEventBus {
  */
 export function createJobEventBus(): JobEventBus {
   const terminalByJob = new Map<string, JobTerminalEvent>()
+  const progressEvents: JobProgressEvent[] = []
 
   return {
     emitTerminal(event) {
@@ -27,8 +30,14 @@ export function createJobEventBus(): JobEventBus {
 
       terminalByJob.set(event.jobId, event)
     },
+    emitProgress(event) {
+      progressEvents.push(event)
+    },
     getTerminalEvents() {
       return Array.from(terminalByJob.values())
+    },
+    getProgressEvents() {
+      return [...progressEvents]
     }
   }
 }

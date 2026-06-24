@@ -3,13 +3,14 @@
  * @see docs/api-contracts/jobs.md
  */
 
-import type { JobTerminalEvent } from '../../../../shared/jobs'
+import type { JobProgressEvent, JobTerminalEvent } from '../../../../shared/jobs'
 import { createJobEventBus, type JobEventBus } from './events'
 
 interface IpcEventWindow {
   isDestroyed(): boolean
   webContents: {
     send(channel: JobTerminalEvent['channel'], event: JobTerminalEvent): void
+    send(channel: JobProgressEvent['channel'], event: JobProgressEvent): void
   }
 }
 
@@ -35,8 +36,20 @@ export function createIpcJobEventBus(getWindows: IpcWindowProvider): JobEventBus
         }
       }
     },
+    emitProgress(event) {
+      inner.emitProgress(event)
+
+      for (const window of getWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send(event.channel, event)
+        }
+      }
+    },
     getTerminalEvents() {
       return inner.getTerminalEvents()
+    },
+    getProgressEvents() {
+      return inner.getProgressEvents()
     }
   }
 }

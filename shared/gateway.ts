@@ -79,6 +79,7 @@ export interface GatewayError {
     | 'capability_unsupported'
     | 'provider_request_failed'
     | 'provider_timeout'
+    | 'provider_canceled'
     | 'provider_payload_invalid'
   message: string
   retryable: boolean

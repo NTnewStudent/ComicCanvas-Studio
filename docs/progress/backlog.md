@@ -71,7 +71,7 @@
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
 | REQ-030 | OpenAI 兼容 Provider（/v1/images、/v1/chat 等） | ✅ |
-| REQ-031 | 异步网关轮询（提交→remote_task_id→查询→落盘） | ⬜ |
+| REQ-031 | 异步网关轮询（提交→remote_task_id→查询→落盘） | ✅ |
 | REQ-032 | 设置页：网关配置（URL + Key + 模型映射） | ⬜ |
 | REQ-033 | API Key 走 OS safeStorage（不落明文/日志） | ⬜ |
 | REQ-034 | 网关热拔插（保存后重新初始化 Provider，不重启） | ⬜ |
@@ -119,8 +119,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M3 REQ-031（异步媒体任务适配器）
-**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M3 第 24 项 async media task adapter 开始，并参考 `docs/api-contracts/gateway-providers.md` 落实 submit / poll / timeout / cancellation 归一化。
+**当前焦点** → M3 REQ-032（Gateway settings UI）
+**下一步** → 按 `specs/milestone-execution-plan/tasks.md` 从 M3 第 25 项 Gateway settings UI 开始，并参考 `hjwall/pc-client/src/modules/project/components/`、`src/components/common/` 复用设置表单/对话框/反馈模式。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

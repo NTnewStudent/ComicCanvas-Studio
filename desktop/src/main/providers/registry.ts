@@ -4,7 +4,7 @@
  */
 
 import type { GatewayError, GatewayRequest, GatewayResult } from '../../../../shared/gateway'
-import type { GatewayProvider } from './stub.provider'
+import type { GatewayProvider, GatewayProviderContext } from './stub.provider'
 
 export class GatewayProviderError extends Error implements GatewayError {
   readonly errorClass: GatewayError['errorClass']
@@ -26,7 +26,7 @@ export class GatewayProviderError extends Error implements GatewayError {
 
 export interface GatewayRegistry {
   set(id: string, provider: GatewayProvider): void
-  invoke(id: string, request: GatewayRequest): Promise<GatewayResult>
+  invoke(id: string, request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult>
 }
 
 /**
@@ -42,7 +42,7 @@ export function createGatewayRegistry(): GatewayRegistry {
     set(id, provider) {
       providers.set(id, provider)
     },
-    async invoke(id, request) {
+    async invoke(id, request, context) {
       const provider = providers.get(id)
 
       if (!provider) {
@@ -57,7 +57,7 @@ export function createGatewayRegistry(): GatewayRegistry {
         })
       }
 
-      return provider.invoke(request)
+      return provider.invoke(request, context)
     }
   }
 }

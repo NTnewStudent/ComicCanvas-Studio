@@ -7,11 +7,21 @@ import { createHash } from 'node:crypto'
 
 import type { GatewayCapability, GatewayRequest, GatewayResult } from '../../../../shared/gateway'
 
+export interface GatewayProviderProgressEvent {
+  progress: number
+  message?: string
+}
+
+export interface GatewayProviderContext {
+  isCanceled?: () => boolean
+  onProgress?: (event: GatewayProviderProgressEvent) => Promise<void> | void
+}
+
 export interface GatewayProvider {
   readonly id: string
   readonly capabilities: GatewayCapability[]
   readonly modelKeys: Record<'text' | 'image' | 'video', string>
-  invoke(request: GatewayRequest): Promise<GatewayResult> | GatewayResult
+  invoke(request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult> | GatewayResult
 }
 
 const pngHeader = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])

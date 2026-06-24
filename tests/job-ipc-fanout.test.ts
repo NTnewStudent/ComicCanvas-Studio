@@ -32,4 +32,24 @@ describe('M2 job IPC event fanout', () => {
     expect(events.getTerminalEvents()).toEqual([terminalEvent])
     expect(() => events.emitTerminal(terminalEvent)).toThrow('job_terminal_event_duplicate')
   })
+
+  it('broadcasts progress events to live renderer windows without marking them terminal', () => {
+    const first = createWindow()
+    const closed = createWindow(true)
+    const events = createIpcJobEventBus(() => [first, closed])
+    const progressEvent = {
+      channel: 'job.progress' as const,
+      jobId: 'job-1',
+      progress: 45,
+      message: 'rendering frames',
+      emittedAt: 43
+    }
+
+    events.emitProgress(progressEvent)
+
+    expect(first.webContents.send).toHaveBeenCalledWith('job.progress', progressEvent)
+    expect(closed.webContents.send).not.toHaveBeenCalled()
+    expect(events.getProgressEvents()).toEqual([progressEvent])
+    expect(events.getTerminalEvents()).toEqual([])
+  })
 })

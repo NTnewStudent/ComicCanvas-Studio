@@ -78,6 +78,7 @@ Rules:
 
 - Initial adapters SHALL include OpenAI-compatible text/chat and image-style requests.
 - Async media providers SHALL use submit, poll/get status, fetch bytes, normalize result.
+- Async media polling SHALL accept a worker-side invocation context with cancellation checks and progress callbacks. Cancellation SHALL raise `provider_canceled` before additional remote work is submitted or polled.
 - Gateway results SHALL be normalized before JobWorker or AssetService consumes them.
 
 ## Errors
@@ -89,6 +90,7 @@ Rules:
 | `capability_unsupported` | Requested channel/model is not supported. |
 | `provider_request_failed` | Remote provider rejected or failed the request. |
 | `provider_timeout` | Timeout policy elapsed. |
+| `provider_canceled` | Worker-side cancellation was requested before the provider reached a terminal result. |
 | `provider_payload_invalid` | Provider response cannot be normalized. |
 
 ## Permissions

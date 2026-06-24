@@ -142,7 +142,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: mock fetch tests and key redaction assertions.
   - Covers: R4.
 
-- [ ] 24. Implement async media task adapter.
+- [x] 24. Implement async media task adapter.
   - Files: `async-media.provider.ts`, `polling-strategy.ts`.
   - Include: submit, poll with backoff, timeout, worker-side cancellation checks, progress events.
   - Verify: mock polling tests for completed, failed, timeout, and cancellation.

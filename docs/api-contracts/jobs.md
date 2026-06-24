@@ -76,6 +76,14 @@ Events:
 type JobTerminalEvent =
   | { channel: 'job.completed'; jobId: string; result: JobResult; emittedAt: number }
   | { channel: 'job.failed'; jobId: string; error: JobError; emittedAt: number }
+
+interface JobProgressEvent {
+  channel: 'job.progress'
+  jobId: string
+  progress: number
+  message?: string
+  emittedAt: number
+}
 ```
 
 Rules:
@@ -83,6 +91,7 @@ Rules:
 - Valid states: `pending -> processing -> completed | failed | canceled`.
 - For each job ID, exactly one terminal event SHALL be emitted.
 - Terminal result SHALL be persisted before terminal IPC emission.
+- Progress events MAY be emitted while a job is processing and SHALL NOT count as terminal events.
 - Startup recovery SHALL reconcile stale `processing` jobs before accepting worker work.
 - Main-process fanout SHALL send terminal events over the whitelisted Electron IPC channel matching `event.channel`.
 - The preload bridge SHALL expose typed subscription helpers for `job.completed` and `job.failed`, returning unsubscribe callbacks without exposing raw `ipcRenderer`.

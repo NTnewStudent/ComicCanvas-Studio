@@ -823,3 +823,44 @@ Result:
 
 - PASS: Tailwind renderer baseline tests passed, 1 test file and 3 tests.
 - PASS: `git diff --check` completed with exit code 0.
+
+### M3-24 Async Media Task Adapter
+
+Scope:
+
+- Added `pollWithBackoff` for provider-side async task polling with exponential backoff, timeout handling, progress callbacks, and worker-side cancellation checks.
+- Added `createAsyncMediaProvider` for common submit/poll/fetch media task protocols.
+- Normalized completed async image/video outputs from base64 or temporary media URLs into `assetBytes` results.
+- Added `provider_canceled` to the shared gateway error contract so worker cancellation is distinct from remote provider failure.
+- Extended `GatewayProvider.invoke` with an optional context carrying `isCanceled` and `onProgress`.
+- Extended the job event bus and IPC fanout adapter to broadcast `job.progress` events without treating them as terminal events.
+
+Verification:
+
+```bash
+bunx vitest run tests/polling-strategy.test.ts tests/async-media-provider.test.ts
+bunx vitest run tests/job-ipc-fanout.test.ts
+```
+
+Result:
+
+- RED before implementation: async media tests failed because `desktop/src/main/providers/async-media.provider.ts` did not exist.
+- RED before implementation: polling strategy tests failed because `desktop/src/main/providers/polling-strategy.ts` did not exist.
+- RED before implementation: progress fanout test failed because `events.emitProgress` did not exist.
+- PASS after implementation: polling, async media provider, and job IPC fanout tests passed, 3 test files and 10 tests.
+
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run build
+bun run ci
+```
+
+Result:
+
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: full test suite completed with 32 test files and 92 tests passing.
+- PASS: desktop/shared build completed with exit code 0.
+- PASS: full CI completed with lint, typecheck, tests, build, and repository verification all passing.
