@@ -192,7 +192,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: synchronous response has no Plan; completion event allows plan fetch.
   - Covers: R5.
 
-- [ ] 32. Implement applyPlan and PlanRunner.
+- [x] 32. Implement applyPlan and PlanRunner.
   - Files: `desktop/src/renderer/src/canvas/lib/apply-plan.ts`, `plan-runner.ts`.
   - Include: revalidation, layered layout, one undo snapshot, serial runSteps, failure short-circuit.
   - Verify: unit tests for legal/illegal Plan, three-step serial run, step two failure.

@@ -1177,3 +1177,43 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 41 test files / 123 tests, build, and repository verification all passing.
+
+### M4-32 applyPlan And PlanRunner
+
+Scope:
+
+- Read `global/design/DESIGN.md` before renderer work and used `hjwall/pc-client/src/modules/workflow-canvas/lib/plan-applier.ts` plus `plan-runner.ts` as conceptual references.
+- Added `desktop/src/renderer/src/canvas/lib/apply-plan.ts` to apply CanvasPlan nodes/edges through the renderer store as a single undoable snapshot.
+- applyPlan locally revalidates node types, edge types, shared connection matrix rules, image roles, and run action whitelist before mapping refs to canvas node IDs.
+- Added `desktop/src/renderer/src/canvas/lib/plan-runner.ts` as a pure serial runSteps state machine with failure short-circuit.
+
+Verification:
+
+```bash
+bun x vitest run tests/apply-plan-runner.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/renderer/src/canvas/lib/apply-plan.ts` did not exist.
+- PASS after implementation: applyPlan and PlanRunner tests passed, 1 test file and 4 tests.
+
+```bash
+bun x vitest run tests/apply-plan-runner.test.ts tests/canvas-store.test.ts tests/connection-matrix.test.ts tests/sanitize-plan.test.ts
+bun x eslint . --max-warnings=0
+bun x tsc --noEmit --pretty false
+```
+
+Result:
+
+- PASS: renderer applyPlan/PlanRunner and canvas contract regression tests passed, 4 test files and 16 tests.
+- PASS: lint completed with exit code 0.
+- PASS: TypeScript strict compile completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 42 test files / 127 tests, build, and repository verification all passing.
