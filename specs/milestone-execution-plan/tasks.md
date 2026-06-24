@@ -31,18 +31,18 @@
   - Verify: `bun run dev` opens BrowserWindow; `bun run build` compiles.
   - Covers: R2.
 
-- [ ] 6. Enforce Electron renderer security.
+- [x] 6. Enforce Electron renderer security.
   - BrowserWindow: `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`.
   - Preload: typed `contextBridge.exposeInMainWorld` APIs only.
   - Verify: static test checks BrowserWindow config and preload has no raw `ipcRenderer` exposure.
   - Covers: R2, INV-5.
 
-- [ ] 7. Implement DB schema and migration baseline.
+- [x] 7. Implement DB schema and migration baseline.
   - Tables: jobs, assets, asset_folders, asset_references, workflow/project/version, chat_message, gateways, tools, agents, skills, knowledge, context/audit tables.
   - Verify: migration runs against local SQLite test DB.
   - Covers: R2.
 
-- [ ] 8. Implement repository boundaries.
+- [x] 8. Implement repository boundaries.
   - Files: `desktop/src/main/db/repositories/job.repo.ts`, `asset.repo.ts`, `workflow.repo.ts`, `chat-message.repo.ts`, plus gateway/tool/agent/skill/knowledge repos as stubs if needed.
   - Verify: service/IPC layers do not contain raw SQL/Drizzle queries.
   - Covers: R2.

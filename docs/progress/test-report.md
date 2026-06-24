@@ -187,3 +187,92 @@ bun run ci
 Result:
 
 - PASS: lint, typecheck, 7 test files / 13 tests, desktop build, shared build, and repository hygiene completed with exit code 0.
+
+### M1-6 Electron Renderer Security
+
+Scope:
+
+- Added static security tests for BrowserWindow isolation defaults.
+- Enforced typed preload wrapper usage through `invokeMain`.
+- Added renderer import scan to prevent direct Electron/Node imports or raw `ipcRenderer` use.
+
+Verification:
+
+```bash
+bunx vitest run tests/electron-security.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because preload did not use the typed `invokeMain` wrapper.
+- PASS after implementation: `tests/electron-security.test.ts` passed, 3 tests.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: lint, typecheck, 8 test files / 16 tests, desktop build, shared build, and repository hygiene completed with exit code 0.
+
+### M1-7 DB Schema And Migration Baseline
+
+Scope:
+
+- Added Drizzle SQLite schema declarations for jobs, assets, asset folders,
+  asset references, workflows, workflow versions, chat messages, gateways,
+  tools, tool audit, agents, agent runs, skills, skill invocations, knowledge
+  documents, knowledge chunks, and context packs.
+- Added `0001_initial_core_platform.sql`.
+- Added an app-controlled migration runner that records applied migrations in
+  `__comiccanvas_migrations`.
+- Added `better-sqlite3`, `drizzle-orm`, `drizzle-kit`, and type dependencies to
+  the `desktop` workspace.
+
+Verification:
+
+```bash
+bunx vitest run tests/db-schema.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `better-sqlite3` and DB modules were missing.
+- PASS after implementation: `tests/db-schema.test.ts` passed, 2 tests.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: lint, typecheck, 9 test files / 18 tests, desktop build, shared build, and repository hygiene completed with exit code 0.
+
+### M1-8 Repository Boundaries
+
+Scope:
+
+- Added repository modules for jobs, assets, workflows, chat messages, gateways,
+  tools, agents, skills, and knowledge records under `desktop/src/main/db/repositories/`.
+- Added JSON serialization helpers for repository-owned persisted JSON fields.
+- Added a static boundary test to keep raw Drizzle and SQL access inside DB modules.
+- Added a migration-backed write/read test through repository APIs.
+
+Verification:
+
+```bash
+bunx vitest run tests/repository-boundaries.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because repository files and repository APIs were missing.
+- PASS after implementation: `tests/repository-boundaries.test.ts` passed, 3 tests.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: lint, typecheck, 10 test files / 21 tests, desktop build, shared build, and repository hygiene completed with exit code 0.
