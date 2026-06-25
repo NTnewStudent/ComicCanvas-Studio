@@ -1432,3 +1432,41 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 49 test files / 150 tests, desktop/shared build, and repository verification all passing.
+
+### M5-38 @mention Agent Selector
+
+Scope:
+
+- Read `global/design/DESIGN.md` baseline already enforced for renderer work and referenced `hjwall/pc-client/src/modules/workflow-canvas/components/MentionTextarea.tsx`, `CommandPalette.tsx`, `CanvasChatBox.tsx`, and `BottomInputPanel.tsx` for mention, keyboard, and dense composer patterns.
+- Added `desktop/src/renderer/src/chat/useMentionTrigger.ts` for trailing `@query` detection around the textarea caret.
+- Added `desktop/src/renderer/src/chat/AgentMentionPopover.tsx` with Tailwind + `cn` listbox rendering, active item state, mouse hover, click selection, and accessible option labels.
+- Updated `ChatPanel.tsx` to load `agent.list`, default to the built-in orchestrator, open the popover while typing `@`, support ArrowUp/ArrowDown/Enter/Escape, show the selected agent chip, strip the visible mention prefix, and route `canvas.chatSend.agentId` to the selected agent.
+
+Verification:
+
+```bash
+bun x vitest run tests/chat-ui.test.tsx --reporter=dot
+```
+
+Result:
+
+- RED before implementation: the new routing test failed because no `Agent mention selector` listbox existed.
+- PASS after implementation: Chat UI tests passed, 1 test file and 6 tests.
+
+```bash
+bun run typecheck
+bun run lint
+```
+
+Result:
+
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 49 test files / 151 tests, desktop/shared build, and repository verification all passing.

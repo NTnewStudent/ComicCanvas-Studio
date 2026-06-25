@@ -230,7 +230,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: form validation and IPC tests.
   - Covers: R6.
 
-- [ ] 38. Implement @mention Agent selector.
+- [x] 38. Implement @mention Agent selector.
   - Files: `AgentMentionPopover.tsx`, `useMentionTrigger`.
   - Include: keyboard navigation, insert mention, send `agentId`, route to selected agent.
   - Verify: component and routing integration tests.

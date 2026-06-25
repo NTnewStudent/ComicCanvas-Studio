@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatPanel, type ChatPanelApi } from '../desktop/src/renderer/src/chat/ChatPanel'
 import { PlanCard } from '../desktop/src/renderer/src/chat/PlanCard'
+import type { AgentDefinition } from '../shared/agents'
 import type { CanvasPlan } from '../shared/plan'
 
 const samplePlan: CanvasPlan = {
@@ -32,10 +33,43 @@ const samplePlan: CanvasPlan = {
   dropped: ['edge:bad->missing:missing_node']
 }
 
+const orchestratorAgent: AgentDefinition = {
+  id: 'orchestrator',
+  source: 'builtin',
+  name: 'Orchestrator',
+  description: 'Turns natural language into declarative CanvasPlan JSON.',
+  instructions: 'Analyze the user request and produce safe ComicCanvas plans.',
+  allowedTools: '*',
+  allowedSkills: '*',
+  gatewayPolicy: { allowedChannels: ['text', 'image', 'video'] },
+  contextPolicy: {
+    includeCanvasGraph: true,
+    includeSelectedAssets: true,
+    includeRecentMessages: true,
+    includeKnowledge: false,
+    maxContextTokens: 8000
+  },
+  permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'provider.spend'], requireAskForDestructive: true },
+  maxTurns: 8,
+  effort: 'high',
+  enabled: true
+}
+
+const canvasAgent: AgentDefinition = {
+  ...orchestratorAgent,
+  id: 'canvas',
+  name: 'Canvas',
+  description: 'Handles canvas nodes, edges, and graph edits.',
+  gatewayPolicy: { allowedChannels: ['text'] },
+  permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write'], requireAskForDestructive: true },
+  maxTurns: 6
+}
+
 function createApi(overrides: Partial<ChatPanelApi> = {}): ChatPanelApi {
   return {
     sendCanvasChat: vi.fn().mockResolvedValue({ jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' }),
     getCanvasPlan: vi.fn().mockResolvedValue(samplePlan),
+    listAgents: vi.fn().mockResolvedValue([orchestratorAgent, canvasAgent]),
     onCanvasPlanReady: vi.fn().mockImplementation((handler: (event: { messageId: string; planId: string }) => void) => {
       setTimeout(() => handler({ messageId: 'message-1', planId: 'plan-1' }), 0)
       return vi.fn()
@@ -140,5 +174,35 @@ describe('M4 Chat UI', () => {
     expect(tasks).toContain('BottomInputPanel.tsx')
     expect(tasks).toContain('MentionTextarea.tsx')
     expect(tasks).toContain('CommandPalette.tsx')
+  })
+
+  it('opens the @mention agent selector, selects an agent with keyboard navigation, and routes chat to that agent', async () => {
+    const api = createApi()
+
+    render(<ChatPanel api={api} onApplyPlan={vi.fn()} />)
+
+    const textbox = screen.getByRole('textbox', { name: 'Canvas agent message' })
+    fireEvent.change(textbox, { target: { value: '@' } })
+
+    expect(await screen.findByRole('listbox', { name: 'Agent mention selector' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Orchestrator/ })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(textbox, { key: 'ArrowDown' })
+    expect(screen.getByRole('option', { name: /Canvas/ })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+
+    await waitFor(() => expect(screen.queryByRole('listbox', { name: 'Agent mention selector' })).not.toBeInTheDocument())
+    expect(screen.getByText('@Canvas')).toBeInTheDocument()
+
+    fireEvent.change(textbox, { target: { value: '@Canvas Generate a three-panel comic beat' } })
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+
+    await waitFor(() =>
+      expect(api.sendCanvasChat).toHaveBeenCalledWith({
+        message: 'Generate a three-panel comic beat',
+        agentId: 'canvas'
+      })
+    )
   })
 })

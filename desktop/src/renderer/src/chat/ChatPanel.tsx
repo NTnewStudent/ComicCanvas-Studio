@@ -4,16 +4,24 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { Bot, Loader2, Send } from 'lucide-react'
+import { AtSign, Bot, Loader2, Send } from 'lucide-react'
 
+import type { AgentDefinition } from '../../../../../shared/agents'
 import type { IpcEventMap, IpcRequestMap, IpcResponseMap } from '../../../../../shared/ipc'
 import type { CanvasPlan } from '../../../../../shared/plan'
 import { cn } from '../lib/cn'
+import { AgentMentionPopover } from './AgentMentionPopover'
 import { PlanCard, type ApplyPlanOptions } from './PlanCard'
+import { useMentionTrigger } from './useMentionTrigger'
 
 export interface ChatPanelApi {
+  /** @see docs/api-contracts/canvas-plan.md */
   sendCanvasChat: (input: IpcRequestMap['canvas.chatSend']) => Promise<IpcResponseMap['canvas.chatSend']>
+  /** @see docs/api-contracts/canvas-plan.md */
   getCanvasPlan: (input: IpcRequestMap['canvas.chatGetPlan']) => Promise<IpcResponseMap['canvas.chatGetPlan']>
+  /** @see docs/api-contracts/agents.md */
+  listAgents: () => Promise<IpcResponseMap['agent.list']>
+  /** @see docs/api-contracts/canvas-plan.md */
   onCanvasPlanReady: (handler: (event: IpcEventMap['canvas.planReady']) => void) => () => void
 }
 
@@ -28,6 +36,33 @@ interface ChatMessage {
   content: string
 }
 
+const DEFAULT_AGENT_ID = 'orchestrator'
+
+/**
+ * Finds the first enabled orchestrator-compatible agent.
+ * @param agents - Agent definitions returned by the registry.
+ * @returns Default agent or null when the registry is unavailable.
+ */
+function findDefaultAgent(agents: AgentDefinition[]): AgentDefinition | null {
+  return agents.find((agent) => agent.id === DEFAULT_AGENT_ID && agent.enabled) ?? agents.find((agent) => agent.enabled) ?? null
+}
+
+/**
+ * Removes a leading selected-agent mention from the message body before sending.
+ * @param message - Trimmed composer message.
+ * @param agent - Selected agent used for routing.
+ * @returns Message without the visible routing mention prefix.
+ */
+function stripSelectedAgentMention(message: string, agent: AgentDefinition | null): string {
+  if (!agent) {
+    return message
+  }
+
+  const escapedName = agent.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const escapedId = agent.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return message.replace(new RegExp(`^@(?:${escapedName}|${escapedId})\\s+`, 'i'), '').trim()
+}
+
 /**
  * Renders the canvas agent chat composer and async Plan preview flow.
  * @param props - Optional preload API override and Plan apply callback.
@@ -37,17 +72,68 @@ interface ChatMessage {
  */
 export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelProps): JSX.Element {
   const [input, setInput] = useState('')
+  const [caretIndex, setCaretIndex] = useState(0)
+  const [agents, setAgents] = useState<AgentDefinition[]>([])
+  const [selectedAgent, setSelectedAgent] = useState<AgentDefinition | null>(null)
+  const [activeAgentIndex, setActiveAgentIndex] = useState(0)
+  const [dismissedMentionValue, setDismissedMentionValue] = useState<string | null>(null)
   const [autoExecute, setAutoExecute] = useState(false)
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [plan, setPlan] = useState<CanvasPlan | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const pendingMessageIdRef = useRef<string | null>(null)
-  const canSend = input.trim().length > 0 && !busy
+  const mentionTrigger = useMentionTrigger(input, caretIndex)
+  const filteredAgents = useMemo(() => {
+    const query = mentionTrigger?.query.toLowerCase() ?? ''
+    return agents.filter((agent) => {
+      if (!agent.enabled) {
+        return false
+      }
+
+      if (!query) {
+        return true
+      }
+
+      return agent.name.toLowerCase().includes(query) || agent.id.toLowerCase().includes(query) || agent.description.toLowerCase().includes(query)
+    })
+  }, [agents, mentionTrigger])
+  const mentionOpen = mentionTrigger !== null && dismissedMentionValue !== input && filteredAgents.length > 0
+  const activeAgent = filteredAgents[Math.min(activeAgentIndex, Math.max(filteredAgents.length - 1, 0))]
+  const outgoingMessage = stripSelectedAgentMention(input.trim(), selectedAgent)
+  const canSend = outgoingMessage.length > 0 && !busy
 
   useEffect(() => {
     pendingMessageIdRef.current = pendingMessageId
   }, [pendingMessageId])
+
+  useEffect(() => {
+    let isMounted = true
+
+    api.listAgents()
+      .then((items) => {
+        if (!isMounted) {
+          return
+        }
+
+        setAgents(items)
+        setSelectedAgent(findDefaultAgent(items))
+      })
+      .catch(() => {
+        if (isMounted) {
+          // Keep chat usable with the built-in default when settings cannot be loaded.
+          setSelectedAgent(null)
+        }
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [api])
+
+  useEffect(() => {
+    setActiveAgentIndex(0)
+  }, [mentionTrigger?.query])
 
   useEffect(() => {
     return api.onCanvasPlanReady((event) => {
@@ -69,6 +155,7 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
           ])
         })
         .catch(() => {
+          // The queued chat can outlive its result fetch, so surface a recoverable assistant message.
           setMessages((items) => [...items, { id: `assistant-error-${event.planId}`, role: 'assistant', content: 'Plan fetch failed.' }])
         })
         .finally(() => {
@@ -93,8 +180,21 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
     return 'Ready'
   }, [busy, pendingMessageId, plan])
 
+  function selectAgent(agent: AgentDefinition): void {
+    if (!mentionTrigger) {
+      setSelectedAgent(agent)
+      return
+    }
+
+    const nextInput = `${input.slice(0, mentionTrigger.start)}@${agent.name} ${input.slice(mentionTrigger.end)}`
+    setSelectedAgent(agent)
+    setInput(nextInput)
+    setCaretIndex(nextInput.length)
+    setDismissedMentionValue(nextInput)
+  }
+
   function sendMessage(): void {
-    const message = input.trim()
+    const message = stripSelectedAgentMention(input.trim(), selectedAgent)
 
     if (!message || busy) {
       return
@@ -104,13 +204,15 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
     setPlan(null)
     setMessages((items) => [...items, { id: `user-${Date.now()}`, role: 'user', content: message }])
 
-    api.sendCanvasChat({ message, agentId: 'orchestrator' })
+    api.sendCanvasChat({ message, agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID })
       .then((ticket) => {
         setPendingMessageId(ticket.messageId)
         setMessages((items) => [...items, { id: `assistant-${ticket.jobId}`, role: 'assistant', content: `Plan queued: ${ticket.jobId}` }])
         setInput('')
+        setCaretIndex(0)
       })
       .catch(() => {
+        // Chat send errors are user-recoverable, so keep the typed failure inside conversation history.
         setMessages((items) => [...items, { id: `assistant-error-${Date.now()}`, role: 'assistant', content: 'Plan request failed.' }])
       })
       .finally(() => {
@@ -119,6 +221,32 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (mentionOpen) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setActiveAgentIndex((index) => Math.min(index + 1, filteredAgents.length - 1))
+        return
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setActiveAgentIndex((index) => Math.max(index - 1, 0))
+        return
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDismissedMentionValue(input)
+        return
+      }
+
+      if (event.key === 'Enter' && activeAgent) {
+        event.preventDefault()
+        selectAgent(activeAgent)
+        return
+      }
+    }
+
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       sendMessage()
@@ -169,15 +297,38 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
       </div>
 
       <div className="mt-4 rounded-lg border border-border-input bg-bg-input p-3">
-        <textarea
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={handleKeyDown}
-          aria-label="Canvas agent message"
-          rows={3}
-          placeholder="描述你要生成的漫剧画布节点"
-          className="min-h-[88px] w-full resize-none bg-transparent text-[14px] leading-relaxed text-text-base outline-none placeholder:text-text-muted"
-        />
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-pill border border-border-input bg-bg-card px-2.5 py-1 text-[12px] font-medium text-text-secondary">
+            <AtSign className="h-3 w-3 text-brand" aria-hidden="true" />
+            {selectedAgent ? selectedAgent.name : 'Orchestrator'}
+          </span>
+        </div>
+        <div className="relative">
+          {mentionOpen && (
+            <AgentMentionPopover
+              agents={filteredAgents}
+              activeIndex={activeAgentIndex}
+              onActiveIndexChange={setActiveAgentIndex}
+              onSelect={selectAgent}
+            />
+          )}
+          <textarea
+            value={input}
+            onChange={(event) => {
+              setInput(event.target.value)
+              setCaretIndex(event.target.selectionStart)
+              setDismissedMentionValue(null)
+            }}
+            onSelect={(event) => setCaretIndex(event.currentTarget.selectionStart)}
+            onKeyDown={handleKeyDown}
+            aria-controls={mentionOpen ? 'agent-mention-selector' : undefined}
+            aria-expanded={mentionOpen}
+            aria-label="Canvas agent message"
+            rows={3}
+            placeholder="描述你要生成的漫剧画布节点"
+            className="min-h-[88px] w-full resize-none bg-transparent text-[14px] leading-relaxed text-text-base outline-none placeholder:text-text-muted"
+          />
+        </div>
         <div className="mt-3 flex items-center justify-between gap-3">
           <p className="m-0 text-[12px] text-text-muted">Enter to send. Shift+Enter for a new line.</p>
           <button
