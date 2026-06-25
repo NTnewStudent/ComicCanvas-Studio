@@ -42,12 +42,21 @@ import {
   FileText,
   ImagePlus,
   Clapperboard,
+  Film,
   Save,
   Check,
   Loader2,
+  Plus,
+  X,
+  Folder,
+  MessageSquare,
+  Moon,
+  Sun,
   type LucideIcon,
 } from 'lucide-react'
 import { useStore } from 'zustand'
+
+import { useThemeStore } from '../stores/useThemeStore'
 
 import {
   canvasStore,
@@ -242,6 +251,31 @@ const CONTEXT_MENU_NODE_OPTIONS: {
   { type: 'videoConfigV2', label: '生视频 V2', icon: Clapperboard },
 ]
 
+/* ─── Quick tools（左侧直接添加按钮） ─── */
+
+const QUICK_TOOLS: { type: NodeType; label: string; icon: LucideIcon }[] = [
+  { type: 'text', label: '文本', icon: Type },
+  { type: 'image', label: '图片', icon: ImageIcon },
+  { type: 'imageConfigV2', label: '生图 V2', icon: ImagePlus },
+  { type: 'video', label: '视频', icon: Video },
+  { type: 'videoConfigV2', label: '生视频 V2', icon: Film },
+]
+
+/* ─── Extra node types（展开菜单中分类列表） ─── */
+
+const EXTRA_NODE_TYPES: {
+  type: NodeType
+  label: string
+  icon: LucideIcon
+  category: string
+}[] = [
+  { type: 'text', label: '文本节点', icon: Type, category: '基础' },
+  { type: 'image', label: '图片节点', icon: ImageIcon, category: '基础' },
+  { type: 'video', label: '视频节点', icon: Video, category: '基础' },
+  { type: 'imageConfigV2', label: '生图 V2', icon: ImagePlus, category: 'AI 生成' },
+  { type: 'videoConfigV2', label: '生视频 V2', icon: Film, category: 'AI 生成' },
+]
+
 /* ─── Default workflow ID ─── */
 
 const DEFAULT_WORKFLOW_ID = 'default'
@@ -256,6 +290,13 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 function CanvasPageInner(): JSX.Element {
   /* ── ReactFlow hooks ── */
   const { screenToFlowPosition } = useReactFlow()
+
+  /* ── Toolbar state ── */
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+  const [showAssetPanel, setShowAssetPanel] = useState(false)
+  const [showChatBox, setShowChatBox] = useState(false)
+  const themePreference = useThemeStore((s) => s.preference)
+  const setThemePreference = useThemeStore((s) => s.setPreference)
 
   /* ── Context menu state ── */
   const [contextMenu, setContextMenu] = useState<{
@@ -837,54 +878,103 @@ function CanvasPageInner(): JSX.Element {
           </>
         )}
 
-        {/* ── 左侧浮动添加节点工具栏 ── */}
-        <aside className="absolute left-4 top-1/2 flex -translate-y-1/2 flex-col gap-2">
+        {/* ── 左侧浮动工具栏 ── */}
+        <aside className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border border-border-primary bg-bg-panel p-1 shadow-card">
+          {/* Plus 展开按钮 */}
           <button
             type="button"
-            onClick={() => handleAddNode('text')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-secondary bg-bg-card text-text-secondary shadow-card transition hover:border-border-primary hover:text-text-base hover:shadow-active"
-            aria-label="添加文本节点"
-            title="添加文本"
+            onClick={() => setIsAddMenuOpen((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${isAddMenuOpen ? 'bg-brand text-bg-base' : 'text-text-secondary hover:bg-bg-hover hover:text-text-base'}`}
+            title={isAddMenuOpen ? '收起' : '添加节点'}
           >
-            <Type className="h-4 w-4" />
+            {isAddMenuOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           </button>
+
+          {/* 分隔线 */}
+          <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
+
+          {/* Quick tools 直接添加 */}
+          {QUICK_TOOLS.map((tool) => (
+            <button
+              key={tool.type}
+              type="button"
+              onClick={() => { handleAddNode(tool.type); setIsAddMenuOpen(false) }}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base"
+              title={`添加${tool.label}`}
+            >
+              <tool.icon className="h-4 w-4" />
+            </button>
+          ))}
+
+          {/* 分隔线 */}
+          <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
+
+          {/* 保存 */}
           <button
             type="button"
-            onClick={() => handleAddNode('image')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-secondary bg-bg-card text-text-secondary shadow-card transition hover:border-border-primary hover:text-text-base hover:shadow-active"
-            aria-label="添加图片节点"
-            title="添加图片"
+            onClick={handleSave}
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-bg-hover ${saveStatus === 'saving' ? 'text-brand' : saveStatus === 'saved' ? 'text-green-400' : 'text-text-secondary hover:text-text-base'}`}
+            title={saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '已保存' : '保存 (Ctrl+S)'}
           >
-            <ImageIcon className="h-4 w-4" />
+            {saveStatus === 'saving' ? <Loader2 className="h-4 w-4 animate-spin" /> : saveStatus === 'saved' ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
           </button>
+
+          {/* 资产库 */}
           <button
             type="button"
-            onClick={() => handleAddNode('imageConfigV2')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-secondary bg-bg-card text-text-secondary shadow-card transition hover:border-border-primary hover:text-text-base hover:shadow-active"
-            aria-label="添加生图 V2 节点"
-            title="生图 V2"
+            onClick={() => setShowAssetPanel((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-bg-hover ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="资产库"
           >
-            <ImageIcon className="h-4 w-4" />
+            <Folder className="h-4 w-4" />
           </button>
+
+          {/* 对话 */}
           <button
             type="button"
-            onClick={() => handleAddNode('video')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-secondary bg-bg-card text-text-secondary shadow-card transition hover:border-border-primary hover:text-text-base hover:shadow-active"
-            aria-label="添加视频节点"
-            title="添加视频"
+            onClick={() => setShowChatBox((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-bg-hover ${showChatBox ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="对话"
           >
-            <Video className="h-4 w-4" />
+            <MessageSquare className="h-4 w-4" />
           </button>
+
+          {/* 主题切换 */}
           <button
             type="button"
-            onClick={() => handleAddNode('videoConfigV2')}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-secondary bg-bg-card text-text-secondary shadow-card transition hover:border-border-primary hover:text-text-base hover:shadow-active"
-            aria-label="添加生视频 V2 节点"
-            title="生视频 V2"
+            onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base"
+            title={themePreference === 'dark' ? '切换亮色' : '切换暗色'}
           >
-            <Video className="h-4 w-4" />
+            {themePreference === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
         </aside>
+
+        {/* ── 展开式节点菜单 ── */}
+        {isAddMenuOpen && (
+          <div className="absolute left-[72px] top-1/2 z-30 w-[220px] -translate-y-1/2 rounded-xl border border-border-primary bg-bg-panel p-3 shadow-pop">
+            {Array.from(new Set(EXTRA_NODE_TYPES.map((n) => n.category))).map((cat) => (
+              <div key={cat}>
+                <p className="px-2 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">{cat}</p>
+                <div className="flex flex-col gap-0.5">
+                  {EXTRA_NODE_TYPES.filter((n) => n.category === cat).map((opt) => (
+                    <button
+                      key={opt.type}
+                      type="button"
+                      onClick={() => { handleAddNode(opt.type); setIsAddMenuOpen(false) }}
+                      className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-bg-hover"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-hover text-text-secondary transition-colors group-hover:bg-brand/10 group-hover:text-brand">
+                        <opt.icon className="h-4 w-4" />
+                      </span>
+                      <span className="text-[13px] font-medium text-text-base">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
