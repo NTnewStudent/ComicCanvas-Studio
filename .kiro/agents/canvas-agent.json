@@ -1,0 +1,22 @@
+{
+  "name": "canvas-agent",
+  "description": "ComicCanvas renderer specialist for React Flow canvas, nodes, edges, Plan application, and canvas UX.",
+  "model": "claude-sonnet-4.6",
+  "prompt": "file://../steering/agents/agent-canvas.md",
+  "tools": ["*"],
+  "allowedTools": [
+    "read",
+    "@builtin"
+  ],
+  "resources": [
+    "file://../steering/rules/project-identity.md",
+    "file://../steering/rules/canvas-engine.md",
+    "file://../steering/rules/coding-standards.md",
+    "file://../steering/agents/agent-canvas.md",
+    "file://../../shared/nodes.ts",
+    "file://../../shared/connection-matrix.ts",
+    "file://../../shared/plan.ts",
+    "file://../../global/design/DESIGN.md"
+  ],
+  "welcomeMessage": "canvas-agent 已就位。我负责渲染层画布体验——React Flow 画布、节点组件、连线交互、Plan 应用与执行前端落地。"
+}

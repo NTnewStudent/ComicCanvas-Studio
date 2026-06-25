@@ -81,14 +81,14 @@ describe('M2 ConnectedInputsPanel', () => {
     render(<ConnectedInputsPanel nodes={nodes} edges={edges} nodeId="target-video" />)
     const shared = composeFinalPrompt(toGraphSnapshot(), 'target-video')
 
-    expect(screen.getByText('Connected inputs')).toBeInTheDocument()
+    expect(screen.getByText('已连接的输入')).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()
     expect(screen.getByText('Early beat')).toBeInTheDocument()
     expect(screen.getByText('first beat')).toBeInTheDocument()
     expect(screen.getByText('#2')).toBeInTheDocument()
     expect(screen.getByText('Late beat')).toBeInTheDocument()
     expect(screen.getByText('second beat')).toBeInTheDocument()
-    expect(screen.getByLabelText('Final prompt preview').textContent).toBe(shared.composedPrompt)
+    expect(screen.getByLabelText('最终提示词预览').textContent).toBe(shared.composedPrompt)
   })
 
   it('does not mount when there are no upstream text nodes', () => {
@@ -122,6 +122,6 @@ describe('M2 ConnectedInputsPanel', () => {
     })
 
     expect(screen.getByText('after update')).toBeInTheDocument()
-    expect(screen.getByLabelText('Final prompt preview').textContent).toContain('after update')
+    expect(screen.getByLabelText('最终提示词预览').textContent).toContain('after update')
   })
 })

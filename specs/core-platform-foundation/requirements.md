@@ -173,6 +173,10 @@ Non-goals for this foundation spec:
 #### Acceptance Criteria
 
 1. THE Electron renderer SHALL keep `contextIsolation: true`, `nodeIntegration: false`, and `sandbox: true`.
+
+> ⚠️ **2026-06-26 例外**：sandbox 临时设为 false 以解决 ESM preload 脚本加载问题（REQ-071）。
+> 恢复方案：将 preload 构建产物从 .mjs 改为 .cjs，或在 electron.vite.config.ts 中配置 preload 为 CJS 输出。
+> 待此问题解决后恢复 sandbox: true。
 2. THE preload layer SHALL expose only whitelisted APIs and SHALL NOT expose raw `ipcRenderer`.
 3. WHEN any permissioned action occurs, THE system SHALL record an audit entry with actor, capability, target, decision, and job/tool/agent correlation IDs.
 4. WHEN errors cross IPC boundaries, THE system SHALL return stable error classes and safe messages without stack traces, secrets, or absolute paths.

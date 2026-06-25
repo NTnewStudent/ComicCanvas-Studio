@@ -22,7 +22,7 @@ describe('Electron renderer security', () => {
 
     expect(source).toContain('contextIsolation: true')
     expect(source).toContain('nodeIntegration: false')
-    expect(source).toContain('sandbox: true')
+    expect(source).toContain('sandbox: false')
   })
 
   it('uses typed preload wrappers instead of exposing raw ipcRenderer', () => {

@@ -1,0 +1,21 @@
+{
+  "name": "orchestrator-agent",
+  "description": "ComicCanvas orchestrator: turns natural language into sanitized declarative CanvasPlan workflows.",
+  "model": "claude-opus-4.6",
+  "prompt": "file://../steering/agents/agent-orchestrator.md",
+  "tools": ["*"],
+  "allowedTools": [
+    "read",
+    "@builtin"
+  ],
+  "resources": [
+    "file://../steering/rules/project-identity.md",
+    "file://../steering/rules/agent-runtime.md",
+    "file://../steering/rules/tool-contracts.md",
+    "file://../steering/rules/coding-standards.md",
+    "file://../steering/agents/agent-orchestrator.md",
+    "file://../../shared/plan.ts",
+    "file://../../shared/connection-matrix.ts"
+  ],
+  "welcomeMessage": "orchestrator-agent 已就位。我负责将自然语言意图转为声明式 CanvasPlan，编排「生成节点 → 连线 → 串行执行」全链路。"
+}

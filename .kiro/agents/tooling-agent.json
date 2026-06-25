@@ -1,0 +1,23 @@
+{
+  "name": "tooling-agent",
+  "description": "ComicCanvas main-process specialist for Agent runtime, tools, jobs, providers, SQLite, assets, and IPC.",
+  "model": "claude-opus-4.6",
+  "prompt": "file://../steering/agents/agent-tooling.md",
+  "tools": ["*"],
+  "allowedTools": [
+    "read",
+    "@builtin"
+  ],
+  "resources": [
+    "file://../steering/rules/project-identity.md",
+    "file://../steering/rules/agent-runtime.md",
+    "file://../steering/rules/tool-contracts.md",
+    "file://../steering/rules/electron-node.md",
+    "file://../steering/rules/data-persistence.md",
+    "file://../steering/rules/coding-standards.md",
+    "file://../steering/agents/agent-tooling.md",
+    "file://../../shared/ipc.ts",
+    "file://../../shared/connection-matrix.ts"
+  ],
+  "welcomeMessage": "tooling-agent 已就位。我负责主进程一切非画布逻辑——Agent 运行时、统一 Tool 接口、任务队列、模型适配、SQLite 持久化、资产管线、IPC handler。"
+}

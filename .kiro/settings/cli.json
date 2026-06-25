@@ -1,0 +1,54 @@
+{
+  "chat.modelDefaults": {
+    "claude-sonnet-4": {
+      "output_config": {
+        "effort": "high"
+      },
+      "thinking": {
+        "type": "adaptive",
+        "display": "summarized"
+      },
+      "max_tokens": 64000
+    },
+    "claude-sonnet-4.6": {
+      "output_config": {
+        "effort": "high"
+      },
+      "thinking": {
+        "type": "adaptive",
+        "display": "summarized"
+      },
+      "max_tokens": 64000
+    },
+    "claude-opus-4.6": {
+      "output_config": {
+        "effort": "max"
+      },
+      "thinking": {
+        "type": "adaptive",
+        "display": "summarized"
+      },
+      "max_tokens": 64000
+    },
+    "claude-opus-4.7": {
+      "output_config": {
+        "effort": "max"
+      },
+      "thinking": {
+        "type": "adaptive",
+        "display": "summarized"
+      },
+      "max_tokens": 64000
+    },
+    "claude-opus-4.8": {
+      "output_config": {
+        "effort": "max"
+      },
+      "thinking": {
+        "type": "adaptive",
+        "display": "summarized"
+      },
+      "max_tokens": 128000
+    }
+  }
+}

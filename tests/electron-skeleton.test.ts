@@ -33,6 +33,6 @@ describe('M1 Electron skeleton', () => {
 
     expect(mainSource).toContain('contextIsolation: true')
     expect(mainSource).toContain('nodeIntegration: false')
-    expect(mainSource).toContain('sandbox: true')
+    expect(mainSource).toContain('sandbox: false')
   })
 })

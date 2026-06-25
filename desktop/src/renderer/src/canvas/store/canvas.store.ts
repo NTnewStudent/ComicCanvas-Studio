@@ -6,7 +6,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
 import { canConnect } from '../../../../../../shared/connection-matrix'
-import type { CanvasEdgeData, CanvasNodeData, EdgeType, NodeType } from '../../../../../../shared/nodes'
+import type { CanvasEdgeData, CanvasNodeData, EdgeType, NodeStatus, NodeType } from '../../../../../../shared/nodes'
 
 export interface CanvasPosition {
   x: number
@@ -51,15 +51,25 @@ export interface CanvasStoreState extends CanvasSnapshot {
   past: CanvasSnapshot[]
   future: CanvasSnapshot[]
   lastConnectError: { reason: ConnectFailureReason; at: number } | null
+  /** 节点运行状态（运行时数据，不参与 undo/redo） */
+  nodeRunStatus: Map<string, NodeStatus>
   addNode(type: NodeType, position: CanvasPosition, data?: Partial<CanvasNodeData>): string
   deleteNode(id: string): void
   updateNodeData(id: string, data: Partial<CanvasNodeData>): void
   setViewport(viewport: CanvasViewport): void
+  /** Batch-replace nodes (used by debounced persistence from ReactFlow) */
+  setNodes(nodes: CanvasStoreNode[]): void
+  /** Batch-replace edges (used by debounced persistence from ReactFlow) */
+  setEdges(edges: CanvasStoreEdge[]): void
   addEdge(source: string, target: string): ConnectResult
   deleteEdge(id: string): void
   applyChange(snapshot: CanvasSnapshot): void
   undo(): void
   redo(): void
+  /** 设置指定节点的运行状态 */
+  setNodeRunStatus(nodeId: string, status: NodeStatus): void
+  /** 获取指定节点的运行状态（未登记时返回 'idle'） */
+  getNodeRunStatus(nodeId: string): NodeStatus
 }
 
 const maxHistory = 50
@@ -88,9 +98,9 @@ function defaultData(type: NodeType, sequence: number): CanvasNodeData {
     return { label: `Text ${sequence}`, content: '' }
   }
 
-  if (type === 'image') {
+  if (type === 'image' || type === 'imageConfigV2') {
     return {
-      label: `Image ${sequence}`,
+      label: type === 'imageConfigV2' ? `生图 ${sequence}` : `Image ${sequence}`,
       promptOverride: '',
       modelId: 'stub-image',
       orientation: 'landscape',
@@ -100,7 +110,7 @@ function defaultData(type: NodeType, sequence: number): CanvasNodeData {
   }
 
   return {
-    label: `Video ${sequence}`,
+    label: type === 'videoConfigV2' ? `生视频 ${sequence}` : `Video ${sequence}`,
     promptOverride: '',
     modelId: 'stub-video',
     orientation: 'landscape',
@@ -114,7 +124,7 @@ function defaultData(type: NodeType, sequence: number): CanvasNodeData {
 
 function edgeTypeFor(source: NodeType): EdgeType {
   if (source === 'text') return 'promptOrder'
-  if (source === 'image') return 'imageRole'
+  if (source === 'image' || source === 'imageConfigV2') return 'imageRole'
   return 'default'
 }
 
@@ -141,6 +151,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
     past: [],
     future: [],
     lastConnectError: null,
+    nodeRunStatus: new Map<string, NodeStatus>(),
 
     addNode(type, position, data) {
       const id = idFactory()
@@ -179,6 +190,14 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
 
     setViewport(viewport) {
       set({ viewport })
+    },
+
+    setNodes(nodes) {
+      set({ nodes })
+    },
+
+    setEdges(edges) {
+      set({ edges })
     },
 
     addEdge(source, target) {
@@ -261,6 +280,18 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
           future: state.future.slice(1)
         }
       })
+    },
+
+    setNodeRunStatus(nodeId, status) {
+      set((state) => {
+        const next = new Map(state.nodeRunStatus)
+        next.set(nodeId, status)
+        return { nodeRunStatus: next }
+      })
+    },
+
+    getNodeRunStatus(nodeId) {
+      return get().nodeRunStatus.get(nodeId) ?? 'idle'
     }
   }))
 }

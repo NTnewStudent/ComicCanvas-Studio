@@ -1,0 +1,22 @@
+{
+  "name": "pm-agent",
+  "description": "ComicCanvas PM/contracts specialist for requirements, API contracts, progress, and test planning.",
+  "model": "claude-sonnet-4.6",
+  "prompt": "file://../steering/agents/agent-pm.md",
+  "tools": ["*"],
+  "allowedTools": [
+    "read",
+    "write",
+    "@builtin"
+  ],
+  "resources": [
+    "file://../steering/rules/project-identity.md",
+    "file://../steering/rules/coding-standards.md",
+    "file://../steering/agents/agent-pm.md",
+    "file://../steering/skills/skill-pm-req-planner.md",
+    "file://../../docs/api-contracts/**/*.md",
+    "file://../../docs/progress/**/*.md",
+    "file://../../specs/**/*.md"
+  ],
+  "welcomeMessage": "pm-agent 已就位。我负责需求拆解与登记、契约框架起草、进度与测试报告维护、跨 agent 协调。"
+}

@@ -6,7 +6,7 @@
 
 import { Image as ImageIcon, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { NodeResizer } from '@xyflow/react'
-import { useState } from 'react'
+import React, { useState } from 'react'
 
 import type { ImageNodeData, Orientation } from '../../../../../../shared/nodes'
 import { ConnectedInputsPanel } from '../components/ConnectedInputsPanel'
@@ -51,11 +51,11 @@ const orientationLabels: Record<Orientation, string> = {
 }
 
 const statusLabel: Record<ImageNodeData['status'], string> = {
-  idle: 'Idle',
-  pending: 'Pending',
-  running: 'Running',
-  done: 'Done',
-  error: 'Error'
+  idle: '空闲',
+  pending: '等待中',
+  running: '运行中',
+  done: '已完成',
+  error: '错误'
 }
 
 /**
@@ -66,7 +66,7 @@ const statusLabel: Record<ImageNodeData['status'], string> = {
  * @see docs/api-contracts/canvas-plan.md
  * @see docs/api-contracts/assets-files.md
  */
-export function ImageNode({
+function ImageNodeComponent({
   id,
   data,
   selected = false,
@@ -137,7 +137,7 @@ export function ImageNode({
           ) : data.status === 'error' ? (
             <div role="alert" className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-text-secondary">
               <XCircle className="h-7 w-7 text-semantic-negative" />
-              <span className="text-[13px]">Generation failed</span>
+              <span className="text-[13px]">生成失败</span>
             </div>
           ) : (
             <div
@@ -150,7 +150,7 @@ export function ImageNode({
               ) : (
                 <ImageIcon className="h-7 w-7 text-semantic-info opacity-70" />
               )}
-              <span className="text-[13px]">{isGenerating ? 'Generating image' : 'No image yet'}</span>
+              <span className="text-[13px]">{isGenerating ? '图片生成中' : '暂无图片'}</span>
             </div>
           )}
         </div>
@@ -161,19 +161,19 @@ export function ImageNode({
             className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
             onClick={() => onRun?.(id)}
             disabled={isGenerating}
-            aria-label="Generate image"
+            aria-label="生成图片"
           >
             {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Generate image
+            生成图片
           </button>
           <button
             type="button"
             className="inline-flex min-h-8 items-center justify-center rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base transition hover:bg-bg-hover"
             aria-expanded={isExpanded}
-            aria-label="Configure image node"
+            aria-label="配置图片节点"
             onClick={() => setIsExpanded((value) => !value)}
           >
-            Configure
+            配置
           </button>
         </div>
 
@@ -182,18 +182,18 @@ export function ImageNode({
             <ConnectedInputsPanel nodeId={id} />
 
             <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-              Prompt override
+              Prompt 覆盖
               <textarea
-                aria-label="Prompt override"
+                aria-label="Prompt 覆盖"
                 className="min-h-24 resize-none rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] leading-relaxed text-text-base outline-none focus:ring-1 focus:ring-brand"
                 value={data.promptOverride}
                 onChange={(event) => update({ promptOverride: event.target.value })}
-                placeholder="Describe the panel, character, mood, and camera."
+                placeholder="描述画面、角色、情绪和镜头。"
               />
             </label>
 
             <fieldset className="flex flex-col gap-1.5">
-              <legend className="text-[12px] font-medium text-text-muted">Model</legend>
+              <legend className="text-[12px] font-medium text-text-muted">模型</legend>
               <div className="grid grid-cols-2 gap-2">
                 {modelOptions.map((option) => (
                   <button
@@ -213,7 +213,7 @@ export function ImageNode({
             </fieldset>
 
             <fieldset className="flex flex-col gap-1.5">
-              <legend className="text-[12px] font-medium text-text-muted">Orientation</legend>
+              <legend className="text-[12px] font-medium text-text-muted">方向</legend>
               <div className="grid grid-cols-3 gap-2">
                 {(Object.keys(orientationLabels) as Orientation[]).map((orientation) => (
                   <button
@@ -237,3 +237,5 @@ export function ImageNode({
     </article>
   )
 }
+
+export const ImageNode = React.memo(ImageNodeComponent)

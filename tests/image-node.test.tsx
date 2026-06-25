@@ -54,13 +54,13 @@ describe('M2 ImageNode', () => {
   it('renders idle preview and expands prompt, model, and orientation controls', () => {
     const { onChange } = renderImageNode()
 
-    expect(screen.getByRole('button', { name: 'Configure image node' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByText('No image yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '配置图片节点' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('暂无图片')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Configure image node' }))
+    fireEvent.click(screen.getByRole('button', { name: '配置图片节点' }))
 
-    expect(screen.getByRole('button', { name: 'Configure image node' })).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt override' }), {
+    expect(screen.getByRole('button', { name: '配置图片节点' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt 覆盖' }), {
       target: { value: 'wide panel city at dusk' }
     })
     expect(onChange).toHaveBeenLastCalledWith('image-1', { promptOverride: 'wide panel city at dusk' })
@@ -76,13 +76,13 @@ describe('M2 ImageNode', () => {
     renderImageNode({ data: { status: 'pending' } })
 
     expect(screen.getByRole('status', { name: 'Image generation pending' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Generate image' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '生成图片' })).toBeDisabled()
 
     cleanup()
     renderImageNode({ data: { status: 'running' } })
 
     expect(screen.getByRole('status', { name: 'Image generation running' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Generate image' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '生成图片' })).toBeDisabled()
   })
 
   it('renders completed safe asset preview and error recovery state', () => {
@@ -99,13 +99,13 @@ describe('M2 ImageNode', () => {
     cleanup()
     renderImageNode({ data: { status: 'error' } })
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Generation failed')
+    expect(screen.getByRole('alert')).toHaveTextContent('生成失败')
   })
 
   it('invokes runNode through the run callback', () => {
     const { onRun } = renderImageNode()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Generate image' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成图片' }))
 
     expect(onRun).toHaveBeenCalledWith('image-1')
   })

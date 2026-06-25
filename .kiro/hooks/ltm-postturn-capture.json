@@ -1,0 +1,12 @@
+{
+  "name": "LTM Post-Turn Capture",
+  "version": "1.0.0",
+  "description": "Captures file changes into LTM after each agent execution completes.",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "python ltm/bin/ltm.py capture-turn"
+  }
+}

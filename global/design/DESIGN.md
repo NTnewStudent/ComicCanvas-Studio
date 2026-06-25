@@ -1,494 +1,366 @@
-# ComicCanvas Studio UI/UX Design System
+# DESIGN_SELF.md — 工作流画布 UI 设计规范
 
-> Status: project-wide frontend design source of truth.
-> Audience: canvas-agent and every agent that creates or changes renderer UI.
-> Source references: `AURA AI Canvas 设计系统语言规范指南.pdf`, `ai (2).html`, and the historical `hjwall/global/design/DESIGN.md`.
-
-## 1. Visual Theme And Atmosphere
-
-ComicCanvas Studio uses a **quiet luxury multimodal canvas** language: an AIGC comic-drama workspace that feels precise, spatial, and restrained. The product is not a marketing page and not a generic SaaS dashboard. It is a dense creative tool where text, image, and video nodes live on a deep canvas, connect through visible flow lines, and report generation state through refined motion.
-
-The signature is **Obsidian Midnight + Champagne Gold**:
-
-- A near-black spatial canvas (`#06070A`) with fine gold-tinted grid lines.
-- Frosted, high-contrast node cards with thin metallic borders.
-- Champagne gold as the primary interaction signal for active nodes, running jobs, selected edges, focus rings, and premium controls.
-- Calm typography, generous line height for Chinese copy, and compact but readable tool surfaces.
-- Micro-interactions that imply computation: orbiting node borders, flowing edge dashes, and soft state transitions.
-
-The default app theme should be dark. The light theme is supported as **Alabaster Paper**, but it is secondary and must keep the same layout, hierarchy, and motion semantics.
-
-**Core qualities**
-
-- **Quiet luxury**: no loud gradients, no neon cyberpunk wash, no decorative clutter.
-- **Spatial depth**: canvas, grid, cards, connectors, overlays, and side panels each occupy a clear depth layer.
-- **Production tool density**: controls are compact and repeatable, not landing-page scale.
-- **Comic drama orientation**: text -> image -> video is the main workflow; UI copy and node affordances should reinforce that production chain.
-- **Token discipline**: colors, radii, shadows, spacing, and motion curves must come from design tokens or local semantic aliases.
+> 本文档从 `src/styles/design-tokens.css`、`src/modules/workflow-canvas/styles.css`、`tailwind.config.ts` 中抽象而来。
+> 所有改动必须以此文档为准，禁止硬编码颜色值或随意新增 token。
 
 ---
 
-## 2. Color Palette And Roles
+## 一、主题架构概览
 
-### 2.1 Dark Theme: Obsidian Midnight
+画布页面采用**双层主题叠加**机制：
 
-Dark theme is the primary design language.
-
-| Token | Value | Role |
-|------|------|------|
-| `--cc-bg-canvas` | `#06070A` | Infinite canvas base; deepest work surface |
-| `--cc-bg-surface` | `#0D0F14` | App chrome, sidebars, elevated panel base |
-| `--cc-bg-card` | `rgba(13, 15, 20, 0.94)` | Frosted node cards and floating controls |
-| `--cc-bg-input` | `#101116` | Inputs, textareas, selects, recessed controls |
-| `--cc-grid-fine` | `rgba(197, 168, 128, 0.02)` | 20px fine canvas grid |
-| `--cc-grid-coarse` | `rgba(197, 168, 128, 0.07)` | 100px major canvas grid |
-| `--cc-axis-color` | `rgba(197, 168, 128, 0.15)` | Canvas origin axes and absolute guides |
-| `--cc-border-card` | `rgba(197, 168, 128, 0.16)` | Default metallic node/card border |
-| `--cc-border-card-hover` | `rgba(197, 168, 128, 0.52)` | Hovered or targetable card border |
-| `--cc-border-input` | `rgba(197, 168, 128, 0.22)` | Input and select border |
-| `--cc-text-primary` | `#F3F4F6` | Main text |
-| `--cc-text-secondary` | `#9CA3AF` | Descriptions, metadata, inactive labels |
-| `--cc-text-muted` | `#6B7280` | Disabled, counters, secondary timestamps |
-| `--cc-accent-gold` | `#C5A880` | Main highlight, selected edges, running state |
-| `--cc-accent-gold-hover` | `#B5976F` | Hover and pressed gold state |
-| `--cc-shadow-glow` | `rgba(197, 168, 128, 0.03)` | Card ambient glow |
-| `--cc-active-glow` | `rgba(197, 168, 128, 0.24)` | Active node glow |
-| `--cc-line-inactive` | `rgba(197, 168, 128, 0.14)` | Idle connector lines |
-| `--cc-line-active` | `#C5A880` | Running or selected connector lines |
-| `--cc-vignette` | `radial-gradient(circle, transparent 40%, rgba(3, 4, 6, 0.65) 100%)` | Canvas viewport edge depth |
-
-### 2.2 Light Theme: Alabaster Paper
-
-Light theme must feel like printed stone paper with warm metallic guide lines. It is not a plain white SaaS theme.
-
-| Token | Value | Role |
-|------|------|------|
-| `--cc-bg-canvas` | `#F4F4F6` | Warm paper canvas |
-| `--cc-bg-surface` | `#FFFFFF` | App chrome and panels |
-| `--cc-bg-card` | `rgba(255, 255, 255, 0.99)` | Solid paper node cards |
-| `--cc-bg-input` | `#F4F5F7` | Inputs and recessed controls |
-| `--cc-grid-fine` | `rgba(130, 96, 51, 0.04)` | 20px fine canvas grid |
-| `--cc-grid-coarse` | `rgba(130, 96, 51, 0.13)` | 100px major canvas grid |
-| `--cc-axis-color` | `rgba(130, 96, 51, 0.26)` | Canvas origin axes |
-| `--cc-border-card` | `rgba(130, 96, 51, 0.32)` | Warm metallic card border |
-| `--cc-border-card-hover` | `rgba(130, 96, 51, 0.75)` | Hovered or active border |
-| `--cc-border-input` | `rgba(130, 96, 51, 0.22)` | Input and select border |
-| `--cc-text-primary` | `#111827` | Main text |
-| `--cc-text-secondary` | `#374151` | Descriptions and metadata |
-| `--cc-text-muted` | `#5A6A80` | Muted labels and counters |
-| `--cc-accent-gold` | `#826033` | Main highlight and selected state |
-| `--cc-accent-gold-hover` | `#694D26` | Hover and pressed gold state |
-| `--cc-shadow-glow` | `rgba(130, 96, 51, 0.12)` | Paper-card ambient shadow |
-| `--cc-active-glow` | `rgba(130, 96, 51, 0.24)` | Active node glow |
-| `--cc-line-inactive` | `rgba(130, 96, 51, 0.22)` | Idle connector lines |
-| `--cc-line-active` | `#826033` | Running or selected connector lines |
-| `--cc-vignette` | `radial-gradient(circle, transparent 65%, rgba(130, 96, 51, 0.07) 100%)` | Light canvas edge depth |
-
-### 2.3 Semantic Status Colors
-
-Use status colors sparingly and never let them replace the gold interaction language.
-
-| Token | Value | Role |
-|------|------|------|
-| `--cc-success` | `#10B981` | Completed generation, validated plan |
-| `--cc-info` | `#06B6D4` | Informational or image-generation accents |
-| `--cc-warning` | `#F59E0B` | User attention, quota, recoverable issue |
-| `--cc-danger` | `#EF4444` | Failed job, invalid destructive action |
-| `--cc-focus-ring` | `rgba(197, 168, 128, 0.45)` | Keyboard focus and accessible outlines |
-
----
-
-## 3. Engineering Token Contract
-
-The renderer should expose these variables through the global stylesheet before component work begins. Component code should consume semantic tokens, Tailwind aliases, or CSS variables. Avoid hardcoded hex/RGBA values inside React components.
-
-```css
-:root {
-  --cc-bg-canvas: #F4F4F6;
-  --cc-bg-surface: #FFFFFF;
-  --cc-bg-card: rgba(255, 255, 255, 0.99);
-  --cc-bg-input: #F4F5F7;
-  --cc-grid-fine: rgba(130, 96, 51, 0.04);
-  --cc-grid-coarse: rgba(130, 96, 51, 0.13);
-  --cc-axis-color: rgba(130, 96, 51, 0.26);
-  --cc-border-card: rgba(130, 96, 51, 0.32);
-  --cc-border-card-hover: rgba(130, 96, 51, 0.75);
-  --cc-border-input: rgba(130, 96, 51, 0.22);
-  --cc-text-primary: #111827;
-  --cc-text-secondary: #374151;
-  --cc-text-muted: #5A6A80;
-  --cc-accent-gold: #826033;
-  --cc-accent-gold-hover: #694D26;
-  --cc-shadow-glow: rgba(130, 96, 51, 0.12);
-  --cc-active-glow: rgba(130, 96, 51, 0.24);
-  --cc-line-inactive: rgba(130, 96, 51, 0.22);
-  --cc-line-active: #826033;
-  --cc-vignette: radial-gradient(circle, transparent 65%, rgba(130, 96, 51, 0.07) 100%);
-  --cc-bezier-luxury: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.theme-dark {
-  --cc-bg-canvas: #06070A;
-  --cc-bg-surface: #0D0F14;
-  --cc-bg-card: rgba(13, 15, 20, 0.94);
-  --cc-bg-input: #101116;
-  --cc-grid-fine: rgba(197, 168, 128, 0.02);
-  --cc-grid-coarse: rgba(197, 168, 128, 0.07);
-  --cc-axis-color: rgba(197, 168, 128, 0.15);
-  --cc-border-card: rgba(197, 168, 128, 0.16);
-  --cc-border-card-hover: rgba(197, 168, 128, 0.52);
-  --cc-border-input: rgba(197, 168, 128, 0.22);
-  --cc-text-primary: #F3F4F6;
-  --cc-text-secondary: #9CA3AF;
-  --cc-text-muted: #6B7280;
-  --cc-accent-gold: #C5A880;
-  --cc-accent-gold-hover: #B5976F;
-  --cc-shadow-glow: rgba(197, 168, 128, 0.03);
-  --cc-active-glow: rgba(197, 168, 128, 0.24);
-  --cc-line-inactive: rgba(197, 168, 128, 0.14);
-  --cc-line-active: #C5A880;
-  --cc-vignette: radial-gradient(circle, transparent 40%, rgba(3, 4, 6, 0.65) 100%);
-}
+```
+全局基础层          → design-tokens.css (:root / html.light)
+  └── 工作流画布层  → workflow-canvas/styles.css (html.dark .wf-neo / html.light)
 ```
 
-### Radius, Shadow, And Motion Tokens
+| 主题 | 根 class 条件 | 视觉风格 |
+|:---|:---|:---|
+| **夜间（默认）** | `html.dark .wf-neo` | 深蓝黑 + 霓虹青描边，科技感深空 |
+| **日间** | `html.light` | 浅灰底 + 纯白节点卡片，柔光玻璃 |
 
-| Token | Value | Use |
-|------|------|-----|
-| `--cc-radius-xs` | `4px` | Tags, tiny indicators |
-| `--cc-radius-sm` | `7px` | Inputs, compact buttons |
-| `--cc-radius-md` | `8px` | Tool buttons, small panels |
-| `--cc-radius-lg` | `12px` | Selects, compact floating controls |
-| `--cc-radius-xl` | `16px` | Standard node cards |
-| `--cc-radius-pill` | `9999px` | Badges, segmented controls, bottom bars |
-| `--cc-shadow-card` | `0 12px 48px -10px var(--cc-shadow-glow)` | Node card elevation |
-| `--cc-shadow-active` | `0 20px 50px -5px var(--cc-active-glow)` | Selected/running node |
-| `--cc-shadow-pop` | `0 18px 50px rgba(0, 0, 0, 0.45)` | Modals and command panels |
-| `--cc-bezier-luxury` | `cubic-bezier(0.16, 1, 0.3, 1)` | Main transitions |
+> ⚠️ 画布页根节点挂 `wf-mono wf-neo` 两个 class。
+> 使用 `createPortal` 渲染到 `document.body` 的弹窗必须手动加 `dark wf-neo` 才能继承 token。
 
 ---
 
-## 4. Typography Rules
+## 二、夜间模式（wf-neo）完整色板
 
-### Font Family
+### 2.1 背景层级（由深到浅）
 
-- **Primary UI**: `Inter`, `PingFang SC`, `Microsoft YaHei`, `system-ui`, `sans-serif`
-- **Monospace**: `JetBrains Mono`, `Fira Code`, `Menlo`, `Monaco`, `Consolas`, `monospace`
+| Token | Tailwind class | 值 | 用途 |
+|:---|:---|:---|:---|
+| `--color-bg-base` | `bg-bg-base` | `#06090e` | 画布最底层（React Flow 背景） |
+| `--color-bg-topbar` | `bg-bg-topbar` | `#080d13` | 顶部导航栏 |
+| `--color-bg-rail` | `bg-bg-rail` | `#0a1016` | 左侧工具轨道 |
+| `--color-bg-input` | `bg-bg-input` | `#070f17` | 输入框、最深凹陷区域 |
+| `--color-bg-mid` | `bg-bg-mid` | `#0a141b` | 中间层面 |
+| `--color-bg-surface` | `bg-bg-surface` | `#0a1118` | 通用 surface |
+| `--color-bg-card` | `bg-bg-card` | `#0c141c` | 卡片默认 |
+| `--color-bg-panel` | `bg-bg-panel` | `#0d161e` | 面板、弹出层（**Portal 首选**） |
+| `--color-bg-elevated` | `bg-bg-elevated` | `#101b24` | 浮起面板 |
+| `--color-bg-hover` | `bg-bg-hover` | `#102029` | hover 态 |
+| `--color-bg-card-active` | `bg-bg-card-active` | `#13242e` | 卡片选中/激活 |
+| `--color-bg-highlight` | `bg-bg-highlight` | `#14242e` | 高亮 |
+| `--color-bg-action-btn` | `bg-bg-action-btn` | `#16262f` | 普通操作按钮 |
+| `--color-canvas-surface` | `bg-canvas-surface` | `#1a1a1a`* | 节点主卡片/工具栏面板 |
 
-Chinese UI copy must be tested in Windows rendering. Avoid ultra-small and ultra-bold Chinese text because it turns dense canvas controls into gray blocks.
+> *`canvas-surface` 在 wf-neo 作用域内由于 CSS 变量继承，保持全局 dark 的 `#1a1a1a`，而其他 bg-* token 被 wf-neo 全部覆盖为蓝黑系。节点外层卡片用 `bg-canvas-surface`，弹出层/抽屉用 `bg-bg-panel`。
 
-### Hierarchy
+### 2.2 强调色（霓虹青）
 
-| Role | Size | Weight | Line Height | Letter Spacing | Use |
-|------|------|--------|-------------|----------------|-----|
-| Workspace Title | 24px | 700 | 1.25 | 0 | App view title |
-| Panel Title | 18px | 600 | 1.35 | 0 | Sidebar and inspector sections |
-| Node Title | 16px | 600 | 1.35 | 0 | Node card title |
-| Body | 14px | 400 | 1.625 | 0 | Descriptions, generated text previews |
-| Control Text | 13px | 500 | 1.4 | 0 | Buttons, labels, select values |
-| Caption | 12px | 400-500 | 1.4 | 0 | Metadata and counters |
-| Mono Label | 11-12px | 600 | 1.3 | 0.08em-0.2em | English-only node codes and IDs |
+| Token | Tailwind class | 值 | 用途 |
+|:---|:---|:---|:---|
+| `--color-brand` | `text-brand / border-brand / bg-brand` | `#46d9e6` | 主强调色（霓虹青） |
+| `--color-brand-hover` | — | `#74e7f1` | 悬浮态 |
+| `--color-brand-pressed` | — | `#2db6c4` | 按下态 |
+| `--color-bg-brand-subtle` | `bg-success-subtle` | `rgba(70,217,230,0.12)` | 选中行背景、品牌色淡底 |
+| `--color-success-subtle-border` | — | `rgba(70,217,230,0.40)` | 选中行边框 |
 
-**Rules**
+### 2.3 描边（青色氛围光）
 
-- Minimum normal UI text is `12px`; use `11px` only for short English/number monospace tags.
-- Do not use negative letter spacing.
-- Use `leading-relaxed` or equivalent for long Chinese generated text.
-- Use uppercase tracking only for English node category labels, model IDs, and compact metadata.
-- Avoid pure white body text in dark mode unless it is inside a primary action button.
+| Token | Tailwind class | 值 |
+|:---|:---|:---|
+| `--color-border-subtle` | `border-border-subtle` | `rgba(70,217,230, 0.10)` |
+| `--color-border-standard` | `border-border-standard` | `rgba(70,217,230, 0.18)` |
+| `--color-border-primary` | `border-border-primary` | `rgba(70,217,230, 0.26)` |
+| `--color-border-secondary` | `border-border-secondary` | `rgba(70,217,230, 0.38)` |
+| `--color-input-border` | — | `rgba(70,217,230, 0.24)` |
 
----
+### 2.4 文字（冷青调）
 
-## 5. Layout Principles
+| Token | Tailwind class | 值 |
+|:---|:---|:---|
+| `--color-text-base` | `text-text-base` | `#e8f6f8`（主文字，带轻微青调）|
+| `--color-text-secondary` | `text-text-secondary` | `#9cbec6` |
+| `--color-text-muted` | `text-text-muted` | `#6d8d96` |
+| `--color-text-silver` | `text-text-silver` | `#c5dde2` |
 
-### Workspace Composition
-
-The first screen is the usable canvas. Avoid landing-page hero sections, marketing cards, or explanatory onboarding blocks unless a feature specifically requires an empty state.
-
-Standard workspace structure:
-
-- **Canvas viewport**: full available area, behind all node and edge layers.
-- **Top floating control bar**: compact, centered or aligned to workflow controls, never a tall marketing header.
-- **Node layer**: React Flow nodes with fixed minimum dimensions and stable resize behavior.
-- **Edge layer**: connectors below cards but above grid.
-- **Inspector / side panels**: dense, task-focused, fixed or docked on desktop.
-- **Bottom agent composer**: prompt input and recent interaction drawer; should not occlude selected node controls.
-
-### Spacing System
-
-- Base unit: `4px`.
-- Primary scale: `4, 8, 12, 16, 20, 24, 32, 48`.
-- Node card padding: `20-24px` desktop, `16px` compact.
-- Control gaps: `8-12px`.
-- Panel section spacing: `16-24px`.
-- Do not use viewport-width font scaling.
-
-### Canvas Grid
-
-The canvas grid is part of the brand. Use fine and coarse lines plus optional origin axes.
+### 2.5 投影
 
 ```css
-.cc-canvas-grid {
-  background-color: var(--cc-bg-canvas);
-  background-image:
-    linear-gradient(to right, var(--cc-axis-color) 2px, transparent 2px),
-    linear-gradient(to bottom, var(--cc-axis-color) 2px, transparent 2px),
-    linear-gradient(to right, var(--cc-grid-coarse) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--cc-grid-coarse) 1px, transparent 1px),
-    linear-gradient(to right, var(--cc-grid-fine) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--cc-grid-fine) 1px, transparent 1px);
-  background-repeat: no-repeat, no-repeat, repeat, repeat, repeat, repeat;
-  background-size: 2px 100%, 100% 2px, 100px 100px, 100px 100px, 20px 20px, 20px 20px;
-}
+--shadow-float: 0 10px 35px rgba(0, 0, 0, 0.55);  /* 浮层 */
+--shadow-pop:   0 18px 50px rgba(0, 0, 0, 0.65);  /* 弹窗 */
 ```
-
-### Spatial Depth
-
-| Layer | Treatment | Use |
-|------|-----------|-----|
-| 0 | `--cc-bg-canvas` + grid | Canvas ground |
-| 1 | Low-opacity particles or vignette | Optional deep-space atmosphere, dark theme only |
-| 2 | Edge paths | Graph relationships |
-| 3 | Node cards | Editable creative units |
-| 4 | Floating controls | Toolbars, context menus |
-| 5 | Modal or command palette | Blocking flows |
-
-If using parallax, keep it subtle: upper cards move at `1.0x`, grid at about `0.6x`, and background particles at about `0.35x`. Honor reduced motion.
 
 ---
 
-## 6. Component Styling
+## 三、日间模式完整色板
 
-### Node Cards
+### 3.1 背景层级
 
-Node cards are the core component of the product. They must feel like precise creative instruments, not generic dashboard cards.
+| Token | 值 | 用途 |
+|:---|:---|:---|
+| `--color-bg-base` | `#ebebeb` | 画布背景 |
+| `--color-bg-topbar` | `#ffffff` | 顶部导航栏 |
+| `--color-bg-rail` | `#f0f0f0` | 左侧轨道 |
+| `--color-bg-panel` | `#f8f8f8` | 面板 |
+| `--color-canvas-surface` | `rgba(252,251,249,0.82)` | 节点/工具栏，暖米白半透明（配合毛玻璃） |
+| `--color-bg-card` | `#ffffff` | 卡片 |
+| `--color-bg-hover` | `#f2f2f2` | hover |
+| `--color-bg-input` | `#f5f5f5` | 输入框 |
 
-**Default node**
+### 3.2 强调色（墨黑 · wf-mono 重映射 brand = text-base）
 
-- Background: `var(--cc-bg-card)`
-- Border: `1px solid var(--cc-border-card)`
-- Radius: `16px`
-- Shadow: `var(--cc-shadow-card)`
-- Backdrop: `blur(24px) saturate(140%)` when performance allows
-- Header: compact draggable area, bottom divider `rgba(255,255,255,0.08)` in dark mode or `rgba(0,0,0,0.08)` in light mode
-- Width: define stable widths per node type; do not let content or buttons resize the node unpredictably
+| Token | 值 | 说明 |
+|:---|:---|:---|
+| `--color-brand`（wf-mono 后） | `#1a1d21` | 等于 text-base，墨黑 |
+| hover | `#2e3440` | 稍浅墨黑 |
+| pressed | `#0d0f12` | 更深墨黑 |
+| subtle bg | `rgba(26,29,33,0.10)` | 选中态淡底 |
 
-**Selected node**
+> `wf-btn-primary` 在日间实际渲染为：`background: #1a1d21`，`color: #ebebeb`（浅灰字）
 
-- Border: `1px solid var(--cc-border-card-hover)`
-- Shadow: `var(--cc-shadow-active)`
-- Optional orbiting border if the node is running
+### 3.3 描边
 
-**Node categories**
+| Token | 值 |
+|:---|:---|
+| `--color-border-primary` | `#d4d4d4` |
+| `--color-border-secondary` | `#dedede` |
 
-- Text node: semantic accent may use success/emerald for writing state, but shell remains gold.
-- Image node: semantic accent may use cyan/info for image generation state.
-- Video node: semantic accent may use amber/gold for cinematic output.
-- Do not create a separate color theme per node type; node type color is a small label/icon signal only.
+### 3.4 文字
 
-### Running Node Border
+| Token | 值 |
+|:---|:---|
+| `--color-text-base` | `#1a1d21` |
+| `--color-text-secondary` | `#4a4f57` |
+| `--color-text-muted` | `#777d87` |
 
-Use a self-contained SVG overlay so the animation follows card radius and does not distort layout.
+### 3.5 投影
 
 ```css
-.cc-running-border-rect {
-  transition: stroke 0.3s ease, stroke-dasharray 0.3s ease;
-}
-
-.cc-running .cc-running-border-rect {
-  stroke: var(--cc-accent-gold);
-  stroke-dasharray: 45 2200;
-  stroke-linecap: round;
-  animation: cc-run-dot-orbit 2s linear infinite;
-  filter: drop-shadow(0 0 6px var(--cc-accent-gold)) drop-shadow(0 0 2px var(--cc-accent-gold));
-}
-
-@keyframes cc-run-dot-orbit {
-  from { stroke-dashoffset: 0; }
-  to { stroke-dashoffset: -2200; }
-}
+--shadow-float: 0 10px 35px rgba(17, 24, 39, 0.06);
+--shadow-pop:   0 18px 50px rgba(17, 24, 39, 0.14);
 ```
 
-Pause this animation under `prefers-reduced-motion: reduce`.
+---
 
-### Edges And Flow Lines
+## 四、圆角（Border Radius）
 
-- Idle connector: `var(--cc-line-inactive)`, 1.5-2px.
-- Active connector: `var(--cc-line-active)`, 2px, optional glow.
-- Running connector: dashed flow with `stroke-dasharray: 8 12`, `2s linear infinite`.
-- Fast active pulse: `stroke-dasharray: 6 8`, `0.7s linear infinite`.
-- Invalid connection feedback must appear within 200ms and use a clear Chinese reason.
-
-### Buttons
-
-**Primary action**
-
-- Background: `var(--cc-accent-gold)`
-- Text: dark mode should use near-black text if contrast is stronger; light mode may use white or paper depending contrast.
-- Radius: `7-12px` for panel buttons, `9999px` for floating composer actions.
-- Include a lucide icon when the action is tool-like or repeated.
-
-**Secondary action**
-
-- Background: transparent or `var(--cc-bg-input)`
-- Border: `1px solid var(--cc-border-input)`
-- Text: `var(--cc-text-primary)`
-- Hover: border changes to `var(--cc-border-card-hover)`
-
-**Icon button**
-
-- Stable square size: `32px`, `36px`, or `40px`.
-- Icon from lucide where available.
-- Tooltip required for unfamiliar icons.
-
-### Inputs And Selects
-
-- Background: `var(--cc-bg-input)`
-- Border: `1px solid var(--cc-border-input)`
-- Text: `var(--cc-text-primary)`
-- Radius: `12px`
-- Padding: `10-14px`
-- Focus ring: `0 0 0 1px var(--cc-accent-gold), 0 0 0 4px var(--cc-focus-ring)`
-- Textareas for prompt and script copy must have relaxed line height and stable height.
-
-### Media Frames
-
-- Preview frame width is stable; height follows orientation.
-- Supported ratios for image generation: `16:9`, `9:16`, `1:1`, `4:3`, `3:2`.
-- Supported ratios for video generation: `16:9`, `9:16`, `2.39:1`, `2:1`, `4:3`.
-- Media uses `object-fit: contain` unless the user explicitly chooses crop.
-- Empty media states must show clear action-oriented copy, not mood text.
-
-### Badges And Status
-
-- Use pill badges with `12px` text.
-- Running: gold dot or running border.
-- Complete: success dot plus concise label.
-- Failed: danger border or icon plus exact recovery direction.
-- Avoid status-only color; include text or icon.
+| Token | 值 | 用途 |
+|:---|:---|:---|
+| `--radius-sm` | `4px` | 极小元素 |
+| `--radius-md` | `7px` | 按钮、输入框 |
+| `--radius-lg` | `8px` | 小卡片 |
+| `--radius-xl` | `12px` | **弹出选择框、PopoverMenu** |
+| `--radius-2xl` | `16px` | 节点卡片外层、大面板 |
+| `--radius-3xl` | `24px` | 工具栏卡片（底部 Toolbar） |
+| `--radius-pill` | `9999px` | Chip 按钮、Tag |
 
 ---
 
-## 7. Motion And Interaction
+## 五、排版规范
 
-Motion should explain state. Do not scatter decorative animations.
+```
+字族：Inter / PingFang SC / Microsoft YaHei（--font-sans）
+代码：Berkeley Mono / SF Mono（--font-mono）
 
-| Interaction | Motion |
-|------------|--------|
-| Theme switch | `0.4s var(--cc-bezier-luxury)` on background, text, border |
-| Node select | border/box-shadow transition in `0.25-0.3s` |
-| Panel expand | max-height + opacity + margin transition, `0.45s var(--cc-bezier-luxury)` |
-| Edge running | dash flow, `2s linear infinite` |
-| Active generation | orbiting node border, `2s linear infinite` |
-| Button press | `scale(0.97-0.98)` for direct manipulation only |
-| Toast | fade + scale, around `0.2s` in, `0.25s` out |
-
-**Reduced motion**
-
-- Disable orbiting borders, parallax, marquee effects, and edge dash animation.
-- Preserve state through static border, icon, and text.
+节点内提示词输入框：  14px / line-height 1.7
+节点控制行 Chip：     12px / font-semibold
+弹出层标题：          13px / font-bold
+弹出层选项：          12~13px
+说明文字/描述：        11~12px
+```
 
 ---
 
-## 8. UX Writing
+## 六、核心组件样式规范
 
-The UI language is Chinese-first, concise, and operational. It should sound like a professional creative tool, not a sales page.
+### 6.1 Chip（芯片选择按钮）
 
-**Rules**
+```tsx
+// 默认态
+'nodrag flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[12px] font-semibold transition-all'
+'border-border-secondary/50 bg-bg-input text-text-secondary hover:bg-bg-hover hover:text-text-base'
 
-- Buttons use verbs: `生成图片`, `生成视频`, `保存`, `重试`, `下载`.
-- Error text says what failed and what the user can do next.
-- Empty states invite the next action: `输入分镜提示词后生成首帧`.
-- Keep model/provider names technical and exact.
-- Do not describe UI features inside the interface unless the user needs instruction at that moment.
-- Avoid exaggerated luxury wording in product controls. The visual system carries the premium feel; copy stays useful.
+// 激活态（active）
+'border-brand/30 bg-success-subtle text-brand'
+```
 
----
+### 6.2 PopoverMenu 弹出面板
 
-## 9. Responsive Behavior
+```tsx
+// ✅ 正确：portal 组件必须加 dark wf-neo 继承画布 token
+<div className="dark wf-neo rounded-xl border border-border-primary bg-bg-panel shadow-[0_15px_45px_rgba(0,0,0,0.18)]">
 
-ComicCanvas is a desktop-first Electron app, but renderer UI still must tolerate narrow windows.
+// ❌ 错误：不加 wf-neo 导致弹出层无法获取画布主题色
+<div className="rounded-xl border bg-white dark:bg-bg-panel">
+```
 
-| Width | Behavior |
-|------|----------|
-| `< 768px` | Single-column, inspector becomes bottom drawer, composer remains reachable |
-| `768-1024px` | Side panels collapse; canvas and selected node stay primary |
-| `1024-1280px` | Standard canvas plus one docked panel |
-| `> 1280px` | Full canvas, side panel, floating composer, and auxiliary list can coexist |
+### 6.3 节点主容器
 
-Canvas nodes should retain usable minimum width. Text must not overflow buttons, badges, or node headers. Prefer wrapping and stable dimensions over shrinking to unreadable sizes.
+```tsx
+// 预览卡区域
+'group relative w-[360px] rounded-[20px] border bg-canvas-surface shadow-card'
 
----
+// 底部工具栏
+'nodrag nowheel relative w-[960px] overflow-visible rounded-[24px] border border-border-secondary bg-canvas-surface shadow-card dark:border-border-primary dark:bg-bg-panel'
+```
 
-## 10. Accessibility And Quality Bar
+### 6.4 菜单项（menuItemBase）
 
-- Keyboard focus must be visible on every interactive control.
-- Color contrast must meet WCAG AA for text.
-- Do not communicate state with color alone.
-- Hit targets should be at least `32px` for dense desktop controls and `40px` where touch is plausible.
-- Tooltips are required for icon-only actions that are not universally obvious.
-- No text overlap at common Electron window sizes.
-- No layout shift when loading labels, badges, progress states, or thumbnails.
-- Canvas animations must not make the UI unusable under CPU load.
-- Respect `prefers-reduced-motion`.
+```tsx
+'flex w-full items-center justify-between border-none bg-transparent px-3 py-2 text-[12px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base'
+```
 
----
+### 6.5 风格选项卡（StylePresetOption）
 
-## 11. Do And Don't
+```tsx
+// 容器
+'group flex w-full items-center gap-3 rounded-lg border px-2.5 py-2 text-left transition-colors'
+'border-transparent bg-transparent hover:border-border-secondary hover:bg-bg-hover'
+// 选中态
+'border-brand/40 bg-success-subtle/60'
+```
 
-### Do
+### 6.6 wf-btn-primary（主按钮）
 
-- Use `--cc-*` design tokens for all UI colors.
-- Make dark theme the default canvas experience.
-- Use champagne gold for selected, running, focus, and primary action states.
-- Keep cards compact, readable, and tool-like.
-- Use the grid as a functional spatial layer.
-- Keep node type colors as small semantic accents only.
-- Use lucide icons for tool buttons where available.
-- Verify desktop and narrow-window screenshots for overlap before claiming UI work is complete.
+```css
+/* 通用（单色 wf-mono 作用域）*/
+background: color-mix(in srgb, var(--color-text-base) 90%, transparent);
+color: var(--color-bg-base);
 
-### Don't
-
-- Do not use purple/blue SaaS gradients as the dominant identity.
-- Do not use green as the global brand accent for new ComicCanvas UI; this project has moved to gold-on-obsidian.
-- Do not hardcode component colors, radii, shadows, or font sizes when tokens exist.
-- Do not create landing-page heroes for tool screens.
-- Do not put cards inside cards.
-- Do not use decorative orbs, bokeh blobs, or generic AI glow backgrounds.
-- Do not use text below `12px` except short monospace tags.
-- Do not use pure white as body text in dark mode.
-- Do not use animation without a state purpose.
+/* wf-neo 夜间：青辉玻璃 */
+background: color-mix(in srgb, var(--color-brand) 22%, #0a141c);
+color: var(--color-text-base);
+box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-brand) 45%, transparent);
+```
 
 ---
 
-## 12. Agent Prompt Guide
+## 七、节点 Handle（连接点）
 
-Every frontend-building agent must read this file before changing renderer UI. If a task touches canvas nodes, edges, panels, inputs, generation status, navigation, or app chrome, this file is mandatory context.
+```css
+尺寸：16×16px，rounded-full
+默认边框：2.5px
+hover：scale(1.6) + 墨黑色光晕（日间）/ 青色光晕（夜间）
 
-### Quick Reference
+/* 夜间（wf-neo）*/
+bg: #46d9e6; border: #0d161e
+hover box-shadow: 0 0 0 4px rgba(70,217,230,0.22), 0 0 0 9px rgba(70,217,230,0.08)
 
-- Default canvas: `#06070A`
-- Dark card: `rgba(13, 15, 20, 0.94)`
-- Dark primary text: `#F3F4F6`
-- Gold accent: `#C5A880`
-- Fine grid: `rgba(197, 168, 128, 0.02)`
-- Coarse grid: `rgba(197, 168, 128, 0.07)`
-- Card radius: `16px`
-- Motion curve: `cubic-bezier(0.16, 1, 0.3, 1)`
-- Primary font: Inter + PingFang SC + Microsoft YaHei
+/* 日间（wf-mono 墨黑）*/
+bg: #1a1d21; border: #ffffff
+hover box-shadow: 0 0 0 4px rgba(26,29,33,0.22), 0 0 0 9px rgba(26,29,33,0.08)
 
-### Example Implementation Prompts
+脉冲动画（连线中）：wf-handle-pulse-neo，0→9px 扩散青色光晕
+```
 
-- "Create a text node card using `var(--cc-bg-card)`, `1px solid var(--cc-border-card)`, `16px` radius, compact header, and a stable textarea with relaxed Chinese line height. Selected state uses `var(--cc-border-card-hover)` plus `var(--cc-shadow-active)`."
-- "Create a canvas background with fine 20px grid, coarse 100px grid, optional origin axes, and theme-aware gold-tinted lines. Do not use decorative gradients or blobs."
-- "Create a running generation state: active connector dash flow, node orbiting SVG border, gold status dot, and reduced-motion fallback."
-- "Create image/video ratio controls as segmented buttons or select menus with labels `16:9`, `9:16`, `1:1`, `4:3`, `3:2`, `2.39:1`, and `2:1` as applicable."
+---
 
-### Review Checklist
+## 八、节点视觉特效（wf-neo 夜间）
 
-- Did the change consume tokens instead of hardcoded colors?
-- Does it preserve the text -> image -> video comic-drama workflow?
-- Are node sizes stable when content loads or status changes?
-- Are selected, running, complete, failed, and disabled states visually distinct?
-- Are focus rings, tooltips, and reduced-motion fallbacks present?
-- Does the screen remain usable at desktop and narrow Electron widths?
+```css
+/* 默认 */
+filter: drop-shadow(0 0 14px rgba(70,217,230,0.10)) drop-shadow(0 14px 30px rgba(0,0,0,0.45))
+
+/* hover */
+filter: drop-shadow(0 0 18px rgba(70,217,230,0.22)) drop-shadow(0 14px 30px rgba(0,0,0,0.50))
+
+/* 选中 */
+filter: drop-shadow(0 0 22px rgba(70,217,230,0.32)) drop-shadow(0 14px 30px rgba(0,0,0,0.50))
+```
+
+---
+
+## 九、日间模式节点特效
+
+```css
+/* 未选中：光亮玻璃边缘 */
+border-color: #ffffff !important;
+box-shadow: inset 0 1px 0 rgba(255,255,255,0.95),
+            inset 0 0 0 1px rgba(255,255,255,0.70),
+            0 0 0 1px rgba(255,255,255,0.55),
+            0 8px 26px rgba(17,24,39,0.09),
+            0 2px 6px rgba(17,24,39,0.05);
+
+/* 选中：品牌绿多层光晕 */
+border-color: #07af49 !important;
+box-shadow: inset 0 1px 0 rgba(255,255,255,0.9),
+            0 0 0 2px #07af49,
+            0 0 0 6px rgba(7,175,73,0.18),
+            0 10px 32px rgba(7,175,73,0.16),
+            0 4px 12px rgba(17,24,39,0.10) !important;
+```
+
+---
+
+## 十、连线（Edge）样式
+
+| 状态 | 夜间（wf-neo） | 日间 |
+|:---|:---|:---|
+| 默认 | `rgba(70,217,230, 40%)` 半透明 | `rgba(text-base, 32%)` |
+| 选中/悬浮 | `#46d9e6` 全亮 | `var(--color-text-base)` |
+| 线宽 | 2px（选中 2.5px） | 2px（选中 2.5px） |
+
+---
+
+## 十一、毛玻璃（wf-glass）
+
+```css
+/* 夜间通用 */
+background: color-mix(in srgb, var(--color-bg-card) 88%, transparent);
+backdrop-filter: blur(14px) saturate(1.1);
+
+/* 日间：不透明实色 */
+background: #ffffff;
+box-shadow: 0 8px 28px rgba(17,24,39,0.08), 0 1px 3px rgba(17,24,39,0.05);
+backdrop-filter: none;
+```
+
+---
+
+## 十二、滚动条
+
+```css
+/* 粗滚动条（wf-scroll） */
+width: 8px;
+thumb: color-mix(in srgb, var(--color-text-base) 16%, transparent)
+
+/* 细滚动条（wf-style-scroll，风格面板内） */
+width: 4px;
+thumb: color-mix(in srgb, var(--color-text-base) 14%, transparent)
+thumb:hover: color-mix(in srgb, var(--color-brand) 42%, transparent)
+```
+
+---
+
+## 十三、强制规范（禁止事项）
+
+| ❌ 禁止 | ✅ 正确 |
+|:---|:---|
+| 硬编码 `background: #1a1a1a` | 使用 `bg-bg-panel` / `bg-canvas-surface` |
+| `bg-white dark:bg-bg-panel` | `bg-bg-panel`（直接用 token） |
+| Portal 组件不加主题 class | `<div className="dark wf-neo ...">` |
+| `border-border-secondary dark:border-border-primary` | `border-border-primary`（直接用 token） |
+| 在 `bg-brand` 子元素写 `text-white` | 在 `.wf-mono` 作用域中文字会自动反色 |
+
+---
+
+## 十四、常用 Tailwind class 速查
+
+```
+# 夜间背景（由深到浅）
+bg-bg-input       → #070f17  最深凹陷（输入框）
+bg-bg-panel       → #0d161e  面板/弹出层
+bg-canvas-surface → #1a1a1a  节点卡片主面（继承全局 dark token）
+
+# 描边
+border-border-primary   → rgba(70,217,230, 0.26)
+border-border-secondary → rgba(70,217,230, 0.38)
+
+# 文字
+text-text-base      → #e8f6f8
+text-text-secondary → #9cbec6
+text-text-muted     → #6d8d96
+
+# 强调
+text-brand        → #46d9e6
+bg-success-subtle → rgba(70,217,230, 0.12)
+
+# 圆角（组件对应）
+rounded-full  → Chip 按钮
+rounded-xl    → PopoverMenu 弹出层（12px）
+rounded-2xl   → 节点卡片（16px）
+rounded-[24px]→ 底部工具栏 Toolbar（24px）
+```

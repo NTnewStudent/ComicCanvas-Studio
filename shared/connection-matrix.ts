@@ -7,9 +7,11 @@
 import type { NodeType } from './nodes'
 
 export const NODE_CONNECTION_MATRIX: Readonly<Record<NodeType, ReadonlyArray<NodeType>>> = {
-  text:  ['image', 'video'],
-  image: ['image', 'video'],
+  text:  ['image', 'video', 'imageConfigV2', 'videoConfigV2'],
+  image: ['image', 'video', 'imageConfigV2', 'videoConfigV2'],
   video: ['video'],
+  imageConfigV2: ['image', 'video', 'imageConfigV2', 'videoConfigV2'],
+  videoConfigV2: ['video'],
 }
 
 /**

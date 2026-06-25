@@ -23,11 +23,11 @@ function agentApi(): AgentSettingsApi {
 }
 
 function listTools(agent: AgentDefinition): string[] {
-  return agent.allowedTools === '*' ? ['all tools'] : agent.allowedTools
+  return agent.allowedTools === '*' ? ['所有工具'] : agent.allowedTools
 }
 
 function listSkills(agent: AgentDefinition): string[] {
-  return agent.allowedSkills === '*' ? ['all skills'] : agent.allowedSkills
+  return agent.allowedSkills === '*' ? ['所有技能'] : agent.allowedSkills
 }
 
 function upsertAgent(current: AgentDefinition[], saved: AgentDefinition): AgentDefinition[] {
@@ -67,7 +67,7 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
       } catch {
         // Settings failures should stay in-panel so renderer isolation never leaks raw IPC errors.
         setLoadState('error')
-        setMessage('Agent list failed to load.')
+        setMessage('Agent 列表加载失败。')
       }
     }
 
@@ -82,10 +82,10 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
       const saved = await api.saveAgent(input)
       setAgents((current) => upsertAgent(current, saved))
       setEditing(null)
-      setMessage(`Saved ${saved.name}`)
+      setMessage(`已保存 ${saved.name}`)
     } catch {
       // Save failures are surfaced as a safe status line instead of exposing transport details.
-      setMessage('Agent save failed.')
+      setMessage('Agent 保存失败。')
     } finally {
       setSaving(false)
     }
@@ -101,10 +101,10 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
       await api.deleteAgent({ agentId: target.id })
       setAgents((current) => current.filter((agent) => agent.id !== target.id))
       setDeleting(null)
-      setMessage(`Deleted ${target.name}`)
+      setMessage(`已删除 ${target.name}`)
     } catch {
       // Delete failures remain recoverable from the settings surface.
-      setMessage('Agent delete failed.')
+      setMessage('Agent 删除失败。')
     }
   }
 
@@ -112,20 +112,20 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
     <section className="flex w-full max-w-6xl flex-col gap-5 rounded-xl border border-border-secondary bg-bg-surface p-5 shadow-card">
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="mb-1 text-[12px] font-semibold uppercase text-text-muted">Agent settings</p>
-          <h1 className="text-[24px] font-bold leading-tight text-text-base">Agent registry</h1>
+          <p className="mb-1 text-[12px] font-semibold uppercase text-text-muted">Agent 设置</p>
+          <h1 className="text-[24px] font-bold leading-tight text-text-base">Agent 注册表</h1>
           <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-text-secondary">
-            Manage built-in and custom agents for canvas planning, tool access, and comic-drama generation workflows.
+            管理内置和自定义 Agent，用于画布规划、工具访问和漫剧生成工作流。
           </p>
         </div>
         <button
           type="button"
           onClick={() => setEditing('new')}
           className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover"
-          aria-label="Add agent"
+          aria-label="添加 Agent"
         >
           <Plus className="h-4 w-4" />
-          Add agent
+          添加 Agent
         </button>
       </header>
 
@@ -139,8 +139,8 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
       {editing === 'new' && <AgentForm saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
       {editing !== null && editing !== 'new' && <AgentForm agent={editing} saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
 
-      {loadState === 'loading' && <p className="text-[13px] text-text-muted">Loading agents...</p>}
-      {loadState === 'error' && <p className="text-[13px] text-semantic-negative">Agent settings could not be loaded.</p>}
+      {loadState === 'loading' && <p className="text-[13px] text-text-muted">Agent 加载中...</p>}
+      {loadState === 'error' && <p className="text-[13px] text-semantic-negative">Agent 设置无法加载。</p>}
 
       {loadState === 'ready' && (
         <div className="grid gap-3 xl:grid-cols-2">
@@ -161,7 +161,7 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
                       >
                         {agent.source}
                       </span>
-                      {!agent.enabled && <span className="rounded-pill border border-border-input bg-bg-input px-2 py-0.5 text-[12px] text-text-muted">disabled</span>}
+                      {!agent.enabled && <span className="rounded-pill border border-border-input bg-bg-input px-2 py-0.5 text-[12px] text-text-muted">已禁用</span>}
                     </div>
                     <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-text-secondary">{agent.description}</p>
                   </div>
@@ -170,11 +170,11 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
 
                 <dl className="grid gap-2 text-[12px] text-text-secondary">
                   <div className="flex items-center justify-between gap-2">
-                    <dt className="text-text-muted">Effort</dt>
+                    <dt className="text-text-muted">力度</dt>
                     <dd className="rounded-pill bg-bg-input px-2 py-0.5">{agent.effort}</dd>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <dt className="text-text-muted">Max turns</dt>
+                    <dt className="text-text-muted">最大轮次</dt>
                     <dd className="font-mono text-[12px] text-brand">{agent.maxTurns}</dd>
                   </div>
                 </dl>
@@ -200,7 +200,7 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
                   {builtin ? (
                     <span className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-muted">
                       <Lock className="h-4 w-4" />
-                      Built-in
+                      内置
                     </span>
                   ) : (
                     <>
@@ -208,19 +208,19 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
                         type="button"
                         onClick={() => setEditing(agent)}
                         className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-base transition hover:border-border-primary"
-                        aria-label={`Edit ${agent.name}`}
+                        aria-label={`编辑 ${agent.name}`}
                       >
                         <Pencil className="h-4 w-4 text-brand" />
-                        Edit
+                        编辑
                       </button>
                       <button
                         type="button"
                         onClick={() => setDeleting(agent)}
                         className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-semantic-negative transition hover:border-border-primary"
-                        aria-label={`Delete ${agent.name}`}
+                        aria-label={`删除 ${agent.name}`}
                       >
                         <Trash2 className="h-4 w-4" />
-                        Delete
+                        删除
                       </button>
                     </>
                   )}
@@ -232,13 +232,13 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
       )}
 
       {deleting && (
-        <div role="alertdialog" aria-modal="true" aria-label={`Delete agent ${deleting.name}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+        <div role="alertdialog" aria-modal="true" aria-label={`删除 Agent ${deleting.name}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-sm rounded-xl border border-border-secondary bg-bg-surface p-5 shadow-pop">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-semantic-negative" />
               <div className="min-w-0">
-                <h2 className="text-[16px] font-semibold text-text-base">Delete agent {deleting.name}</h2>
-                <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">This removes the custom agent configuration from the local registry.</p>
+                <h2 className="text-[16px] font-semibold text-text-base">删除 Agent {deleting.name}</h2>
+                <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">这将从本地注册表中删除该自定义 Agent 配置。</p>
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
@@ -247,10 +247,10 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
                 onClick={() => setDeleting(null)}
                 className="rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base"
               >
-                Cancel
+                取消
               </button>
               <button type="button" onClick={() => void confirmDelete()} className="rounded-lg bg-semantic-negative px-3 py-2 text-[13px] font-semibold text-white">
-                Confirm delete
+                确认删除
               </button>
             </div>
           </div>

@@ -20,8 +20,7 @@ export interface PlanCardProps {
 }
 
 function planCounts(plan: CanvasPlan): string[] {
-  return [`${plan.nodes.length} nodes`, `${plan.edges.length} edges`, `${plan.runSteps.length} run steps`]
-}
+  return [`${plan.nodes.length} 个节点`, `${plan.edges.length} 条边`, `${plan.runSteps.length} 个运行步骤`]}
 
 /**
  * Renders a sanitized CanvasPlan summary and apply controls.
@@ -34,18 +33,18 @@ export function PlanCard({ plan, autoExecute, onAutoExecuteChange, onApplyPlan }
   const isClarify = plan.kind === 'clarify'
 
   return (
-    <article className="rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card" aria-label="Canvas plan preview">
+    <article className="rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card" aria-label="画布计划预览">
       <div className="flex items-start gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-secondary bg-bg-input text-brand">
           {isClarify ? <AlertTriangle className="h-4 w-4" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="m-0 text-[13px] font-semibold uppercase text-text-muted">{isClarify ? 'Clarify request' : 'Canvas Plan'}</p>
+            <p className="m-0 text-[13px] font-semibold uppercase text-text-muted">{isClarify ? '澄清请求' : '画布计划'}</p>
             {!isClarify && (
               <span className="inline-flex items-center gap-1 rounded-pill border border-border-secondary px-2 py-0.5 text-[12px] text-semantic-success">
                 <Check className="h-3 w-3" aria-hidden="true" />
-                sanitized
+                已净化
               </span>
             )}
           </div>
@@ -64,7 +63,7 @@ export function PlanCard({ plan, autoExecute, onAutoExecuteChange, onApplyPlan }
 
       {plan.dropped.length > 0 && (
         <div className="mt-3 rounded-lg border border-semantic-warning/40 bg-bg-input px-3 py-2 text-[12px] text-text-secondary">
-          {plan.dropped.length} item dropped during plan sanitization
+          {plan.dropped.length} 项在计划净化过程中被丢弃
         </div>
       )}
 
@@ -74,24 +73,24 @@ export function PlanCard({ plan, autoExecute, onAutoExecuteChange, onApplyPlan }
             <input
               type="checkbox"
               role="switch"
-              aria-label="Auto execute plan run steps"
+              aria-label="自动执行计划运行步骤"
               checked={autoExecute}
               onChange={(event) => onAutoExecuteChange(event.currentTarget.checked)}
               className="h-4 w-4 accent-brand"
             />
-            Auto execute
+            自动执行
           </label>
           <button
             type="button"
             className={cn(
-              'inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-semibold text-[#06070a]',
+              'inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base',
               'transition-transform duration-200 ease-luxury hover:bg-brand-hover active:scale-[0.98]'
             )}
-            aria-label="Apply plan"
+            aria-label="应用计划"
             onClick={() => onApplyPlan(plan, { autoExecute })}
           >
             <Play className="h-4 w-4" aria-hidden="true" />
-            Apply plan
+            应用计划
           </button>
         </div>
       )}

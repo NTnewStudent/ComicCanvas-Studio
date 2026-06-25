@@ -5,7 +5,7 @@
 
 import type { CSSProperties } from 'react'
 
-import type { Orientation } from '../../../../../../shared/nodes'
+import type { ImageRatio, Orientation, VideoRatio } from '../../../../../../shared/nodes'
 
 /** CSS width used by media preview frames inside resizable nodes. */
 export const PREVIEW_FRAME_WIDTH = '100%'
@@ -47,4 +47,60 @@ export function getOrientationPreviewStyle(orientation: Orientation): Pick<CSSPr
     width: PREVIEW_FRAME_WIDTH,
     aspectRatio: ORIENTATION_ASPECT_RATIO[orientation]
   }
+}
+
+// ── V2 节点尺寸常量 ─────────────────────────────────────────
+
+/** V2 图片预览卡宽度 */
+export const V2_IMAGE_PREVIEW_WIDTH = 360
+
+/** V2 图片预览卡高度（按图片比例计算） */
+export const V2_IMAGE_PREVIEW_HEIGHT_RATIO: Record<ImageRatio, number> = {
+  '16:9': 202.5,
+  '9:16': 640,
+  '1:1': 360,
+  '4:3': 270,
+  '3:4': 480,
+  '21:9': 154
+}
+
+/** V2 视频预览卡宽度 — 竖屏比例 (9:16, 3:4) */
+export const V2_VIDEO_WIDTH_PORTRAIT = 180
+
+/** V2 视频预览卡宽度 — 横屏/方形 */
+export const V2_VIDEO_WIDTH_LANDSCAPE = 240
+
+/** V2 Toolbar 宽度 */
+export const V2_TOOLBAR_WIDTH = 960
+
+/** V2 节点预览卡圆角 */
+export const V2_NODE_RADIUS = 20
+
+/** V2 图片比例 → CSS aspect-ratio 映射 */
+export const V2_IMAGE_ASPECT_RATIO: Record<ImageRatio, string> = {
+  '9:16': '9 / 16',
+  '3:4': '3 / 4',
+  '1:1': '1 / 1',
+  '4:3': '4 / 3',
+  '16:9': '16 / 9',
+  '21:9': '21 / 9'
+}
+
+/** V2 视频比例 → CSS aspect-ratio 映射 */
+export const V2_VIDEO_ASPECT_RATIO: Record<VideoRatio, string> = {
+  '9:16': '9 / 16',
+  '3:4': '3 / 4',
+  '1:1': '1 / 1',
+  '4:3': '4 / 3',
+  '16:9': '16 / 9',
+  '21:9': '21 / 9'
+}
+
+/**
+ * 判断视频比例是否为竖屏方向。
+ * @param ratio - 视频比例。
+ * @returns 是否为竖屏比例 (9:16 或 3:4)。
+ */
+export function isPortraitRatio(ratio: VideoRatio | ImageRatio): boolean {
+  return ratio === '9:16' || ratio === '3:4'
 }

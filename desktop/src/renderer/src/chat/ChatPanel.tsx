@@ -150,13 +150,13 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
             {
               id: `assistant-${event.planId}`,
               role: 'assistant',
-              content: nextPlan.kind === 'clarify' ? 'Clarification needed.' : `Plan ready: ${event.planId}`
+              content: nextPlan.kind === 'clarify' ? '需要澄清。' : `计划已就绪：${event.planId}`
             }
           ])
         })
         .catch(() => {
           // The queued chat can outlive its result fetch, so surface a recoverable assistant message.
-          setMessages((items) => [...items, { id: `assistant-error-${event.planId}`, role: 'assistant', content: 'Plan fetch failed.' }])
+          setMessages((items) => [...items, { id: `assistant-error-${event.planId}`, role: 'assistant', content: '计划获取失败。' }])
         })
         .finally(() => {
           setBusy(false)
@@ -166,18 +166,18 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
 
   const statusText = useMemo(() => {
     if (busy && pendingMessageId) {
-      return 'Waiting for plan...'
+      return '等待计划中...'
     }
 
     if (pendingMessageId && !plan) {
-      return 'Plan queued'
+      return '计划已排队'
     }
 
     if (plan) {
-      return plan.kind === 'clarify' ? 'Clarification needed' : 'Plan ready'
+      return plan.kind === 'clarify' ? '需要澄清' : '计划已就绪'
     }
 
-    return 'Ready'
+    return '就绪'
   }, [busy, pendingMessageId, plan])
 
   function selectAgent(agent: AgentDefinition): void {
@@ -207,13 +207,13 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
     api.sendCanvasChat({ message, agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID })
       .then((ticket) => {
         setPendingMessageId(ticket.messageId)
-        setMessages((items) => [...items, { id: `assistant-${ticket.jobId}`, role: 'assistant', content: `Plan queued: ${ticket.jobId}` }])
+        setMessages((items) => [...items, { id: `assistant-${ticket.jobId}`, role: 'assistant', content: `计划已排队：${ticket.jobId}` }])
         setInput('')
         setCaretIndex(0)
       })
       .catch(() => {
         // Chat send errors are user-recoverable, so keep the typed failure inside conversation history.
-        setMessages((items) => [...items, { id: `assistant-error-${Date.now()}`, role: 'assistant', content: 'Plan request failed.' }])
+        setMessages((items) => [...items, { id: `assistant-error-${Date.now()}`, role: 'assistant', content: '计划请求失败。' }])
       })
       .finally(() => {
         setBusy(false)
@@ -254,14 +254,14 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
   }
 
   return (
-    <section className="rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card" aria-label="Canvas agent chat">
+    <section className="rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card" aria-label="画布 Agent 对话">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-border-secondary bg-bg-input text-brand">
             <Bot className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <h2 className="m-0 text-[18px] font-semibold leading-tight text-text-base">Canvas agent</h2>
+            <h2 className="m-0 text-[18px] font-semibold leading-tight text-text-base">画布 Agent</h2>
             <p className="mt-1 text-[13px] text-text-secondary">{statusText}</p>
           </div>
         </div>
@@ -269,18 +269,18 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
           <input
             type="checkbox"
             role="switch"
-            aria-label="Auto execute plan run steps"
+            aria-label="自动执行计划运行步骤"
             checked={autoExecute}
             onChange={(event) => setAutoExecute(event.currentTarget.checked)}
             className="h-4 w-4 accent-brand"
           />
-          Auto execute
+          自动执行
         </label>
       </div>
 
       <div className="mt-4 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-border-secondary bg-bg-input p-3">
         {messages.length === 0 ? (
-          <p className="m-0 text-[13px] text-text-muted">Ask the built-in agent to draft text, image, and video nodes.</p>
+          <p className="m-0 text-[13px] text-text-muted">让内置 Agent 起草文本、图片和视频节点。</p>
         ) : (
           messages.map((message) => (
             <p
@@ -330,19 +330,19 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
           />
         </div>
         <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="m-0 text-[12px] text-text-muted">Enter to send. Shift+Enter for a new line.</p>
+          <p className="m-0 text-[12px] text-text-muted">Enter 发送。Shift+Enter 换行。</p>
           <button
             type="button"
-            aria-label="Send canvas message"
+            aria-label="发送画布消息"
             disabled={!canSend}
             onClick={sendMessage}
             className={cn(
-              'inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-semibold text-[#06070a]',
+              'inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base',
               'transition-transform duration-200 ease-luxury hover:bg-brand-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50'
             )}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-            Send
+            发送
           </button>
         </div>
       </div>

@@ -79,13 +79,13 @@ describe('M3 Gateway settings UI', () => {
     const api = createApi({ listGateways: vi.fn().mockResolvedValue([]) })
     render(<GatewayList api={api} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add gateway' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Gateway name' }), { target: { value: '即梦视频' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Base URL' }), { target: { value: 'https://video.example/v1' } })
+    fireEvent.click(await screen.findByRole('button', { name: '添加网关' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '网关名称' }), { target: { value: '即梦视频' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '基础 URL' }), { target: { value: 'https://video.example/v1' } })
     fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'sk-video-secret' } })
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Video capability' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Video model key' }), { target: { value: 'video-task-model' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save gateway' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '视频能力' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '视频模型键' }), { target: { value: 'video-task-model' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存网关' }))
 
     const saveGateway = mockOf(api.saveGateway)
     await waitFor(() => expect(saveGateway).toHaveBeenCalledTimes(1))
@@ -123,10 +123,10 @@ describe('M3 Gateway settings UI', () => {
       enabled: false
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Test OpenAI 主通道' }))
+    fireEvent.click(screen.getByRole('button', { name: '测试 OpenAI 主通道' }))
     const testGateway = mockOf(api.testGateway)
     await waitFor(() => expect(testGateway).toHaveBeenCalledWith({ gatewayId: 'gw-openai', channel: 'text' }))
-    expect(await screen.findByText('Test queued: job-gateway-gw-openai')).toBeInTheDocument()
+    expect(await screen.findByText('测试已排队：job-gateway-gw-openai')).toBeInTheDocument()
   })
 
   it('confirms before deleting a gateway', async () => {
@@ -134,10 +134,10 @@ describe('M3 Gateway settings UI', () => {
     render(<GatewayList api={api} />)
 
     await screen.findByText('视频异步通道')
-    fireEvent.click(screen.getByRole('button', { name: 'Delete 视频异步通道' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除 视频异步通道' }))
 
-    expect(screen.getByRole('alertdialog', { name: 'Delete gateway 视频异步通道' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+    expect(screen.getByRole('alertdialog', { name: '删除网关 视频异步通道' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
 
     const deleteGateway = mockOf(api.deleteGateway)
     await waitFor(() => expect(deleteGateway).toHaveBeenCalledWith({ gatewayId: 'gw-video' }))
@@ -148,8 +148,8 @@ describe('M3 Gateway settings UI', () => {
 
     render(<GatewayForm gateway={existingGateways[0]} onSubmit={onSubmit} onCancel={vi.fn()} />)
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Image model key' }), { target: { value: 'gpt-image-2' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Save gateway' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '图片模型键' }), { target: { value: 'gpt-image-2' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存网关' }))
 
     expect(onSubmit).toHaveBeenCalledWith({
       id: 'gw-openai',

@@ -12,15 +12,15 @@ export interface GatewayFormProps {
 }
 
 const gatewayTypes: Array<{ value: GatewayType; label: string }> = [
-  { value: 'openai_compat', label: 'OpenAI compatible' },
-  { value: 'async_media_task', label: 'Async media task' },
-  { value: 'stub', label: 'Stub provider' }
+  { value: 'openai_compat', label: 'OpenAI 兼容' },
+  { value: 'async_media_task', label: '异步媒体任务' },
+  { value: 'stub', label: '桩供应商' }
 ]
 
 const channelCapabilities: Array<{ channel: keyof GatewayModelMap; capability: GatewayCapability; label: string; inputLabel: string }> = [
-  { channel: 'text', capability: 'text', label: 'Text capability', inputLabel: 'Text model key' },
-  { channel: 'image', capability: 'image', label: 'Image capability', inputLabel: 'Image model key' },
-  { channel: 'video', capability: 'video', label: 'Video capability', inputLabel: 'Video model key' }
+  { channel: 'text', capability: 'text', label: '文本能力', inputLabel: '文本模型键' },
+  { channel: 'image', capability: 'image', label: '图片能力', inputLabel: '图片模型键' },
+  { channel: 'video', capability: 'video', label: '视频能力', inputLabel: '视频模型键' }
 ]
 
 function defaultCapabilities(gateway?: GatewayConfigView): GatewayCapability[] {
@@ -70,7 +70,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
   const [error, setError] = useState<string | null>(null)
   const hasExistingKey = Boolean(gateway?.keyRef)
   const submitDisabled = saving || name.trim().length === 0 || baseUrl.trim().length === 0
-  const keyHint = useMemo(() => (hasExistingKey ? `Using ${gateway?.keyRef}` : 'New key will be stored by the key vault'), [gateway?.keyRef, hasExistingKey])
+  const keyHint = useMemo(() => (hasExistingKey ? `使用 ${gateway?.keyRef}` : '新密钥将由密钥保险库存储'), [gateway?.keyRef, hasExistingKey])
 
   function updateModel(channel: keyof GatewayModelMap, value: string): void {
     setModelMap((current) => ({ ...current, [channel]: value }))
@@ -80,7 +80,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
     event.preventDefault()
 
     if (submitDisabled) {
-      setError('Name and base URL are required.')
+      setError('名称和基础 URL 为必填项。')
       return
     }
 
@@ -108,21 +108,21 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
     <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[18px] font-semibold leading-tight text-text-base">{gateway ? 'Edit gateway' : 'Add gateway'}</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">Configure provider URL, secret reference, capabilities, and model routing.</p>
+          <h2 className="text-[18px] font-semibold leading-tight text-text-base">{gateway ? '编辑网关' : '添加网关'}</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">配置供应商 URL、密钥引用、能力和模型路由。</p>
         </div>
         <button
           type="button"
           onClick={onCancel}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-input bg-bg-input text-text-secondary transition hover:border-border-primary hover:text-text-base"
-          aria-label="Cancel gateway edit"
+          aria-label="取消网关编辑"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
       <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-        Gateway name
+        网关名称
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -131,7 +131,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
       </label>
 
       <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-        Gateway type
+        网关类型
         <select
           value={type}
           onChange={(event) => setType(event.target.value as GatewayType)}
@@ -146,7 +146,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
       </label>
 
       <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-        Base URL
+        基础 URL
         <span className="relative">
           <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <input
@@ -166,7 +166,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
             type="password"
             value={secret}
             onChange={(event) => setSecret(event.target.value)}
-            placeholder={hasExistingKey ? 'Leave blank to keep current key' : 'Optional for local stub gateways'}
+            placeholder={hasExistingKey ? '留空则保留当前密钥' : '本地桩网关可选'}
             className="min-h-10 w-full rounded-lg border border-border-input bg-bg-input py-2 pl-9 pr-3 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
           />
         </span>
@@ -175,11 +175,11 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
 
       <label className="inline-flex items-center gap-2 text-[13px] font-medium text-text-secondary">
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} className="h-4 w-4 accent-[var(--cc-accent-gold)]" />
-        Enabled
+        已启用
       </label>
 
       <fieldset className="flex flex-col gap-3 rounded-lg border border-border-secondary bg-bg-input/60 p-3">
-        <legend className="px-1 text-[12px] font-semibold text-text-secondary">Capabilities and model mapping</legend>
+        <legend className="px-1 text-[12px] font-semibold text-text-secondary">能力与模型映射</legend>
         {channelCapabilities.map((item) => {
           const checked = capabilities.includes(item.capability)
 
@@ -214,7 +214,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
           onClick={onCancel}
           className="inline-flex min-h-9 items-center justify-center rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base transition hover:border-border-primary"
         >
-          Cancel
+          取消
         </button>
         <button
           type="submit"
@@ -224,7 +224,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, saving = false }: Gat
           )}
         >
           <Save className="h-4 w-4" />
-          Save gateway
+          保存网关
         </button>
       </div>
     </form>

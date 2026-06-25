@@ -59,14 +59,14 @@ export function ConnectedInputsPanel({
         'flex flex-col gap-3 rounded-xl border border-border-secondary bg-bg-input p-3 text-text-base shadow-card',
         className
       )}
-      aria-label="Connected inputs"
+      aria-label="已连接的输入"
     >
       <header className="flex items-center gap-2 text-[12px] font-semibold text-text-secondary">
         <Link2 className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
-        <span>Connected inputs</span>
+        <span>已连接的输入</span>
         {view.referenceImages.length > 0 && (
           <span className="ml-auto rounded-pill bg-bg-card px-2 py-0.5 text-[12px] font-medium text-semantic-info">
-            Image refs {view.referenceImages.length}
+            图片引用 {view.referenceImages.length}
           </span>
         )}
       </header>
@@ -86,7 +86,7 @@ export function ConnectedInputsPanel({
       </ol>
 
       <pre
-        aria-label="Final prompt preview"
+        aria-label="最终提示词预览"
         className="max-h-36 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border-input bg-bg-card px-3 py-2 font-sans text-[13px] leading-relaxed text-text-secondary"
       >
         {view.finalPrompt}

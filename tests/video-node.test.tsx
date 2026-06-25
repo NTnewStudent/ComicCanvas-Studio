@@ -63,13 +63,13 @@ describe('M2 VideoNode', () => {
   it('renders idle preview and expands prompt, model, orientation, duration, and frame controls', () => {
     const { onChange } = renderVideoNode()
 
-    expect(screen.getByRole('button', { name: 'Configure video node' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByText('No video yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '配置视频节点' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText('暂无视频')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Configure video node' }))
+    fireEvent.click(screen.getByRole('button', { name: '配置视频节点' }))
 
-    expect(screen.getByRole('button', { name: 'Configure video node' })).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt override' }), {
+    expect(screen.getByRole('button', { name: '配置视频节点' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt 覆盖' }), {
       target: { value: 'slow camera push into the alley' }
     })
     expect(onChange).toHaveBeenLastCalledWith('video-1', { promptOverride: 'slow camera push into the alley' })
@@ -94,13 +94,13 @@ describe('M2 VideoNode', () => {
     renderVideoNode({ data: { status: 'pending' } })
 
     expect(screen.getByRole('status', { name: 'Video generation pending' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Generate video' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '生成视频' })).toBeDisabled()
 
     cleanup()
     renderVideoNode({ data: { status: 'running' } })
 
     expect(screen.getByRole('status', { name: 'Video generation running' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Generate video' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '生成视频' })).toBeDisabled()
   })
 
   it('renders completed safe video preview and error recovery state', () => {
@@ -117,13 +117,13 @@ describe('M2 VideoNode', () => {
     cleanup()
     renderVideoNode({ data: { status: 'error' } })
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Generation failed')
+    expect(screen.getByRole('alert')).toHaveTextContent('生成失败')
   })
 
   it('invokes runNode through the run callback', () => {
     const { onRun } = renderVideoNode()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Generate video' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成视频' }))
 
     expect(onRun).toHaveBeenCalledWith('video-1')
   })

@@ -2,7 +2,7 @@
 
 > 全局真源。需求编号 REQ-xxx，状态：⬜ 未开始 / 🔵 进行中 / ✅ 完成 / 🅿️ 暂缓
 > 全局 spec 入口见 `specs/README.md`；细粒度实现任务见 `specs/core-platform-foundation/tasks.md`、`specs/milestone-execution-plan/tasks.md` 与 `specs/canvas-agent-orchestration/tasks.md`。
-> 最近更新：2026-06-25
+> 最近更新：2026-06-26
 
 ---
 
@@ -103,18 +103,41 @@
 | REQ-055 | 工具管理设置页（启用/禁用 + ToolRuntime 拒绝路径） | ✅ |
 | REQ-056 | 资产文件夹（用户自定义 + 嵌套 + 拖拽整理） | ✅ |
 
+### V2 节点复刻（2026-06-26 迭代）
+
+- REQ-060 ImageConfigV2Node（生图节点 V2）— 复刻 hjwall ImageConfigV2Node UI ✅
+- REQ-061 VideoConfigV2Node（生视频节点 V2）— 复刻 hjwall VideoConfigV2Node UI ✅
+- REQ-062 设计系统重置 — DESIGN.md 重置为 hjwall 炭黑+翠绿版本（含亮色模式章节） ✅
+- REQ-063 CSS 动画系统移植 — 7 个 @keyframes + Handle 自定义 + 按钮系统 ✅
+- REQ-064 画布引擎性能优化 — 消除双态同步 + React.memo + nodeTypes 模块级 + onlyRenderVisibleElements ✅
+- REQ-065 共享组件库 — RunStatusBadge / Chip / PopoverMenu / PromptFocusModal / MentionTextarea ✅
+- REQ-066 V2 节点注册 — nodeTypes + 连接矩阵 + store + 工具栏 ✅
+
+> 接口端暂未实现（生成按钮为桩），等网关对接后集成。
+
+### 会话迭代 2026-06-26（REQ-070 ~ REQ-076）
+
+- REQ-070 Qoder IDE 配置迁移 — 4 agents + 10 rules + 3 skills + settings.json 从 .kiro/.codex 迁移到 .qoder ✅
+- REQ-071 白屏修复 — preload .js→.mjs + CSP unsafe-inline + sandbox false（临时措施） ✅
+  - ⚠️ sandbox: false 与 core-foundation R10.1 安全要求冲突，后续需评估恢复方案（preload ESM 配置或 CJS 构建）
+- REQ-072 路由 + 侧边栏导航 — React Router + WorkspaceLayout + WorkspaceSidebar ✅
+- REQ-073 wf-neo 双主题设计系统 — DESIGN.md 重置 + styles.css token + tailwind.config.ts ✅
+- REQ-074 界面中文化 — 19 个组件 UI 文案从英文改为中文 ✅
+- REQ-075 前端设计规范规则 — .qoder/rules/frontend-design-standards.md（glob 自动激活） ✅
+- REQ-076 画布引擎性能优化 — 消除双态同步 + React.memo + nodeTypes 模块级 + onlyRenderVisibleElements ✅
+
 ---
 
 ## 安全与不变量（贯穿所有里程碑）
 
-- [ ] Canvas Plan 纯声明式 JSON，无可执行代码（PBT 注入测试）
-- [ ] 连接矩阵唯一真源，前后端 canConnect 等价（PBT 穷举）
-- [ ] 确定性 prompt 前后端字节等价（PBT）
-- [ ] 终态事件唯一性：每 jobId completed+failed 恰好 1 次
+- [x] Canvas Plan 纯声明式 JSON，无可执行代码（PBT 注入测试） — `sanitize-plan.test.ts`
+- [x] 连接矩阵唯一真源，前后端 canConnect 等价（PBT 穷举） — `connection-matrix.test.ts`
+- [x] 确定性 prompt 前后端字节等价（PBT） — `composed-prompt.test.ts`
+- [x] 终态事件唯一性：每 jobId completed+failed 恰好 1 次 — `job-ipc-fanout.test.ts`
 - [x] 子 agent 权限 ⊆ 父 agent，禁止提权
 - [x] 子 agent 递归深度 ≤ MAX_SPAWN_DEPTH(2)
-- [ ] 渲染进程沙箱（contextIsolation/nodeIntegration/sandbox）
-- [ ] API Key 不落明文 / 日志 / LTM
+- [x] 渲染进程沙箱（contextIsolation/nodeIntegration/sandbox） — `electron-security.test.ts`（⚠️ sandbox 当前为 false，见 REQ-071 例外）
+- [x] API Key 不落明文 / 日志 / LTM — `key-vault.test.ts`
 
 ---
 

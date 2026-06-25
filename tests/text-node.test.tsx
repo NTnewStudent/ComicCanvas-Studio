@@ -32,20 +32,20 @@ describe('M2 TextNode', () => {
 
     expect(screen.getByRole('button', { name: 'Text 1' })).toBeInTheDocument()
     expect(screen.getByText('hello canvas')).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: 'Text content' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '文本内容' })).not.toBeInTheDocument()
   })
 
   it('expands to a textarea on click, edits content, and collapses on blur', () => {
     const { onChange } = renderTextNode()
 
     fireEvent.click(screen.getByRole('button', { name: 'Text 1' }))
-    const textbox = screen.getByRole('textbox', { name: 'Text content' })
+    const textbox = screen.getByRole('textbox', { name: '文本内容' })
 
     fireEvent.change(textbox, { target: { value: 'new script beat' } })
     expect(onChange).toHaveBeenLastCalledWith('text-1', { content: 'new script beat' })
 
     fireEvent.blur(textbox)
-    expect(screen.queryByRole('textbox', { name: 'Text content' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '文本内容' })).not.toBeInTheDocument()
     expect(screen.getByText('new script beat')).toBeInTheDocument()
   })
 
@@ -53,11 +53,11 @@ describe('M2 TextNode', () => {
     renderTextNode()
 
     fireEvent.click(screen.getByRole('button', { name: 'Text 1' }))
-    expect(screen.getByRole('textbox', { name: 'Text content' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '文本内容' })).toBeInTheDocument()
 
     fireEvent.mouseDown(document.body)
 
-    expect(screen.queryByRole('textbox', { name: 'Text content' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: '文本内容' })).not.toBeInTheDocument()
     expect(screen.getByText('hello canvas')).toBeInTheDocument()
   })
 
@@ -65,14 +65,14 @@ describe('M2 TextNode', () => {
     const { onRename } = renderTextNode()
 
     fireEvent.doubleClick(screen.getByRole('button', { name: 'Text 1' }))
-    const renameInput = screen.getByRole('textbox', { name: 'Rename text node' })
+    const renameInput = screen.getByRole('textbox', { name: '重命名文本节点' })
 
     fireEvent.change(renameInput, { target: { value: 'Opening beat' } })
     fireEvent.keyDown(renameInput, { key: 'Enter' })
     expect(onRename).toHaveBeenLastCalledWith('text-1', 'Opening beat')
 
     fireEvent.doubleClick(screen.getByRole('button', { name: 'Opening beat' }))
-    const secondInput = screen.getByRole('textbox', { name: 'Rename text node' })
+    const secondInput = screen.getByRole('textbox', { name: '重命名文本节点' })
     fireEvent.change(secondInput, { target: { value: '' } })
     fireEvent.keyDown(secondInput, { key: 'Enter' })
     expect(onRename).toHaveBeenCalledTimes(1)

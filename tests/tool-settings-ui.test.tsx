@@ -71,11 +71,11 @@ describe('M5 Tool management UI', () => {
     fireEvent.click(await screen.findByRole('switch', { name: 'Query Canvas Graph enabled' }))
 
     await waitFor(() => expect(mockOf(api.disableTool)).toHaveBeenCalledWith({ toolId: 'canvas.queryGraph' }))
-    expect(screen.getByText('Disabled Query Canvas Graph')).toBeInTheDocument()
+    expect(screen.getByText('已禁用 Query Canvas Graph')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('switch', { name: 'Run Canvas Node enabled' }))
 
     await waitFor(() => expect(mockOf(api.enableTool)).toHaveBeenCalledWith({ toolId: 'canvas.runNode' }))
-    expect(screen.getByText('Enabled Run Canvas Node')).toBeInTheDocument()
+    expect(screen.getByText('已启用 Run Canvas Node')).toBeInTheDocument()
   })
 })

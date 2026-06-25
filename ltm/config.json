@@ -2,7 +2,7 @@
   "created_by": "ltm-power",
   "version": "1.0.0",
   "created_at": "2026-06-24T00:00:00Z",
-  "python_cmd": "python3",
+  "python_cmd": "python",
   "schema_version": 1,
   "exclude_paths": ["ltm/**", "node_modules/**", "dist/**", "build/**", "out/**", ".vite/**", "appData/**", "coverage/**"],
   "sensitive_path_patterns": [".env*", "secrets/**", "credentials/**", ".aws/**", ".ssh/**", ".kube/**", "*.pem", "*.key", "*.p12", "*.pfx", "*.crt", "*.cert", "id_rsa", "id_ed25519", "kubeconfig"],

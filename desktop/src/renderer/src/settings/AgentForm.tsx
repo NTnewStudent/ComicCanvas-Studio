@@ -13,21 +13,21 @@ export interface AgentFormProps {
 }
 
 const toolOptions = [
-  { id: 'canvas.queryGraph', label: 'canvas.queryGraph', description: 'Read the current canvas graph.' },
-  { id: 'canvas.proposePlan', label: 'canvas.proposePlan', description: 'Draft declarative canvas plans.' },
-  { id: 'canvas.createNode', label: 'canvas.createNode', description: 'Create text, image, or video nodes.' },
-  { id: 'canvas.connectNodes', label: 'canvas.connectNodes', description: 'Connect compatible canvas nodes.' },
-  { id: 'canvas.updateNodeData', label: 'canvas.updateNodeData', description: 'Update node configuration.' },
-  { id: 'canvas.deleteNode', label: 'canvas.deleteNode', description: 'Remove canvas nodes.' },
-  { id: 'canvas.runNode', label: 'canvas.runNode', description: 'Queue generation for a node.' }
+  { id: 'canvas.queryGraph', label: 'canvas.queryGraph', description: '读取当前画布图。' },
+  { id: 'canvas.proposePlan', label: 'canvas.proposePlan', description: '起草声明式画布计划。' },
+  { id: 'canvas.createNode', label: 'canvas.createNode', description: '创建文本、图片或视频节点。' },
+  { id: 'canvas.connectNodes', label: 'canvas.connectNodes', description: '连接兼容的画布节点。' },
+  { id: 'canvas.updateNodeData', label: 'canvas.updateNodeData', description: '更新节点配置。' },
+  { id: 'canvas.deleteNode', label: 'canvas.deleteNode', description: '删除画布节点。' },
+  { id: 'canvas.runNode', label: 'canvas.runNode', description: '排队节点生成任务。' }
 ] as const
 
 const permissionOptions: Array<{ value: ToolPermissionKind; label: string }> = [
-  { value: 'canvas.read', label: 'Canvas read' },
-  { value: 'canvas.write', label: 'Canvas write' },
-  { value: 'provider.spend', label: 'Provider spend' },
-  { value: 'diagnostics', label: 'Diagnostics' },
-  { value: 'destructive', label: 'Destructive' }
+  { value: 'canvas.read', label: '画布读取' },
+  { value: 'canvas.write', label: '画布写入' },
+  { value: 'provider.spend', label: '供应商消费' },
+  { value: 'diagnostics', label: '诊断' },
+  { value: 'destructive', label: '破坏性操作' }
 ]
 
 const channelOptions: AgentGatewayPolicy['allowedChannels'] = ['text', 'image', 'video']
@@ -131,7 +131,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
 
   function submitForm(): void {
     if (name.trim().length === 0 || instructions.trim().length === 0) {
-      setError('Name and instructions are required.')
+      setError('名称和指令为必填项。')
       return
     }
 
@@ -171,14 +171,14 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
     <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[18px] font-semibold leading-tight text-text-base">{agent ? 'Edit agent' : 'Add agent'}</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">Define instructions, tool access, context scope, and model routing for a user agent.</p>
+          <h2 className="text-[18px] font-semibold leading-tight text-text-base">{agent ? '编辑 Agent' : '添加 Agent'}</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-text-secondary">为用户 Agent 定义指令、工具访问、上下文范围和模型路由。</p>
         </div>
         <button
           type="button"
           onClick={onCancel}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-input bg-bg-input text-text-secondary transition hover:border-border-primary hover:text-text-base"
-          aria-label="Cancel agent edit"
+          aria-label="取消 Agent 编辑"
         >
           <X className="h-4 w-4" />
         </button>
@@ -186,7 +186,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-          Agent name
+          Agent 名称
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -204,7 +204,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
       </div>
 
       <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-        Description
+        描述
         <input
           value={description}
           onChange={(event) => setDescription(event.target.value)}
@@ -213,7 +213,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
       </label>
 
       <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-        Instructions
+        指令
         <textarea
           value={instructions}
           onChange={(event) => setInstructions(event.target.value)}
@@ -226,7 +226,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
         <legend className="px-1 text-[12px] font-semibold text-text-secondary">
           <span className="inline-flex items-center gap-1.5">
             <Wrench className="h-3.5 w-3.5 text-brand" />
-            Tool access
+            工具访问
           </span>
         </legend>
         <div className="grid gap-2 md:grid-cols-2">
@@ -249,7 +249,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
       </fieldset>
 
       <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-        Allowed skills
+        允许的技能
         <input
           value={allowedSkills}
           onChange={(event) => setAllowedSkills(event.target.value)}
@@ -262,20 +262,20 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
         <legend className="px-1 text-[12px] font-semibold text-text-secondary">
           <span className="inline-flex items-center gap-1.5">
             <Bot className="h-3.5 w-3.5 text-brand" />
-            Model and run policy
+            模型与运行策略
           </span>
         </legend>
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-          Model ID
+          模型 ID
           <input
             value={modelId}
             onChange={(event) => setModelId(event.target.value)}
-            placeholder="Use gateway default"
+            placeholder="使用网关默认值"
             className="min-h-10 rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
           />
         </label>
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-          Effort
+          力度
           <select
             value={effort}
             onChange={(event) => setEffort(event.target.value as AgentEffort)}
@@ -287,7 +287,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
           </select>
         </label>
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-          Max turns
+          最大轮次
           <input
             type="number"
             min={1}
@@ -298,7 +298,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
           />
         </label>
         <div className="flex flex-col gap-2 text-[12px] font-medium text-text-muted">
-          Channels
+          渠道
           <div className="flex flex-wrap gap-2">
             {channelOptions.map((channel) => (
               <label key={channel} className="inline-flex items-center gap-2 rounded-pill border border-border-input bg-bg-card px-3 py-1.5 text-[13px] text-text-secondary">
@@ -319,15 +319,15 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
         <legend className="px-1 text-[12px] font-semibold text-text-secondary">
           <span className="inline-flex items-center gap-1.5">
             <BrainCircuit className="h-3.5 w-3.5 text-brand" />
-            Context policy
+            上下文策略
           </span>
         </legend>
         {(
           [
-            ['includeCanvasGraph', 'Canvas graph'],
-            ['includeSelectedAssets', 'Selected assets'],
-            ['includeRecentMessages', 'Recent messages'],
-            ['includeKnowledge', 'Knowledge context']
+            ['includeCanvasGraph', '画布图'],
+            ['includeSelectedAssets', '已选资产'],
+            ['includeRecentMessages', '最近消息'],
+            ['includeKnowledge', '知识上下文']
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="inline-flex items-center gap-2 text-[13px] font-medium text-text-secondary">
@@ -341,7 +341,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
           </label>
         ))}
         <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted md:col-span-2">
-          Max context tokens
+          最大上下文 Token 数
           <input
             type="number"
             min={512}
@@ -357,7 +357,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
         <legend className="px-1 text-[12px] font-semibold text-text-secondary">
           <span className="inline-flex items-center gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5 text-brand" />
-            Permission policy
+            权限策略
           </span>
         </legend>
         <div className="flex flex-wrap gap-2">
@@ -380,13 +380,13 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
             onChange={(event) => setPermissionPolicy((current) => ({ ...current, requireAskForDestructive: event.target.checked }))}
             className="h-4 w-4 accent-[var(--cc-accent-gold)]"
           />
-          Ask before destructive actions
+          破坏性操作前需确认
         </label>
       </fieldset>
 
       <label className="inline-flex items-center gap-2 text-[13px] font-medium text-text-secondary">
         <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} className="h-4 w-4 accent-[var(--cc-accent-gold)]" />
-        Enabled
+        已启用
       </label>
 
       {error && <p className="text-[13px] text-semantic-negative">{error}</p>}
@@ -397,7 +397,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
           onClick={onCancel}
           className="inline-flex min-h-9 items-center justify-center rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base transition hover:border-border-primary"
         >
-          Cancel
+          取消
         </button>
         <button
           type="button"
@@ -408,7 +408,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
           )}
         >
           <Save className="h-4 w-4" />
-          Save agent
+          保存 Agent
         </button>
       </div>
     </form>

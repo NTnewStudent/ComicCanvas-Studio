@@ -26,9 +26,9 @@ export function AgentMentionPopover({ agents, activeIndex, onActiveIndexChange, 
     <div className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-full max-w-[360px] overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-pop">
       <div className="flex items-center gap-2 border-b border-border-secondary px-3 py-2 text-[12px] font-semibold text-text-secondary">
         <AtSign className="h-3.5 w-3.5 text-brand" aria-hidden="true" />
-        Agent selector
+        Agent 选择器
       </div>
-      <div id="agent-mention-selector" role="listbox" aria-label="Agent mention selector" className="max-h-64 overflow-y-auto p-1.5">
+      <div id="agent-mention-selector" role="listbox" aria-label="Agent 提及选择器" className="max-h-64 overflow-y-auto p-1.5">
         {agents.map((agent, index) => (
           <button
             key={agent.id}

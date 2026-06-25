@@ -90,13 +90,13 @@ describe('M4 Chat UI', () => {
     render(<PlanCard plan={samplePlan} autoExecute={false} onAutoExecuteChange={vi.fn()} onApplyPlan={onApplyPlan} />)
 
     expect(screen.getByText('生成宇宙飞船首帧并转成短视频。')).toBeInTheDocument()
-    expect(screen.getByText('3 nodes')).toBeInTheDocument()
-    expect(screen.getByText('2 edges')).toBeInTheDocument()
-    expect(screen.getByText('2 run steps')).toBeInTheDocument()
-    expect(screen.getByText('1 item dropped during plan sanitization')).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: 'Auto execute plan run steps' })).not.toBeChecked()
+    expect(screen.getByText('3 个节点')).toBeInTheDocument()
+    expect(screen.getByText('2 条边')).toBeInTheDocument()
+    expect(screen.getByText('2 个运行步骤')).toBeInTheDocument()
+    expect(screen.getByText('1 项在计划净化过程中被丢弃')).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '自动执行计划运行步骤' })).not.toBeChecked()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Apply plan' }))
+    fireEvent.click(screen.getByRole('button', { name: '应用计划' }))
 
     expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: false })
   })
@@ -116,7 +116,7 @@ describe('M4 Chat UI', () => {
 
     await waitFor(() => expect(api.sendCanvasChat).toHaveBeenCalledWith({ message: '生成一个宇宙飞船图片节点', agentId: 'orchestrator' }))
     expect(textbox).toHaveValue('')
-    expect(screen.getByText('Plan queued: job-agent-1')).toBeInTheDocument()
+    expect(screen.getByText('计划已排队：job-agent-1')).toBeInTheDocument()
     await waitFor(() => expect(api.getCanvasPlan).toHaveBeenCalledWith({ messageId: 'message-1' }))
     expect(await screen.findByText('生成宇宙飞船首帧并转成短视频。')).toBeInTheDocument()
   })
@@ -133,11 +133,11 @@ describe('M4 Chat UI', () => {
     const { unmount } = render(<ChatPanel api={api} onApplyPlan={onApplyPlan} />)
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '生成短视频' } })
-    fireEvent.click(screen.getByRole('switch', { name: 'Auto execute plan run steps' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Send canvas message' }))
+    fireEvent.click(screen.getByRole('switch', { name: '自动执行计划运行步骤' }))
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
 
     await screen.findByText('生成宇宙飞船首帧并转成短视频。')
-    fireEvent.click(screen.getByRole('button', { name: 'Apply plan' }))
+    fireEvent.click(screen.getByRole('button', { name: '应用计划' }))
 
     expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: true })
 
@@ -159,7 +159,7 @@ describe('M4 Chat UI', () => {
     render(<PlanCard plan={clarifyPlan} autoExecute={false} onAutoExecuteChange={vi.fn()} onApplyPlan={vi.fn()} />)
 
     expect(screen.getByText('请补充分镜主体。')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Apply plan' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '应用计划' })).not.toBeInTheDocument()
   })
 
   it('uses the Tailwind cn helper and references the pc-client chat implementation baseline', () => {
@@ -184,7 +184,7 @@ describe('M4 Chat UI', () => {
     const textbox = screen.getByRole('textbox', { name: 'Canvas agent message' })
     fireEvent.change(textbox, { target: { value: '@' } })
 
-    expect(await screen.findByRole('listbox', { name: 'Agent mention selector' })).toBeInTheDocument()
+    expect(await screen.findByRole('listbox', { name: 'Agent 提及选择器' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /Orchestrator/ })).toHaveAttribute('aria-selected', 'true')
 
     fireEvent.keyDown(textbox, { key: 'ArrowDown' })
@@ -192,7 +192,7 @@ describe('M4 Chat UI', () => {
 
     fireEvent.keyDown(textbox, { key: 'Enter' })
 
-    await waitFor(() => expect(screen.queryByRole('listbox', { name: 'Agent mention selector' })).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('listbox', { name: 'Agent 提及选择器' })).not.toBeInTheDocument())
     expect(screen.getByText('@Canvas')).toBeInTheDocument()
 
     fireEvent.change(textbox, { target: { value: '@Canvas Generate a three-panel comic beat' } })

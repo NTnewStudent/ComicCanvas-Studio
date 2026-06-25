@@ -56,7 +56,7 @@ export function ToolList({ api = toolApi() }: ToolListProps): JSX.Element {
       } catch {
         // Tool settings failures stay local to the panel and do not expose raw IPC details.
         setLoadState('error')
-        setMessage('Tool list failed to load.')
+        setMessage('工具列表加载失败。')
       }
     }
 
@@ -69,10 +69,10 @@ export function ToolList({ api = toolApi() }: ToolListProps): JSX.Element {
     try {
       const saved = tool.enabled ? await api.disableTool({ toolId: tool.id }) : await api.enableTool({ toolId: tool.id })
       setTools((current) => upsertTool(current, saved))
-      setMessage(`${saved.enabled ? 'Enabled' : 'Disabled'} ${saved.name}`)
+      setMessage(`${saved.enabled ? '已启用' : '已禁用'} ${saved.name}`)
     } catch {
       // Toggle failures should be recoverable without leaking transport or stack details.
-      setMessage('Tool toggle failed.')
+      setMessage('工具切换失败。')
     }
   }
 
@@ -80,15 +80,15 @@ export function ToolList({ api = toolApi() }: ToolListProps): JSX.Element {
     <section className="flex w-full max-w-6xl flex-col gap-5 rounded-xl border border-border-secondary bg-bg-surface p-5 shadow-card">
       <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="mb-1 text-[12px] font-semibold uppercase text-text-muted">Tool settings</p>
-          <h1 className="text-[24px] font-bold leading-tight text-text-base">Tool registry</h1>
+          <p className="mb-1 text-[12px] font-semibold uppercase text-text-muted">工具设置</p>
+          <h1 className="text-[24px] font-bold leading-tight text-text-base">工具注册表</h1>
           <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-text-secondary">
-            Review built-in canvas tools, permissions, concurrency policy, and whether agents may invoke them.
+            查看内置画布工具、权限、并发策略以及 Agent 是否可调用它们。
           </p>
         </div>
         <div className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-secondary">
           <Wrench className="h-4 w-4 text-brand" />
-          {orderedTools.length} tools
+          {orderedTools.length} 个工具
         </div>
       </header>
 
@@ -99,8 +99,8 @@ export function ToolList({ api = toolApi() }: ToolListProps): JSX.Element {
         </div>
       )}
 
-      {loadState === 'loading' && <p className="text-[13px] text-text-muted">Loading tools...</p>}
-      {loadState === 'error' && <p className="text-[13px] text-semantic-negative">Tool settings could not be loaded.</p>}
+      {loadState === 'loading' && <p className="text-[13px] text-text-muted">工具加载中...</p>}
+      {loadState === 'error' && <p className="text-[13px] text-semantic-negative">工具设置无法加载。</p>}
 
       {loadState === 'ready' && (
         <div className="grid gap-3 lg:grid-cols-2">
@@ -132,17 +132,17 @@ export function ToolList({ api = toolApi() }: ToolListProps): JSX.Element {
 
               <dl className="grid gap-2 text-[12px] text-text-secondary">
                 <div className="flex items-center justify-between gap-2">
-                  <dt className="text-text-muted">Concurrency</dt>
+                  <dt className="text-text-muted">并发数</dt>
                   <dd className="rounded-pill bg-bg-input px-2 py-0.5">{tool.concurrency}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <dt className="text-text-muted">Input</dt>
+                  <dt className="text-text-muted">输入</dt>
                   <dd className="truncate font-mono text-[12px] text-brand">{tool.inputSchemaRef}</dd>
                 </div>
               </dl>
 
               <div className="flex flex-wrap gap-2">
-                {tool.permissions.length === 0 && <span className="rounded-pill border border-border-input bg-bg-input px-2 py-1 text-[12px] text-text-muted">no permissions</span>}
+                {tool.permissions.length === 0 && <span className="rounded-pill border border-border-input bg-bg-input px-2 py-1 text-[12px] text-text-muted">无权限</span>}
                 {tool.permissions.map((permission) => (
                   <span key={`${tool.id}-${permission.kind}`} className="inline-flex items-center gap-1 rounded-pill border border-border-input bg-bg-input px-2 py-1 text-[12px] font-medium text-text-secondary">
                     <ShieldCheck className="h-3.5 w-3.5 text-brand" />

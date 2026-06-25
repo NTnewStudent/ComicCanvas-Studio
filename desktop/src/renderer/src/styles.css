@@ -3,53 +3,193 @@
 @tailwind utilities;
 
 @layer base {
+  /*
+   * ─── Dark theme (default — wf-neo Neon Cyan on Deep Blue-Black) ──────────
+   * Applied on `:root` so dark tokens win with zero class required.
+   * Token values aligned with global/design/DESIGN.md wf-neo spec.
+   */
   :root {
-    --cc-bg-canvas: #f4f4f6;
-    --cc-bg-surface: #ffffff;
-    --cc-bg-card: rgba(255, 255, 255, 0.99);
-    --cc-bg-input: #f4f5f7;
-    --cc-bg-hover: rgba(130, 96, 51, 0.08);
-    --cc-border-card: rgba(130, 96, 51, 0.32);
-    --cc-border-card-hover: rgba(130, 96, 51, 0.75);
-    --cc-border-input: rgba(130, 96, 51, 0.22);
-    --cc-text-primary: #111827;
-    --cc-text-secondary: #374151;
-    --cc-text-muted: #5a6a80;
-    --cc-accent-gold: #826033;
-    --cc-accent-gold-hover: #694d26;
-    --cc-success: #10b981;
-    --cc-info: #06b6d4;
-    --cc-warning: #f59e0b;
-    --cc-danger: #ef4444;
-    --cc-focus-ring: rgba(197, 168, 128, 0.45);
-    --cc-shadow-card: 0 12px 48px -10px rgba(130, 96, 51, 0.12);
-    --cc-shadow-active: 0 20px 50px -5px rgba(130, 96, 51, 0.24);
-    --cc-shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.45);
-    --cc-radius-sm: 7px;
-    --cc-radius-md: 8px;
-    --cc-radius-lg: 12px;
-    --cc-radius-xl: 16px;
+    color-scheme: dark;
+
+    /* Background layers (deep → shallow) */
+    --cc-bg-canvas: #06090e;
+    --cc-bg-topbar: #080d13;
+    --cc-bg-rail: #0a1016;
+    --cc-bg-input: #070f17;
+    --cc-bg-mid: #0a141b;
+    --cc-bg-surface: #0a1118;
+    --cc-bg-card: #0c141c;
+    --cc-bg-panel: #0d161e;
+    --cc-bg-elevated: #101b24;
+    --cc-bg-hover: #102029;
+    --cc-bg-card-active: #13242e;
+    --cc-bg-highlight: #14242e;
+    --cc-bg-action-btn: #16262f;
+    --cc-canvas-surface: #1a1a1a;
+
+    /* Accent — Neon Cyan */
+    --cc-accent: #46d9e6;
+    --cc-accent-hover: #74e7f1;
+    --cc-accent-pressed: #2db6c4;
+    --cc-accent-subtle: rgba(70, 217, 230, 0.12);
+    --cc-accent-subtle-border: rgba(70, 217, 230, 0.4);
+
+    /* Borders — cyan ambient glow */
+    --cc-border-subtle: rgba(70, 217, 230, 0.1);
+    --cc-border-standard: rgba(70, 217, 230, 0.18);
+    --cc-border-primary: rgba(70, 217, 230, 0.26);
+    --cc-border-secondary: rgba(70, 217, 230, 0.38);
+    --cc-border-input: rgba(70, 217, 230, 0.24);
+
+    /* Text — cool cyan tint */
+    --cc-text-primary: #e8f6f8;
+    --cc-text-secondary: #9cbec6;
+    --cc-text-muted: #6d8d96;
+    --cc-text-silver: #c5dde2;
+
+    /* Semantic status */
+    --cc-success: #46d9e6;
+    --cc-info: #539df5;
+    --cc-warning: #ff9c26;
+    --cc-danger: #e22134;
+    --cc-focus-ring: rgba(70, 217, 230, 0.45);
+
+    /* Shadows */
+    --cc-shadow-float: 0 10px 35px rgba(0, 0, 0, 0.55);
+    --cc-shadow-pop: 0 18px 50px rgba(0, 0, 0, 0.65);
+
+    /* Radii */
+    --cc-radius-sm: 4px;
+    --cc-radius-md: 7px;
+    --cc-radius-lg: 8px;
+    --cc-radius-xl: 12px;
+    --cc-radius-2xl: 16px;
+    --cc-radius-3xl: 24px;
     --cc-radius-pill: 9999px;
-    --cc-bezier-luxury: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* Typography */
+    --cc-font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    --cc-font-mono: 'Berkeley Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+
+    /* Motion */
+    --cc-ease-luxury: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /*
+     * Backward-compat aliases — consumed by canvas.css & legacy components.
+     * These map old variable names to new wf-neo tokens so existing
+     * `var(--cc-accent-gold)` etc. references keep working.
+     */
+    --cc-accent-gold: var(--cc-accent);
+    --cc-accent-gold-hover: var(--cc-accent-hover);
+    --cc-border-card: var(--cc-border-standard);
+    --cc-border-card-hover: var(--cc-border-primary);
+    --cc-shadow-card: var(--cc-shadow-float);
+    --cc-shadow-active: var(--cc-shadow-pop);
+    --cc-bezier-luxury: var(--cc-ease-luxury);
   }
 
-  .theme-dark,
-  :root {
-    --cc-bg-canvas: #06070a;
-    --cc-bg-surface: #0d0f14;
-    --cc-bg-card: rgba(13, 15, 20, 0.94);
-    --cc-bg-input: #101116;
-    --cc-bg-hover: rgba(197, 168, 128, 0.08);
-    --cc-border-card: rgba(197, 168, 128, 0.16);
-    --cc-border-card-hover: rgba(197, 168, 128, 0.52);
-    --cc-border-input: rgba(197, 168, 128, 0.22);
-    --cc-text-primary: #f3f4f6;
-    --cc-text-secondary: #9ca3af;
-    --cc-text-muted: #6b7280;
-    --cc-accent-gold: #c5a880;
-    --cc-accent-gold-hover: #b5976f;
-    --cc-shadow-card: 0 12px 48px -10px rgba(197, 168, 128, 0.03);
-    --cc-shadow-active: 0 20px 50px -5px rgba(197, 168, 128, 0.24);
+  /*
+   * ─── Light theme — system preference ─────────────────────────────────────
+   * Activates when the OS reports `prefers-color-scheme: light` AND the user
+   * has not manually forced dark mode (no `.dark` class on `<html>`).
+   */
+  @media (prefers-color-scheme: light) {
+    :root:not(.dark) {
+      color-scheme: light;
+
+      --cc-bg-canvas: #ebebeb;
+      --cc-bg-topbar: #ffffff;
+      --cc-bg-rail: #f0f0f0;
+      --cc-bg-input: #f5f5f5;
+      --cc-bg-surface: #f0f0f0;
+      --cc-bg-panel: #f8f8f8;
+      --cc-bg-card: #ffffff;
+      --cc-bg-hover: #f2f2f2;
+      --cc-canvas-surface: rgba(252, 251, 249, 0.82);
+
+      --cc-accent: #1a1d21;
+      --cc-accent-hover: #2e3440;
+      --cc-accent-pressed: #0d0f12;
+      --cc-accent-subtle: rgba(26, 29, 33, 0.1);
+
+      --cc-border-subtle: #ececec;
+      --cc-border-standard: #dcdcdc;
+      --cc-border-primary: #d4d4d4;
+      --cc-border-secondary: #dedede;
+
+      --cc-text-primary: #1a1d21;
+      --cc-text-secondary: #4a4f57;
+      --cc-text-muted: #777d87;
+
+      --cc-success: #1a1d21;
+      --cc-info: #539df5;
+      --cc-warning: #ff9c26;
+      --cc-danger: #e22134;
+      --cc-focus-ring: rgba(26, 29, 33, 0.45);
+
+      --cc-shadow-float: 0 10px 35px rgba(17, 24, 39, 0.06);
+      --cc-shadow-pop: 0 18px 50px rgba(17, 24, 39, 0.14);
+
+      /* Backward-compat aliases for light theme */
+      --cc-accent-gold: var(--cc-accent);
+      --cc-accent-gold-hover: var(--cc-accent-hover);
+      --cc-border-card: var(--cc-border-standard);
+      --cc-border-card-hover: var(--cc-border-primary);
+      --cc-shadow-card: var(--cc-shadow-float);
+      --cc-shadow-active: var(--cc-shadow-pop);
+      --cc-bezier-luxury: var(--cc-ease-luxury);
+    }
+  }
+
+  /*
+   * ─── Light theme — forced via `html.light` ────────────────────────────────
+   * Applied when the user explicitly chooses light in the theme picker,
+   * regardless of OS preference. ThemeSync sets `.light` on `<html>`.
+   */
+  html.light {
+    color-scheme: light;
+
+    --cc-bg-canvas: #ebebeb;
+    --cc-bg-topbar: #ffffff;
+    --cc-bg-rail: #f0f0f0;
+    --cc-bg-input: #f5f5f5;
+    --cc-bg-surface: #f0f0f0;
+    --cc-bg-panel: #f8f8f8;
+    --cc-bg-card: #ffffff;
+    --cc-bg-hover: #f2f2f2;
+    --cc-canvas-surface: rgba(252, 251, 249, 0.82);
+
+    --cc-accent: #1a1d21;
+    --cc-accent-hover: #2e3440;
+    --cc-accent-pressed: #0d0f12;
+    --cc-accent-subtle: rgba(26, 29, 33, 0.1);
+
+    --cc-border-subtle: #ececec;
+    --cc-border-standard: #dcdcdc;
+    --cc-border-primary: #d4d4d4;
+    --cc-border-secondary: #dedede;
+
+    --cc-text-primary: #1a1d21;
+    --cc-text-secondary: #4a4f57;
+    --cc-text-muted: #777d87;
+
+    --cc-success: #1a1d21;
+    --cc-info: #539df5;
+    --cc-warning: #ff9c26;
+    --cc-danger: #e22134;
+    --cc-focus-ring: rgba(26, 29, 33, 0.45);
+
+    --cc-shadow-float: 0 10px 35px rgba(17, 24, 39, 0.06);
+    --cc-shadow-pop: 0 18px 50px rgba(17, 24, 39, 0.14);
+
+    /* Backward-compat aliases for light theme */
+    --cc-accent-gold: var(--cc-accent);
+    --cc-accent-gold-hover: var(--cc-accent-hover);
+    --cc-border-card: var(--cc-border-standard);
+    --cc-border-card-hover: var(--cc-border-primary);
+    --cc-shadow-card: var(--cc-shadow-float);
+    --cc-shadow-active: var(--cc-shadow-pop);
+    --cc-bezier-luxury: var(--cc-ease-luxury);
   }
 
   * {
@@ -60,6 +200,6 @@
     margin: 0;
     background: var(--cc-bg-canvas);
     color: var(--cc-text-primary);
-    font-family: Inter, PingFang SC, Microsoft YaHei, system-ui, sans-serif;
+    font-family: var(--cc-font-sans);
   }
 }

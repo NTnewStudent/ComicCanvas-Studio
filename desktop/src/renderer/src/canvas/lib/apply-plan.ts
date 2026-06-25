@@ -11,7 +11,7 @@ import type { CanvasPlan, PlanEdge, PlanNode, RunAction } from '../../../../../.
 import type { CanvasSnapshot, CanvasStoreEdge, CanvasStoreNode, CanvasStoreState } from '../store/canvas.store'
 import type { PlanRunnerStep } from './plan-runner'
 
-const NODE_TYPES = new Set<NodeType>(['text', 'image', 'video'])
+const NODE_TYPES = new Set<NodeType>(['text', 'image', 'video', 'imageConfigV2', 'videoConfigV2'])
 const EDGE_TYPES = new Set<EdgeType>(['promptOrder', 'imageRole', 'default'])
 const IMAGE_ROLES = new Set<ImageRole>(['first_frame', 'last_frame', 'reference'])
 const RUN_ACTIONS = new Set<RunAction>(['imageRun', 'videoRun', 'textPolish'])

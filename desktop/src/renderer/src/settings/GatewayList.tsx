@@ -85,7 +85,7 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
         setLoadState('ready')
       } catch {
         setLoadState('error')
-        setMessage('Gateway list failed to load.')
+        setMessage('网关列表加载失败。')
       }
     }
 
@@ -110,9 +110,9 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
         return current.map((item) => (item.id === saved.id ? saved : item))
       })
       setEditing(null)
-      setMessage(`Saved ${saved.name}`)
+      setMessage(`已保存 ${saved.name}`)
     } catch {
-      setMessage('Gateway save failed.')
+      setMessage('网关保存失败。')
     } finally {
       setSaving(false)
     }
@@ -125,7 +125,7 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
   async function testGateway(gateway: GatewayConfigView): Promise<void> {
     setMessage(null)
     const ticket = await api.testGateway({ gatewayId: gateway.id, channel: firstTestChannel(gateway.capabilities) })
-    setMessage(`Test queued: ${ticket.jobId}`)
+    setMessage(`测试已排队：${ticket.jobId}`)
   }
 
   async function confirmDelete(): Promise<void> {
@@ -137,27 +137,27 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
     await api.deleteGateway({ gatewayId: target.id })
     setGateways((current) => current.filter((item) => item.id !== target.id))
     setDeleting(null)
-    setMessage(`Deleted ${target.name}`)
+    setMessage(`已删除 ${target.name}`)
   }
 
   return (
     <section className="flex w-full max-w-6xl flex-col gap-5 rounded-xl border border-border-secondary bg-bg-surface p-5 shadow-card">
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="mb-1 text-[12px] font-semibold uppercase text-text-muted">Gateway settings</p>
-          <h1 className="text-[24px] font-bold leading-tight text-text-base">Provider routing</h1>
+          <p className="mb-1 text-[12px] font-semibold uppercase text-text-muted">网关设置</p>
+          <h1 className="text-[24px] font-bold leading-tight text-text-base">供应商路由</h1>
           <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-text-secondary">
-            Manage model gateways for text, image, and video generation. Secrets are represented as vault references in the UI.
+            管理文本、图片、视频生成的模型网关。密钥在界面中以保险库引用表示。
           </p>
         </div>
         <button
           type="button"
           onClick={() => setEditing('new')}
           className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover"
-          aria-label="Add gateway"
+          aria-label="添加网关"
         >
           <Plus className="h-4 w-4" />
-          Add gateway
+          添加网关
         </button>
       </header>
 
@@ -171,8 +171,8 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
       {editing === 'new' && <GatewayForm saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
       {editing !== null && editing !== 'new' && <GatewayForm gateway={editing} saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
 
-      {loadState === 'loading' && <p className="text-[13px] text-text-muted">Loading gateways...</p>}
-      {loadState === 'error' && <p className="text-[13px] text-semantic-negative">Gateway settings could not be loaded.</p>}
+      {loadState === 'loading' && <p className="text-[13px] text-text-muted">网关加载中...</p>}
+      {loadState === 'error' && <p className="text-[13px] text-semantic-negative">网关设置无法加载。</p>}
 
       {loadState === 'ready' && (
         <div className="grid gap-3 lg:grid-cols-2">
@@ -199,11 +199,11 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
 
               <dl className="grid gap-2 text-[12px] text-text-secondary">
                 <div className="flex items-center justify-between gap-2">
-                  <dt className="text-text-muted">Type</dt>
+                  <dt className="text-text-muted">类型</dt>
                   <dd className="rounded-pill bg-bg-input px-2 py-0.5">{gateway.type}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <dt className="text-text-muted">Key</dt>
+                  <dt className="text-text-muted">密钥</dt>
                   <dd className="font-mono text-[12px] text-brand">{maskKeyRef(gateway.keyRef)}</dd>
                 </div>
               </dl>
@@ -221,27 +221,27 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
                   type="button"
                   onClick={() => setEditing(gateway)}
                   className="inline-flex min-h-8 items-center justify-center rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-base transition hover:border-border-primary"
-                  aria-label={`Edit ${gateway.name}`}
+                  aria-label={`编辑 ${gateway.name}`}
                 >
-                  Edit
+                  编辑
                 </button>
                 <button
                   type="button"
                   onClick={() => void testGateway(gateway)}
                   className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-base transition hover:border-border-primary"
-                  aria-label={`Test ${gateway.name}`}
+                  aria-label={`测试 ${gateway.name}`}
                 >
                   <FlaskConical className="h-4 w-4 text-brand" />
-                  Test
+                  测试
                 </button>
                 <button
                   type="button"
                   onClick={() => setDeleting(gateway)}
                   className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-semantic-negative transition hover:border-border-primary"
-                  aria-label={`Delete ${gateway.name}`}
+                  aria-label={`删除 ${gateway.name}`}
                 >
                   <Trash2 className="h-4 w-4" />
-                  Delete
+                  删除
                 </button>
               </div>
             </article>
@@ -250,20 +250,20 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
       )}
 
       {deleting && (
-        <div role="alertdialog" aria-modal="true" aria-label={`Delete gateway ${deleting.name}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+        <div role="alertdialog" aria-modal="true" aria-label={`删除网关 ${deleting.name}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-sm rounded-xl border border-border-secondary bg-bg-surface p-5 shadow-pop">
-            <h2 className="text-[16px] font-semibold text-text-base">Delete gateway {deleting.name}</h2>
-            <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">This removes the gateway configuration from the local settings list.</p>
+            <h2 className="text-[16px] font-semibold text-text-base">删除网关 {deleting.name}</h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">这将从本地设置列表中删除该网关配置。</p>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setDeleting(null)}
                 className="rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base"
               >
-                Cancel
+                取消
               </button>
               <button type="button" onClick={() => void confirmDelete()} className="rounded-lg bg-semantic-negative px-3 py-2 text-[13px] font-semibold text-white">
-                Confirm delete
+                确认删除
               </button>
             </div>
           </div>

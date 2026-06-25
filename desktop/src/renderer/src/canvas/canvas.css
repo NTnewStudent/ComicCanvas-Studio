@@ -1,0 +1,468 @@
+/**
+ * 画布工作区 ReactFlow 容器样式
+ * 暗/亮主题自适应，使用 design token。
+ * 对齐 DESIGN.md wf-neo 霓虹青双主题规范。
+ */
+
+/* ReactFlow 容器背景 */
+.cc-flow {
+  background-color: var(--cc-bg-canvas);
+}
+
+/* ── 连线样式（DESIGN.md 第十节） ── */
+
+/* 默认连线：夜间青色半透明 */
+.cc-flow .react-flow__edge-path {
+  stroke: rgba(70, 217, 230, 0.40);
+  stroke-width: 2;
+}
+
+/* 选中/拖拽连线：全亮青色 */
+.cc-flow .react-flow__edge.selected .react-flow__edge-path,
+.cc-flow .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--cc-accent);
+  stroke-width: 2.5;
+}
+
+.cc-flow .react-flow__connection-path {
+  stroke: var(--cc-accent);
+  stroke-width: 2px;
+  stroke-dasharray: 6 3;
+}
+
+/* 日间连线 */
+html.light .cc-flow .react-flow__edge-path {
+  stroke: rgba(26, 29, 33, 0.32);
+}
+html.light .cc-flow .react-flow__edge.selected .react-flow__edge-path,
+html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--cc-accent);
+}
+
+/* 节点选中态去掉默认 outline */
+.cc-flow .react-flow__node.selected {
+  outline: none;
+}
+
+/* ── MiniMap 样式 ── */
+.cc-flow .react-flow__minimap {
+  border-radius: 0.75rem;
+  border: 1px solid var(--cc-border-card-hover);
+  background-color: var(--cc-bg-card);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--cc-text-primary) 8%, transparent);
+  overflow: hidden;
+}
+
+.cc-flow .react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--cc-accent) 12%, transparent);
+}
+
+/* ── Controls 样式 ── */
+.cc-flow .react-flow__controls {
+  border-radius: 0.75rem;
+  border: 1px solid var(--cc-border-card-hover);
+  overflow: hidden;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--cc-text-primary) 8%, transparent);
+}
+
+.cc-flow .react-flow__controls-button {
+  background-color: var(--cc-bg-card);
+  border-bottom: 1px solid var(--cc-border-card-hover);
+  color: var(--cc-text-secondary);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.cc-flow .react-flow__controls-button:hover {
+  background-color: var(--cc-bg-hover);
+  color: var(--cc-text-primary);
+}
+
+.cc-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+/* ── 背景点阵 ── */
+.cc-flow .react-flow__background {
+  background-color: var(--cc-bg-canvas);
+}
+
+/* ── Attribution（右下角 logo） ── */
+.cc-flow .react-flow__attribution {
+  opacity: 0.4;
+  font-size: 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   以下从 hjwall workflow-canvas/styles.css 移植，wf- → cc- 前缀
+   对齐 DESIGN.md wf-neo 霓虹青双主题规范
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── @keyframes 动画 ── */
+
+/* 1. 生成中呼吸光环（品牌色改用 --cc-accent） */
+@keyframes cc-generating-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--cc-accent) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--cc-accent) 12%, transparent);
+  }
+}
+
+/* 2. AI 润色流光 */
+@keyframes cc-polish-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* 3. 光标闪烁 */
+@keyframes cc-caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 4. 连线流动 */
+@keyframes cc-dash-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+/* 5. 媒体出现溶解 */
+@keyframes cc-media-reveal {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+    filter: saturate(0.4) blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: saturate(1) blur(0);
+  }
+}
+
+/* 6. 错误抖动 */
+@keyframes cc-shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-3px);
+  }
+  40%,
+  60% {
+    transform: translateX(3px);
+  }
+}
+
+/* 7. Handle 脉冲（青色光晕，对齐 wf-neo） */
+@keyframes cc-handle-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(70, 217, 230, 0.5) !important;
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgba(70, 217, 230, 0) !important;
+  }
+}
+
+/* ── 状态动画类 ── */
+
+/* 生成中呼吸光环 */
+.cc-generating-ring {
+  border-color: var(--cc-accent) !important;
+  animation: cc-generating-pulse 1.8s ease-in-out infinite;
+}
+
+/* AI 润色流光条 */
+.cc-polish-shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--cc-bg-input) 90%, transparent) 0%,
+    color-mix(in srgb, var(--cc-accent) 18%, var(--cc-bg-input)) 50%,
+    color-mix(in srgb, var(--cc-bg-input) 90%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: cc-polish-shimmer 1.6s ease-in-out infinite;
+}
+
+/* 打字机光标 */
+.cc-typing-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--cc-accent);
+  animation: cc-caret-blink 0.8s step-end infinite;
+}
+
+/* 错误抖动 */
+.cc-failed-shake {
+  border-color: var(--cc-danger, #e5484d) !important;
+  animation: cc-shake 0.5s ease both;
+}
+
+/* 媒体出现溶解 */
+.cc-media-reveal {
+  animation: cc-media-reveal 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── 节点 hover 微抬升（DESIGN.md 第八节 wf-neo drop-shadow） ── */
+.cc-flow .react-flow__node {
+  transition: filter 0.25s var(--cc-ease-luxury);
+}
+.cc-flow .react-flow__node:hover {
+  filter: drop-shadow(0 0 18px rgba(70, 217, 230, 0.22)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
+}
+
+/* 夜间默认节点 drop-shadow */
+.cc-flow .react-flow__node {
+  filter: drop-shadow(0 0 14px rgba(70, 217, 230, 0.10)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.45));
+}
+
+/* 夜间选中节点 drop-shadow */
+.cc-flow .react-flow__node.selected {
+  filter: drop-shadow(0 0 22px rgba(70, 217, 230, 0.32)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
+}
+
+/* ── 连线流动动画 ── */
+.cc-flow .cc-edge-flowing .react-flow__edge-path {
+  stroke: var(--cc-accent);
+  stroke-width: 2.5px;
+  stroke-dasharray: 7 7;
+  animation: cc-dash-flow 0.7s linear infinite;
+}
+
+/* ── Handle 自定义样式（DESIGN.md 第七节） ── */
+
+/* 基础 Handle：16px 圆形，霓虹青填充，面板色边框 */
+.react-flow__handle {
+  width: 16px !important;
+  height: 16px !important;
+  border-radius: 50% !important;
+  background: var(--cc-accent) !important;
+  border: 2.5px solid var(--cc-bg-panel) !important;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  z-index: 10 !important;
+  cursor: crosshair !important;
+}
+
+/* 扩大不可见触控区域 */
+.react-flow__handle::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: -10px !important;
+  border-radius: 50% !important;
+  pointer-events: auto !important;
+}
+
+/* hover：放大 + 青色发光光晕 */
+.react-flow__handle:hover {
+  transform: scale(1.6) !important;
+  box-shadow:
+    0 0 0 4px rgba(70, 217, 230, 0.22),
+    0 0 0 9px rgba(70, 217, 230, 0.08) !important;
+}
+
+/* 日间 Handle（DESIGN.md 第七节 wf-mono 墨黑） */
+html.light .react-flow__handle {
+  background: #1a1d21 !important;
+  border-color: #ffffff !important;
+}
+html.light .react-flow__handle:hover {
+  box-shadow:
+    0 0 0 4px rgba(26, 29, 33, 0.22),
+    0 0 0 9px rgba(26, 29, 33, 0.08) !important;
+}
+
+/* source (右) hover：显示 + 号 */
+.react-flow__handle-right::after {
+  content: '+' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  color: #fff !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  transition: opacity 140ms ease !important;
+}
+.react-flow__handle-right:hover::after {
+  opacity: 1 !important;
+}
+
+/* 连线进行中：target handle 脉冲闪烁 */
+.react-flow__handle-left.connectable {
+  animation: cc-handle-pulse 1.2s ease-in-out infinite !important;
+}
+
+/* ── 选中态：品牌色边框 + 外发光光环 ── */
+.cc-flow .react-flow__node.selected {
+  box-shadow:
+    0 0 0 2px var(--cc-accent),
+    0 0 0 6px color-mix(in srgb, var(--cc-accent) 18%, transparent);
+}
+
+/* ── 节点卡片基础样式（DESIGN.md 第八节/第九节） ── */
+.cc-node-card {
+  background: var(--cc-canvas-surface);
+  border-radius: 20px;
+  border: 1px solid var(--cc-border-primary);
+  overflow: hidden;
+  /* 夜间 wf-neo drop-shadow */
+  filter: drop-shadow(0 0 14px rgba(70, 217, 230, 0.10)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.45));
+  transition: filter 0.25s var(--cc-ease-luxury);
+}
+.cc-node-card:hover {
+  filter: drop-shadow(0 0 18px rgba(70, 217, 230, 0.22)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
+}
+
+/* 节点选中态 */
+.cc-node-selected {
+  filter: drop-shadow(0 0 22px rgba(70, 217, 230, 0.32)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
+}
+
+/* 日间节点（柔光玻璃，DESIGN.md 第九节） */
+html.light .cc-node-card {
+  background: rgba(252, 251, 249, 0.9);
+  border-color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 8px 26px rgba(17, 24, 39, 0.09);
+  filter: none;
+}
+html.light .cc-node-card:hover {
+  border-color: rgba(255, 255, 255, 0.80);
+  filter: none;
+}
+html.light .cc-node-selected {
+  border-color: #07af49;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 0 2px #07af49,
+    0 0 0 6px rgba(7, 175, 73, 0.18),
+    0 10px 32px rgba(7, 175, 73, 0.16);
+  filter: none;
+}
+
+/* ── 预览区卡片 ── */
+.cc-preview-card {
+  border-radius: 20px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: var(--cc-bg-input);
+  border: 1px solid var(--cc-border-card);
+}
+html.light .cc-preview-card {
+  background: #f5f5f5;
+}
+
+/* ── 按钮系统（DESIGN.md 第六节 6.6） ── */
+
+/* 夜间主按钮（wf-neo 青辉玻璃） */
+.cc-btn-primary {
+  background: color-mix(in srgb, var(--cc-accent) 22%, #0a141c);
+  color: var(--cc-text-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc-accent) 45%, transparent);
+  border: none;
+  border-radius: var(--cc-radius-md);
+  padding: 0 16px;
+  height: 36px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cc-btn-primary:hover {
+  background: color-mix(in srgb, var(--cc-accent) 34%, #0a141c);
+}
+.cc-btn-primary:disabled {
+  opacity: 0.45;
+}
+
+/* 日间主按钮（墨黑） */
+html.light .cc-btn-primary {
+  background: color-mix(in srgb, var(--cc-text-primary) 90%, transparent);
+  color: var(--cc-bg-canvas);
+  box-shadow: none;
+}
+html.light .cc-btn-primary:hover {
+  background: var(--cc-text-primary);
+}
+
+/* 次按钮：深灰背景，主题自适应 */
+.cc-btn-secondary {
+  background: color-mix(in srgb, var(--cc-text-primary) 8%, transparent);
+  color: var(--cc-text-primary);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+.cc-btn-secondary:hover {
+  background: color-mix(in srgb, var(--cc-text-primary) 15%, transparent);
+}
+.cc-btn-secondary:disabled {
+  opacity: 0.45;
+}
+
+/* ── 毛玻璃（DESIGN.md 第十一节 wf-glass） ── */
+.cc-glass {
+  background: color-mix(in srgb, var(--cc-bg-card) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+}
+html.light .cc-glass {
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(17, 24, 39, 0.08);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* ── 日间节点 drop-shadow 清除（react-flow__node 级别） ── */
+html.light .cc-flow .react-flow__node {
+  filter: none;
+}
+html.light .cc-flow .react-flow__node:hover {
+  filter: drop-shadow(0 6px 16px rgba(17, 24, 39, 0.10));
+}
+html.light .cc-flow .react-flow__node.selected {
+  filter: none;
+  box-shadow: none !important;
+}
+
+/* ── 减少动效 ── */
+@media (prefers-reduced-motion: reduce) {
+  .cc-flow * {
+    transition: none !important;
+  }
+  .react-flow__handle,
+  .react-flow__handle-left.connectable {
+    animation: none !important;
+    transition: none !important;
+  }
+}

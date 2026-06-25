@@ -33,7 +33,7 @@ const providerSpendPermission: ToolPermission = { kind: 'provider.spend', reason
 
 const positionSchema = z.object({ x: z.number(), y: z.number() })
 const viewportSchema = z.object({ x: z.number(), y: z.number(), zoom: z.number() })
-const nodeTypeSchema = z.enum(['text', 'image', 'video'])
+const nodeTypeSchema = z.enum(['text', 'image', 'video', 'imageConfigV2', 'videoConfigV2'])
 const orientationSchema = z.enum(['landscape', 'portrait', 'square'])
 const statusSchema = z.enum(['idle', 'pending', 'running', 'done', 'error'])
 const edgeTypeSchema = z.enum(['promptOrder', 'imageRole', 'default'])
@@ -163,7 +163,7 @@ function defaultQueueTicket(createdAt: number): JobTicket {
 }
 
 function jobTypeForNode(type: NodeType): 'canvas.generateImage' | 'canvas.generateVideo' {
-  if (type === 'video') {
+  if (type === 'video' || type === 'videoConfigV2') {
     return 'canvas.generateVideo'
   }
 

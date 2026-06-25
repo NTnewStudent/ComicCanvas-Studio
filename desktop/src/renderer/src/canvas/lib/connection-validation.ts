@@ -41,7 +41,9 @@ export interface CanvasConnectHandlerOptions {
 const nodeTypeLabel: Record<NodeType, string> = {
   text: '文本',
   image: '图片',
-  video: '视频'
+  video: '视频',
+  imageConfigV2: '生图',
+  videoConfigV2: '生视频',
 }
 
 const fallbackMessages: Record<ConnectFailureReason, string> = {

@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DESIGN_SELF — 画布 UI 双主题预览</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    background: #111;
+    color: #fff;
+    min-height: 100vh;
+  }
+
+  /* ══════════════ 页面布局 ══════════════ */
+  .page-header {
+    text-align: center;
+    padding: 40px 24px 28px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.03em; color: #e8f6f8; }
+  .page-header p  { margin-top: 6px; font-size: 13px; color: #6d8d96; }
+
+  .themes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: calc(100vh - 100px);
+  }
+
+  /* ══════════════ 夜间面板（wf-neo） ══════════════ */
+  .panel-dark {
+    background: #06090e;
+    padding: 32px 28px 48px;
+    border-right: 1px solid rgba(70,217,230,0.15);
+  }
+  .panel-light {
+    background: #ebebeb;
+    padding: 32px 28px 48px;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+  .panel-dark  .panel-title { color: #46d9e6; }
+  .panel-light .panel-title { color: #00a844; }
+
+  /* ══════════════ Section ══════════════ */
+  .section { margin-bottom: 36px; }
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+  .panel-dark  .section-label { color: #9cbec6; }
+  .panel-light .section-label { color: #4a4f57; }
+
+  /* ══════════════ 色板 ══════════════ */
+  .swatch-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: default;
+  }
+  .swatch-block {
+    width: 44px;
+    height: 28px;
+    border-radius: 6px;
+  }
+  .swatch-label {
+    font-size: 9px;
+    text-align: center;
+    line-height: 1.2;
+    width: 48px;
+    overflow: hidden;
+  }
+  .panel-dark  .swatch-label { color: #6d8d96; }
+  .panel-light .swatch-label { color: #777d87; }
+
+  /* ══════════════ 节点卡片 ══════════════ */
+
+  /* 夜间节点 */
+  .node-dark {
+    background: #1a1a1a;
+    border: 1px solid rgba(70,217,230,0.26);
+    border-radius: 20px;
+    overflow: hidden;
+    filter: drop-shadow(0 0 14px rgba(70,217,230,0.12)) drop-shadow(0 14px 30px rgba(0,0,0,0.45));
+    width: 100%;
+    max-width: 300px;
+  }
+  .node-dark-preview {
+    height: 120px;
+    background: #0c0c0c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(70,217,230,0.3);
+    font-size: 12px;
+  }
+  .node-dark-toolbar {
+    background: #1a1a1a;
+    border-top: 1px solid rgba(70,217,230,0.18);
+    padding: 10px 14px;
+  }
+  .node-dark-label {
+    font-size: 11px;
+    color: #9cbec6;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .node-dark .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* 日间节点 */
+  .node-light {
+    background: rgba(252,251,249,0.9);
+    border: 1px solid #ffffff;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.95),
+      0 0 0 1px rgba(255,255,255,0.55),
+      0 8px 26px rgba(17,24,39,0.09);
+    width: 100%;
+    max-width: 300px;
+    backdrop-filter: blur(16px);
+  }
+  .node-light-preview {
+    height: 120px;
+    background: #f5f5f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #bbb;
+    font-size: 12px;
+  }
+  .node-light-toolbar {
+    background: rgba(252,251,249,0.9);
+    border-top: 1px solid rgba(17,24,39,0.08);
+    padding: 10px 14px;
+  }
+  .node-light-label {
+    font-size: 11px;
+    color: #4a4f57;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .node-light .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* ══════════════ Chip ══════════════ */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 9999px;
+    border: 1px solid;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  /* 夜间 chip */
+  .chip-dark {
+    border-color: rgba(70,217,230,0.38);
+    background: #070f17;
+    color: #9cbec6;
+  }
+  .chip-dark:hover, .chip-dark.active {
+    border-color: rgba(70,217,230,0.5);
+    background: #0d161e;
+    color: #46d9e6;
+  }
+  .chip-dark.selected {
+    border-color: rgba(70,217,230,0.4);
+    background: rgba(70,217,230,0.12);
+    color: #46d9e6;
+  }
+  /* 日间 chip */
+  .chip-light {
+    border-color: rgba(17,24,39,0.15);
+    background: #f5f5f5;
+    color: #4a4f57;
+  }
+  .chip-light:hover, .chip-light.active {
+    background: #ebebeb;
+    color: #1a1d21;
+  }
+  .chip-light.selected {
+    border-color: rgba(26,29,33,0.35);
+    background: rgba(26,29,33,0.08);
+    color: #1a1d21;
+    font-weight: 700;
+  }
+
+  /* ══════════════ PopoverMenu ══════════════ */
+  .popover {
+    border-radius: 12px;
+    border: 1px solid;
+    overflow: hidden;
+    width: 100%;
+    max-width: 280px;
+  }
+  .popover-header {
+    padding: 8px 12px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+  .popover-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .popover-item-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .popover-item-name { font-weight: 600; }
+  .popover-item-desc { font-size: 10px; margin-top: 1px; opacity: 0.6; }
+
+  /* 夜间 popover */
+  .popover-dark {
+    background: #0d161e;
+    border-color: rgba(70,217,230,0.26);
+    box-shadow: 0 15px 45px rgba(0,0,0,0.55);
+  }
+  .popover-dark .popover-header { color: #6d8d96; }
+  .popover-dark .popover-item { color: #e8f6f8; }
+  .popover-dark .popover-item:hover { background: #102029; }
+  .popover-dark .popover-item.active { background: rgba(70,217,230,0.12); color: #46d9e6; }
+  .popover-dark .popover-item-icon { background: #0d161e; color: #9cbec6; border: 1px solid rgba(70,217,230,0.18); }
+  .popover-dark .popover-item.active .popover-item-icon { background: rgba(70,217,230,0.15); color: #46d9e6; }
+
+  /* 日间 popover */
+  .popover-light {
+    background: #ffffff;
+    border-color: #d4d4d4;
+    box-shadow: 0 15px 45px rgba(17,24,39,0.12);
+  }
+  .popover-light .popover-header { color: #777d87; }
+  .popover-light .popover-item { color: #1a1d21; }
+  .popover-light .popover-item:hover { background: #f5f5f5; }
+  .popover-light .popover-item.active { background: rgba(26,29,33,0.08); color: #1a1d21; font-weight: 700; }
+  .popover-light .popover-item-icon { background: #f0f0f0; color: #4a4f57; border: 1px solid #dedede; }
+  .popover-light .popover-item.active .popover-item-icon { background: rgba(26,29,33,0.12); color: #1a1d21; }
+
+  /* ══════════════ 按钮 ══════════════ */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 16px;
+    border-radius: 12px;
+    border: none;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  /* 夜间主按钮（wf-btn-primary in wf-neo） */
+  .btn-primary-dark {
+    background: color-mix(in srgb, #46d9e6 22%, #0a141c);
+    color: #e8f6f8;
+    box-shadow: inset 0 0 0 1px rgba(70,217,230,0.45);
+  }
+  .btn-primary-dark:hover {
+    background: color-mix(in srgb, #46d9e6 34%, #0a141c);
+  }
+  /* 夜间次按钮 */
+  .btn-secondary-dark {
+    background: rgba(232,246,248,0.08);
+    color: #e8f6f8;
+  }
+  /* 日间主按钮（wf-btn-primary in wf-mono: text-base 90%，墨黑） */
+  .btn-primary-light {
+    background: color-mix(in srgb, #1a1d21 90%, transparent);
+    color: #ebebeb;
+    backdrop-filter: blur(10px);
+  }
+  .btn-primary-light:hover { background: #1a1d21; }
+  /* 日间次按钮 */
+  .btn-secondary-light {
+    background: rgba(26,29,33,0.08);
+    color: #1a1d21;
+    border: 1px solid rgba(26,29,33,0.15);
+  }
+
+  /* ══════════════ Handle ══════════════ */
+  .handle-demo { display: flex; gap: 16px; align-items: center; }
+  .handle {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2.5px solid;
+    position: relative;
+    cursor: crosshair;
+    transition: transform 0.18s, box-shadow 0.18s;
+  }
+  .handle:hover { transform: scale(1.6); }
+  .handle-dark {
+    background: #46d9e6;
+    border-color: #0d161e;
+  }
+  .handle-dark:hover {
+    box-shadow: 0 0 0 4px rgba(70,217,230,0.22), 0 0 0 9px rgba(70,217,230,0.08);
+  }
+  .handle-light {
+    background: #1a1d21;
+    border-color: #ffffff;
+  }
+  .handle-light:hover {
+    box-shadow: 0 0 0 4px rgba(26,29,33,0.22), 0 0 0 9px rgba(26,29,33,0.08);
+  }
+  .handle-label { font-size: 11px; opacity: 0.5; }
+  .panel-dark  .handle-label { color: #9cbec6; }
+  .panel-light .handle-label { color: #4a4f57; }
+
+  /* ══════════════ 文字层级 ══════════════ */
+  .text-scale { display: flex; flex-direction: column; gap: 4px; }
+  .text-row { display: flex; align-items: baseline; gap: 8px; }
+  .text-sample-dark-base      { font-size: 14px; color: #e8f6f8; font-weight: 600; }
+  .text-sample-dark-secondary { font-size: 13px; color: #9cbec6; }
+  .text-sample-dark-muted     { font-size: 12px; color: #6d8d96; }
+  .text-sample-dark-brand     { font-size: 12px; color: #46d9e6; font-weight: 700; }
+  .text-sample-light-base      { font-size: 14px; color: #1a1d21; font-weight: 600; }
+  .text-sample-light-secondary { font-size: 13px; color: #4a4f57; }
+  .text-sample-light-muted     { font-size: 12px; color: #777d87; }
+  .text-sample-light-brand     { font-size: 12px; color: #1a1d21; font-weight: 700; }
+  .text-tag { font-size: 9px; padding: 1px 5px; border-radius: 4px; margin-left: 4px; opacity: 0.6; }
+  .panel-dark  .text-tag { background: rgba(70,217,230,0.12); color: #46d9e6; }
+  .panel-light .text-tag { background: rgba(26,29,33,0.08); color: #1a1d21; }
+
+  /* ══════════════ 边框展示 ══════════════ */
+  .border-samples { display: flex; flex-direction: column; gap: 6px; }
+  .border-sample {
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font-size: 10px;
+  }
+  /* 夜间 */
+  .bd-subtle-dark   { border-color: rgba(70,217,230,0.10); color: rgba(70,217,230,0.4); background: #06090e; }
+  .bd-standard-dark { border-color: rgba(70,217,230,0.18); color: rgba(70,217,230,0.5); background: #06090e; }
+  .bd-primary-dark  { border-color: rgba(70,217,230,0.26); color: rgba(70,217,230,0.7); background: #06090e; }
+  .bd-secondary-dark{ border-color: rgba(70,217,230,0.38); color: #9cbec6; background: #06090e; }
+  /* 日间 */
+  .bd-subtle-light   { border-color: #ececec; color: #bbb; background: #fff; }
+  .bd-standard-light { border-color: #dcdcdc; color: #aaa; background: #fff; }
+  .bd-primary-light  { border-color: #d4d4d4; color: #888; background: #fff; }
+  .bd-secondary-light{ border-color: #dedede; color: #666; background: #fff; }
+
+  /* ══════════════ 连线 ══════════════ */
+  .edge-demo {
+    height: 40px;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .edge-line {
+    height: 2px;
+    border-radius: 2px;
+    width: 100%;
+  }
+  .edge-dark-default  { background: rgba(70,217,230,0.40); }
+  .edge-dark-selected { background: #46d9e6; box-shadow: 0 0 8px rgba(70,217,230,0.5); }
+  .edge-light-default  { background: rgba(26,29,33,0.32); }
+  .edge-light-selected { background: #1a1d21; }
+  .edge-label {
+    position: absolute;
+    right: 0;
+    font-size: 9px;
+    top: -14px;
+    opacity: 0.5;
+  }
+  .panel-dark  .edge-label { color: #9cbec6; }
+  .panel-light .edge-label { color: #777d87; }
+
+  /* ══════════════ Divider ══════════════ */
+  .divider {
+    height: 1px;
+    margin: 20px 0;
+  }
+  .divider-dark  { background: rgba(70,217,230,0.1); }
+  .divider-light { background: rgba(17,24,39,0.08); }
+
+  /* ══════════════ 两列内容布局 ══════════════ */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>DESIGN_SELF — 工作流画布 UI 双主题预览</h1>
+  <p>夜间（wf-neo 霓虹蓝青）· 日间（柔光玻璃白）</p>
+</div>
+
+<div class="themes-grid">
+
+  <!-- ══ 夜间面板 ══ -->
+  <div class="panel-dark">
+    <div class="panel-title">🌙 夜间模式（html.dark .wf-neo）</div>
+
+    <!-- 背景色板 -->
+    <div class="section">
+      <div class="section-label">背景层级（由深到浅）</div>
+      <div class="swatch-row">
+        <div class="swatch"><div class="swatch-block" style="background:#06090e;border:1px solid rgba(70,217,230,0.15)"></div><div class="swatch-label">bg-base<br>#06090e</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#070f17;border:1px solid rgba(70,217,230,0.15)"></div><div class="swatch-label">bg-input<br>#070f17</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#0a141b;border:1px solid rgba(70,217,230,0.15)"></div><div class="swatch-label">bg-mid<br>#0a141b</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#0c141c;border:1px solid rgba(70,217,230,0.15)"></div><div class="swatch-label">bg-card<br>#0c141c</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#0d161e;border:1px solid rgba(70,217,230,0.2)"></div><div class="swatch-label">bg-panel<br>#0d161e</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#102029;border:1px solid rgba(70,217,230,0.2)"></div><div class="swatch-label">bg-hover<br>#102029</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#1a1a1a;border:1px solid rgba(70,217,230,0.2)"></div><div class="swatch-label">canvas-<br>surface</div></div>
+      </div>
+    </div>
+
+    <!-- 强调色 -->
+    <div class="section">
+      <div class="section-label">霓虹青强调色</div>
+      <div class="swatch-row">
+        <div class="swatch"><div class="swatch-block" style="background:#46d9e6"></div><div class="swatch-label">brand<br>#46d9e6</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#74e7f1"></div><div class="swatch-label">hover<br>#74e7f1</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#2db6c4"></div><div class="swatch-label">pressed<br>#2db6c4</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:rgba(70,217,230,0.12);border:1px solid rgba(70,217,230,0.3)"></div><div class="swatch-label">subtle<br>12%</div></div>
+      </div>
+    </div>
+
+    <!-- 文字层级 -->
+    <div class="section">
+      <div class="section-label">文字层级</div>
+      <div class="text-scale">
+        <div class="text-row"><span class="text-sample-dark-base">主要文字 text-base</span><span class="text-tag">#e8f6f8</span></div>
+        <div class="text-row"><span class="text-sample-dark-secondary">次要文字 text-secondary</span><span class="text-tag">#9cbec6</span></div>
+        <div class="text-row"><span class="text-sample-dark-muted">暗淡文字 text-muted</span><span class="text-tag">#6d8d96</span></div>
+        <div class="text-row"><span class="text-sample-dark-brand">品牌文字 text-brand ✓</span><span class="text-tag">#46d9e6</span></div>
+      </div>
+    </div>
+
+    <div class="divider divider-dark"></div>
+
+    <!-- 节点卡片 -->
+    <div class="section">
+      <div class="section-label">节点卡片</div>
+      <div class="node-dark">
+        <div class="node-dark-preview">▶ 等待生成</div>
+        <div class="node-dark-toolbar">
+          <div class="node-dark-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="4" width="20" height="16" rx="4"/><polygon points="10 10 15 12 10 14 10 10" fill="currentColor"/></svg>
+            生图 v2 节点
+          </div>
+          <div class="chips">
+            <span class="chip chip-dark selected">🎨 无画风 ▾</span>
+            <span class="chip chip-dark">📐 1:1 ▾</span>
+            <span class="chip chip-dark">🤖 请选择模型 ▾</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PopoverMenu -->
+    <div class="section">
+      <div class="section-label">弹出选择框（PopoverMenu）</div>
+      <div class="popover popover-dark">
+        <div class="popover-header">请选择模型</div>
+        <div class="popover-item">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">nano-banana-1k</div></div>
+        </div>
+        <div class="popover-item active">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">image2-high-1k</div><div class="popover-item-desc">选中态 — rgba(70,217,230,0.12)</div></div>
+          <span style="margin-left:auto;font-size:12px;color:#46d9e6">✓</span>
+        </div>
+        <div class="popover-item">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">nano-banana-2k</div></div>
+        </div>
+        <div class="popover-item">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">image2-medium-1k</div><div class="popover-item-desc">hover 态背景：#102029</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 按钮 -->
+    <div class="section">
+      <div class="section-label">按钮</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary-dark">✦ 生成图片</button>
+        <button class="btn btn-secondary-dark">取消</button>
+      </div>
+    </div>
+
+    <!-- 描边 -->
+    <div class="section">
+      <div class="section-label">描边层级（青色氛围光）</div>
+      <div class="border-samples">
+        <div class="border-sample bd-subtle-dark">border-border-subtle — rgba(70,217,230, 0.10)</div>
+        <div class="border-sample bd-standard-dark">border-border-standard — rgba(70,217,230, 0.18)</div>
+        <div class="border-sample bd-primary-dark">border-border-primary — rgba(70,217,230, 0.26)</div>
+        <div class="border-sample bd-secondary-dark">border-border-secondary — rgba(70,217,230, 0.38)</div>
+      </div>
+    </div>
+
+    <!-- 连线 -->
+    <div class="section">
+      <div class="section-label">连线（Edge）</div>
+      <div class="edge-demo">
+        <span class="edge-label">默认</span>
+        <div class="edge-line edge-dark-default"></div>
+      </div>
+      <div class="edge-demo" style="margin-top:8px">
+        <span class="edge-label">选中/拖拽</span>
+        <div class="edge-line edge-dark-selected"></div>
+      </div>
+    </div>
+
+    <!-- Handle -->
+    <div class="section">
+      <div class="section-label">连接点 Handle</div>
+      <div class="handle-demo">
+        <div class="handle handle-dark"></div><span class="handle-label">默认（hover 可发光）</span>
+        <div class="handle handle-dark" style="transform:scale(1.6);box-shadow:0 0 0 4px rgba(70,217,230,0.22),0 0 0 9px rgba(70,217,230,0.08)"></div><span class="handle-label">hover 态</span>
+      </div>
+    </div>
+
+  </div><!-- /panel-dark -->
+
+
+  <!-- ══ 日间面板 ══ -->
+  <div class="panel-light">
+    <div class="panel-title">☀️ 日间模式（html.light · wf-mono 墨黑强调）</div>
+
+    <!-- 背景色板 -->
+    <div class="section">
+      <div class="section-label">背景层级（由深到浅）</div>
+      <div class="swatch-row">
+        <div class="swatch"><div class="swatch-block" style="background:#ebebeb;border:1px solid #d4d4d4"></div><div class="swatch-label" style="color:#777">bg-base<br>#ebebeb</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#f0f0f0;border:1px solid #d4d4d4"></div><div class="swatch-label" style="color:#777">bg-surface<br>#f0f0f0</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#f5f5f5;border:1px solid #d4d4d4"></div><div class="swatch-label" style="color:#777">bg-input<br>#f5f5f5</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#f8f8f8;border:1px solid #d4d4d4"></div><div class="swatch-label" style="color:#777">bg-panel<br>#f8f8f8</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:rgba(252,251,249,0.9);border:1px solid #d4d4d4"></div><div class="swatch-label" style="color:#777">canvas-<br>surface</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#ffffff;border:1px solid #d4d4d4"></div><div class="swatch-label" style="color:#777">bg-card<br>#ffffff</div></div>
+      </div>
+    </div>
+
+    <!-- 强调色 -->
+    <div class="section">
+      <div class="section-label">墨黑强调色（wf-mono 重映射 brand = text-base）</div>
+      <div class="swatch-row">
+        <div class="swatch"><div class="swatch-block" style="background:#1a1d21"></div><div class="swatch-label" style="color:#777">brand<br>#1a1d21</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#2e3440"></div><div class="swatch-label" style="color:#777">hover<br>#2e3440</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:#0d0f12"></div><div class="swatch-label" style="color:#777">pressed<br>#0d0f12</div></div>
+        <div class="swatch"><div class="swatch-block" style="background:rgba(26,29,33,0.10);border:1px solid rgba(26,29,33,0.2)"></div><div class="swatch-label" style="color:#777">subtle<br>10%</div></div>
+      </div>
+    </div>
+
+    <!-- 文字层级 -->
+    <div class="section">
+      <div class="section-label">文字层级</div>
+      <div class="text-scale">
+        <div class="text-row"><span class="text-sample-light-base">主要文字 text-base</span><span class="text-tag">#1a1d21</span></div>
+        <div class="text-row"><span class="text-sample-light-secondary">次要文字 text-secondary</span><span class="text-tag">#4a4f57</span></div>
+        <div class="text-row"><span class="text-sample-light-muted">暗淡文字 text-muted</span><span class="text-tag">#777d87</span></div>
+        <div class="text-row"><span class="text-sample-light-brand">品牌文字 text-brand ✓</span><span class="text-tag">#1a1d21 墨黑</span></div>
+      </div>
+    </div>
+
+    <div class="divider divider-light"></div>
+
+    <!-- 节点卡片 -->
+    <div class="section">
+      <div class="section-label">节点卡片</div>
+      <div class="node-light">
+        <div class="node-light-preview">▶ 等待生成</div>
+        <div class="node-light-toolbar">
+          <div class="node-light-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="4" width="20" height="16" rx="4"/><polygon points="10 10 15 12 10 14 10 10" fill="currentColor"/></svg>
+            生图 v2 节点
+          </div>
+          <div class="chips">
+            <span class="chip chip-light selected">🎨 无画风 ▾</span>
+            <span class="chip chip-light">📐 1:1 ▾</span>
+            <span class="chip chip-light">🤖 请选择模型 ▾</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PopoverMenu -->
+    <div class="section">
+      <div class="section-label">弹出选择框（PopoverMenu）</div>
+      <div class="popover popover-light">
+        <div class="popover-header">请选择模型</div>
+        <div class="popover-item">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">nano-banana-1k</div></div>
+        </div>
+        <div class="popover-item active">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">image2-high-1k</div><div class="popover-item-desc">选中态 — rgba(26,29,33,0.08) 墨黑淡底</div></div>
+          <span style="margin-left:auto;font-size:12px;color:#1a1d21;font-weight:700">✓</span>
+        </div>
+        <div class="popover-item">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">nano-banana-2k</div></div>
+        </div>
+        <div class="popover-item">
+          <div class="popover-item-icon">🖼</div>
+          <div><div class="popover-item-name">image2-medium-1k</div><div class="popover-item-desc">hover 态背景：#f5f5f5</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 按钮 -->
+    <div class="section">
+      <div class="section-label">按钮</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary-light">✦ 生成图片</button>
+        <button class="btn btn-secondary-light">取消</button>
+      </div>
+    </div>
+
+    <!-- 描边 -->
+    <div class="section">
+      <div class="section-label">描边层级（中性灰）</div>
+      <div class="border-samples">
+        <div class="border-sample bd-subtle-light">border-border-subtle — #ececec</div>
+        <div class="border-sample bd-standard-light">border-border-standard — #dcdcdc</div>
+        <div class="border-sample bd-primary-light">border-border-primary — #d4d4d4</div>
+        <div class="border-sample bd-secondary-light">border-border-secondary — #dedede</div>
+      </div>
+    </div>
+
+    <!-- 连线 -->
+    <div class="section">
+      <div class="section-label">连线（Edge）</div>
+      <div class="edge-demo">
+        <span class="edge-label">默认</span>
+        <div class="edge-line edge-light-default"></div>
+      </div>
+      <div class="edge-demo" style="margin-top:8px">
+        <span class="edge-label">选中/拖拽</span>
+        <div class="edge-line edge-light-selected"></div>
+      </div>
+    </div>
+
+    <!-- Handle -->
+    <div class="section">
+      <div class="section-label">连接点 Handle</div>
+      <div class="handle-demo">
+        <div class="handle handle-light"></div><span class="handle-label" style="color:#777d87">默认（hover 可发光）</span>
+        <div class="handle handle-light" style="transform:scale(1.6);box-shadow:0 0 0 4px rgba(26,29,33,0.18),0 0 0 9px rgba(26,29,33,0.07)"></div><span class="handle-label" style="color:#777d87">hover 态</span>
+      </div>
+    </div>
+
+  </div><!-- /panel-light -->
+
+</div><!-- /themes-grid -->
+
+</body>
+</html>

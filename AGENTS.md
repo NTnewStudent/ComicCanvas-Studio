@@ -65,13 +65,13 @@ For multi-step tasks, state a brief plan with verify checks per step.
 **产品定位**：本产品**以「漫剧（comic drama）制作」为主**——围绕「文本 → 生图 → 生视频」这条漫剧生产链路组织画布与 Agent 能力。
 
 参考来源（仅参考，不直接引用其代码）：
-- `../hjwall`（画布 / 声明式 Plan 编排 / 异步任务 / 资产管线 / LTM / 治理范式）
-- `../cc-haha-main`：**仅参考其内置 Agent 能力**（AsyncGenerator 主循环 / 统一 Tool 接口 / Skills / Hooks 的设计），作为 Agent 内核底座，不照搬其 CLI/终端形态、也不引用源码。
+- `./hjwall`（画布 / 声明式 Plan 编排 / 异步任务 / 资产管线 / LTM / 治理范式）
+- `./cc-haha-main`：**仅参考其内置 Agent 能力**（AsyncGenerator 主循环 / 统一 Tool 接口 / Skills / Hooks 的设计），作为 Agent 内核底座，不照搬其 CLI/终端形态、也不引用源码。
 
 **Agent 可扩展**：当前 Agent 阵容（orchestrator / canvas / tooling / pm）面向漫剧主线；后期可按需新增其它 Agent（如分镜 storyboard-agent、配音 voice-agent、运营 ops-agent 等）。
 
-Codex/GPT 环境的原生入口是 `.codex/config.toml`、`.codex/agents/*.toml`、`.codex/rules/*.rules` 与 `.agents/skills/*/SKILL.md`。Claude Code 兼容入口保留在 `.claude/`，但 Codex 会话不得把 Claude Markdown 文件当作自己的 agent 定义文件。
-项目级需求、设计与任务 spec 的全局真源是根目录 `specs/`。`.codex/` 与 `.claude/` 只作为工具运行时/兼容配置层，不承载新的产品 spec。
+Qoder 环境的原生入口是 `.qoder/agents/*.md`、`.qoder/rules/*.md`、`.qoder/skills/*/SKILL.md` 与 `.qoder/settings.json`
+项目级需求、设计与任务 spec 的全局真源是根目录 `specs/`。 `.qoder/` 原生配置。
 
 ## 工程形态
 
@@ -90,36 +90,36 @@ Codex/GPT 环境的原生入口是 `.codex/config.toml`、`.codex/agents/*.toml`
 
 ## 🎭 Agent 分工
 
-| sub-Agent | 角色 | Codex 定义 |
+| sub-Agent | 角色 | Qoder 定义 |
 | :--- | :--- | :--- |
-| **orchestrator-agent** | 自然语言 → 声明式 Canvas Plan，编排全链路 | `.codex/agents/orchestrator-agent.toml` |
-| **canvas-agent** | 渲染层画布 / 节点 / 连线 / React Flow 实现 | `.codex/agents/canvas-agent.toml` |
-| **tooling-agent** | Agent 运行时 / Tool 接口 / 任务队列 / 模型适配 / DB | `.codex/agents/tooling-agent.toml` |
-| **pm-agent** | 需求拆解、契约协调、进度、测试 | `.codex/agents/pm-agent.toml` |
+| **orchestrator-agent** | 自然语言 → 声明式 Canvas Plan，编排全链路 | `.qoder/agents/orchestrator-agent.md` |
+| **canvas-agent** | 渲染层画布 / 节点 / 连线 / React Flow 实现 | `.qoder/agents/canvas-agent.md` |
+| **tooling-agent** | Agent 运行时 / Tool 接口 / 任务队列 / 模型适配 / DB | `.qoder/agents/tooling-agent.md` |
+| **pm-agent** | 需求拆解、契约协调、进度、测试 | `.qoder/agents/pm-agent.md` |
 
-会话开始时先声明角色。Codex 环境第一件事是加载对应 `.codex/agents/*.toml`。
+会话开始时先声明角色。Qoder 环境第一件事是加载对应 `.qoder/agents/*.md`。
 
-## Codex/GPT 原生设置
+## Qoder 原生设置
 
-Codex 启动时会读取本 `AGENTS.md` 作为项目级长期指导。项目内 Codex 兼容层如下：
+Qoder 启动时自动读取本 `AGENTS.md` 作为项目级长期指导，同时加载 `.qoder/` 下的 agents、rules、skills 和 settings。项目内 Qoder 原生配置层如下：
 
 | 类型 | 路径 | 用途 |
 | :--- | :--- | :--- |
-| Project config | `.codex/config.toml` | Codex 项目配置、fallback 指令文件、subagent 限制、Stop hook |
-| Custom agents | `.codex/agents/*.toml` | Codex 可识别的自定义 subagent 定义（TOML，含 developer_instructions） |
-| Exec rules | `.codex/rules/*.rules` | Codex Starlark 命令策略规则 |
-| Repo skills | `.agents/skills/*/SKILL.md` | Codex 自动扫描的仓库级 skills |
+| Custom agents | `.qoder/agents/*.md` | Qoder 自定义 sub-agent 定义（YAML frontmatter + Markdown prompt） |
+| Rules | `.qoder/rules/*.md` | Qoder 规则文件（always-apply / glob-matched，YAML frontmatter） |
+| Skills | `.qoder/skills/*/SKILL.md` | Qoder 仓库级可复用 workflow skills |
+| Hooks / Settings | `.qoder/settings.json` | 项目级 hooks（如 LTM capture on Stop） |
 
-Codex 项目必须被 trust 后，`.codex/config.toml`、项目 hooks、项目 rules 才会加载。若发现 Codex 未识别项目配置，先检查 trust 状态与启动目录。
+Codex 兼容层保留在 `.codex/`，Claude Code 兼容层保留在 `.claude/`。
 
 ## 🔴 上岗前必读（按角色）
 
-- **orchestrator-agent（Codex）**：本文件 + `.codex/agents/orchestrator-agent.toml` + `specs/canvas-agent-orchestration/`
-- **canvas-agent（Codex）**：本文件 + `.codex/agents/canvas-agent.toml` + `global/design/DESIGN.md` + `shared/`（连接矩阵 / Plan 类型）+ `docs/api-contracts/`
-- **tooling-agent（Codex）**：本文件 + `.codex/agents/tooling-agent.toml` + `docs/api-contracts/`
-- **pm-agent（Codex）**：本文件 + `.codex/agents/pm-agent.toml` + `specs/` + `docs/progress/`
+- **orchestrator-agent（Qoder）**：本文件 + `.qoder/agents/orchestrator-agent.md` + `specs/canvas-agent-orchestration/`
+- **canvas-agent（Qoder）**：本文件 + `.qoder/agents/canvas-agent.md` + `global/design/DESIGN.md` + `shared/`（连接矩阵 / Plan 类型）+ `docs/api-contracts/`
+- **tooling-agent（Qoder）**：本文件 + `.qoder/agents/tooling-agent.md` + `docs/api-contracts/`
+- **pm-agent（Qoder）**：本文件 + `.qoder/agents/pm-agent.md` + `specs/` + `docs/progress/`
 
-Claude Code 环境按其兼容目录内的 README 上岗；Codex 环境只使用本节列出的原生入口。
+Codex 环境按 `.codex/` 内配置上岗；Claude Code 环境按 `.claude/` 内 README 上岗；Qoder 环境只使用本节列出的 `.qoder/` 原生入口。
 
 ## 📊 共享真源（Source of Truth）
 
@@ -162,3 +162,12 @@ COMMAND 2>&1 | head -c 4000
 ```
 
 On Windows (cmd/PowerShell) 等价裁剪输出，避免污染上下文。
+
+## 多 IDE 兼容层
+
+| IDE 环境 | 配置目录 | 备注 |
+| :--- | :--- | :--- |
+| Qoder（主） | `.qoder/` | 原生 agent / rule / skill / hook 配置，本文件为其全局指导 |
+| Codex | `.codex/` | 兼容保留，TOML agent + Starlark rules |
+| Claude Code | `.claude/` | 兼容保留，Markdown agent + rules + commands |
+| 共享 Skills | `.agents/skills/` | 英文规范版 skills，各 IDE 均可消费 |

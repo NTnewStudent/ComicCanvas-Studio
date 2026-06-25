@@ -4,7 +4,7 @@
  */
 
 import { NodeResizer } from '@xyflow/react'
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 import type { TextNodeData } from '../../../../../../shared/nodes'
 import { useInlineRename } from '../hooks/use-inline-rename'
@@ -26,7 +26,7 @@ export interface TextNodeProps {
  * @throws Error never intentionally; empty rename is ignored.
  * @see docs/api-contracts/canvas-plan.md
  */
-export function TextNode({ id, data, selected = false, onChange, onRename }: TextNodeProps): JSX.Element {
+function TextNodeComponent({ id, data, selected = false, onChange, onRename }: TextNodeProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false)
   const [content, setContent] = useState(data.content)
   const rename = useInlineRename({
@@ -95,7 +95,7 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
         {rename.isRenaming ? (
           <input
             ref={renameRef}
-            aria-label="Rename text node"
+            aria-label="重命名文本节点"
             className="w-full min-w-0 rounded-sm border border-border-input bg-bg-input px-2 py-1.5 text-[16px] font-semibold leading-[1.35] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
             value={rename.draft}
             onChange={(event) => rename.setDraft(event.target.value)}
@@ -117,7 +117,7 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
       {isExpanded ? (
         <textarea
           ref={textareaRef}
-          aria-label="Text content"
+          aria-label="文本内容"
           className="min-h-28 flex-1 resize-none rounded-sm border border-border-input bg-bg-input p-2.5 text-[14px] leading-relaxed text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
           value={content}
           onChange={(event) => updateContent(event.target.value)}
@@ -129,9 +129,11 @@ export function TextNode({ id, data, selected = false, onChange, onRename }: Tex
           className="min-h-[102px] flex-1 cursor-text overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border-input bg-bg-input p-2.5 text-left text-[14px] leading-relaxed text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
           onClick={() => setIsExpanded(true)}
         >
-          {content || 'Write a beat, prompt, or scene note'}
+          {content || '写一段节拍、提示词或场景备注'}
         </button>
       )}
     </article>
   )
 }
+
+export const TextNode = React.memo(TextNodeComponent)

@@ -4,10 +4,16 @@ import { NODE_CONNECTION_MATRIX, canConnect } from '../shared/connection-matrix'
 import type { NodeType } from '../shared/nodes'
 
 describe('connection matrix', () => {
-  const nodeTypes: NodeType[] = ['text', 'image', 'video']
+  const nodeTypes: NodeType[] = ['text', 'image', 'video', 'imageConfigV2', 'videoConfigV2']
 
   it('allows only the canonical comic-drama node flow pairs', () => {
-    const allowedPairs = new Set(['text:image', 'text:video', 'image:image', 'image:video', 'video:video'])
+    const allowedPairs = new Set([
+      'text:image', 'text:video', 'text:imageConfigV2', 'text:videoConfigV2',
+      'image:image', 'image:video', 'image:imageConfigV2', 'image:videoConfigV2',
+      'video:video',
+      'imageConfigV2:image', 'imageConfigV2:video', 'imageConfigV2:imageConfigV2', 'imageConfigV2:videoConfigV2',
+      'videoConfigV2:video',
+    ])
 
     for (const source of nodeTypes) {
       for (const target of nodeTypes) {
