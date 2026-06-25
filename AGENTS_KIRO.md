@@ -159,6 +159,8 @@ alwaysApply: false
 - ❌ DB 查询散落业务层（走仓储层）
 - ❌ 子 agent 提权（工具集超出父 agent）/ 递归深度超 `MAX_SPAWN_DEPTH(2)`
 - ❌ `runNode` 同步等待生成；第三方网关轮询在 JobWorker 内部做，不阻塞入队入口
+- ❌ 媒体文件直接存本地而不上传到已配置的 S3 存储（必须通过 StorageProvider 接口上传）
+- ❌ 在代码中硬编码 S3 端点/密钥（必须通过设置页配置，密钥用 safeStorage 加密）
 
 ---
 

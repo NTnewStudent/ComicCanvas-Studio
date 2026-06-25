@@ -1,6 +1,6 @@
 # ComicCanvas Studio
 
-> AIGC 漫剧画布 + Agent 自动编排桌面客户端 — local-first (Electron + TypeScript + Node.js + SQLite)。
+> AIGC 漫剧画布 + Agent 自动编排桌面客户端 — 混合存储（媒体上云 + 项目本地）(Electron + TypeScript + Node.js + SQLite)。
 
 用户既能手动操作画布生成图片 / 视频 / 角色（三视图），也能用自然语言驱动 Agent 自动「生成节点 → 连线 → 串行执行任务」。
 
