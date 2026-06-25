@@ -1,12 +1,13 @@
 /**
- * MentionTextarea — 支持 `@` 提及的文本框（简化版）
+ * MentionTextarea — 支持 `@` 提及的文本框
  *
  * 核心行为：
  * - textarea 输入框
  * - 输入 `@` 时弹出提及候选列表（PopoverMenu 风格 portal）
  * - 选中提及项后插入 `[nodeId|name]` token
  * - 显示已提及的 token 列表（带删除按钮）
- * - 暂不实现自动创建/删除连线功能
+ * - 选中 mention 时回调 `onMentionSelect`（用于自动创建连线）
+ * - mention 列表变化时回调 `onMentionsChange`（用于清理被删除引用的连线）
  *
  * 底层存储格式 `[nodeId|name]`，纯 textarea 方案（非 contentEditable）。
  */
@@ -36,6 +37,12 @@ interface Props {
   onMentionChange?: (mentions: string[]) => void
   className?: string
   rows?: number
+  /** 当前节点的 ID（作为连线的 source） */
+  sourceNodeId?: string
+  /** 当选中一个 mention 时回调（用于自动创建连线） */
+  onMentionSelect?: (mentionedNodeId: string, sourceNodeId: string) => void
+  /** 当 mention 列表变化时回调（用于清理被删除引用的连线） */
+  onMentionsChange?: (currentMentionIds: string[], sourceNodeId: string) => void
 }
 
 /** 从 value 中提取所有 `[id|name]` token */
@@ -65,6 +72,9 @@ const MentionTextarea: FC<Props> = ({
   onMentionChange,
   className,
   rows = 3,
+  sourceNodeId,
+  onMentionSelect,
+  onMentionsChange,
 }) => {
   const taRef = useRef<HTMLTextAreaElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -84,10 +94,14 @@ const MentionTextarea: FC<Props> = ({
   // 当前已提及的 token
   const mentions = useMemo(() => extractMentions(value), [value])
 
-  // 通知 mention 变化
+  // 通知 mention 变化（onMentionChange + onMentionsChange）
   useEffect(() => {
-    onMentionChange?.(mentions.map((m) => m.id))
-  }, [mentions, onMentionChange])
+    const ids = mentions.map((m) => m.id)
+    onMentionChange?.(ids)
+    if (sourceNodeId) {
+      onMentionsChange?.(ids, sourceNodeId)
+    }
+  }, [mentions, onMentionChange, onMentionsChange, sourceNodeId])
 
   // 计算下拉位置
   useEffect(() => {
@@ -130,6 +144,11 @@ const MentionTextarea: FC<Props> = ({
       onChange(newValue)
       setMentionCtx(null)
 
+      // 通知上层选中了一个 mention（用于自动创建连线）
+      if (sourceNodeId) {
+        onMentionSelect?.(target.id, sourceNodeId)
+      }
+
       // 恢复焦点并移动光标到 token 后面
       requestAnimationFrame(() => {
         if (ta) {
@@ -139,7 +158,7 @@ const MentionTextarea: FC<Props> = ({
         }
       })
     },
-    [mentionCtx, value, onChange],
+    [mentionCtx, value, onChange, sourceNodeId, onMentionSelect],
   )
 
   // 删除提及 token
@@ -148,6 +167,7 @@ const MentionTextarea: FC<Props> = ({
       const re = new RegExp(`\\[${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\|[^\\]]+\\]\\s?`, 'g')
       const newValue = value.replace(re, '')
       onChange(newValue)
+      // onMentionsChange 会在 useEffect 中由 mentions 变化自动触发
     },
     [value, onChange],
   )

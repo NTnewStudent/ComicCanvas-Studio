@@ -109,4 +109,6 @@ export interface CanvasEdgeData {
   imageRole?: ImageRole
   /** 连接时间戳（用于确定性 prompt 拼接排序） */
   createdAt: number
+  /** 由 @mention 引用自动创建（用于引用清理时识别） */
+  createdByMention?: boolean
 }

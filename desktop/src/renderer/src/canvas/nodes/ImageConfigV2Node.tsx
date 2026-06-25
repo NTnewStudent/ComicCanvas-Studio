@@ -171,6 +171,44 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
     downloadImage(displayUrl, id)
   }, [displayUrl, id])
 
+  // ── @mention 自动连线管理 ──
+  const handleMentionSelect = useCallback(
+    (mentionedNodeId: string, srcNodeId: string) => {
+      const state = canvasStore.getState()
+      // 检查是否已存在相同连线
+      const exists = state.edges.some(
+        (e) => e.source === srcNodeId && e.target === mentionedNodeId,
+      )
+      if (exists) return
+      // 检查连接矩阵是否允许
+      const result = state.addEdge(srcNodeId, mentionedNodeId)
+      if (result.ok) {
+        // 标记为由 mention 创建的边
+        const edges = canvasStore.getState().edges
+        const updated = edges.map((e) =>
+          e.id === result.edgeId ? { ...e, data: { ...e.data, createdByMention: true } } : e,
+        )
+        canvasStore.getState().setEdges(updated)
+      }
+    },
+    [],
+  )
+
+  const handleMentionsChange = useCallback(
+    (currentMentionIds: string[], srcNodeId: string) => {
+      const state = canvasStore.getState()
+      const filtered = state.edges.filter((edge) => {
+        if (edge.source !== srcNodeId) return true
+        if (!edge.data.createdByMention) return true
+        return currentMentionIds.includes(edge.target)
+      })
+      if (filtered.length !== state.edges.length) {
+        state.setEdges(filtered)
+      }
+    },
+    [],
+  )
+
   // ── 删除 ──
   const handleDelete = useCallback(() => {
     deleteNode(id)
@@ -375,6 +413,9 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
                 placeholder="描述你想要生成的画面、角色、情绪和镜头..."
                 rows={3}
                 className="nodrag nowheel"
+                sourceNodeId={id}
+                onMentionSelect={handleMentionSelect}
+                onMentionsChange={handleMentionsChange}
               />
               <button
                 type="button"

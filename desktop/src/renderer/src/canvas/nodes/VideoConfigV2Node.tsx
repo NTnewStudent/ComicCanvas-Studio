@@ -178,9 +178,11 @@ interface ToolbarProps {
   data: VideoNodeData
   generating: boolean
   onUpdateData: (patch: Partial<VideoNodeData>) => void
+  onMentionSelect?: (mentionedNodeId: string, sourceNodeId: string) => void
+  onMentionsChange?: (currentMentionIds: string[], sourceNodeId: string) => void
 }
 
-const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData }) => {
+const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData, onMentionSelect, onMentionsChange }) => {
   const ratio = data.ratio ?? '9:16'
   const duration = data.duration ?? data.durationSeconds ?? 5
   const resolution = data.resolution ?? '720p'
@@ -235,6 +237,9 @@ const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData
         placeholder="描述视频内容、动作、镜头运动..."
         rows={3}
         className="nodrag nowheel"
+        sourceNodeId={nodeId}
+        {...(onMentionSelect ? { onMentionSelect } : {})}
+        {...(onMentionsChange ? { onMentionsChange } : {})}
       />
 
       {/* ── 素材缩略图列表 ── */}
@@ -445,6 +450,41 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
       canvasStore.getState().updateNodeData(id, patch as Partial<CanvasNodeData>)
     },
     [id],
+  )
+
+  // ── @mention 自动连线管理 ──
+  const handleMentionSelect = useCallback(
+    (mentionedNodeId: string, srcNodeId: string) => {
+      const state = canvasStore.getState()
+      const exists = state.edges.some(
+        (e) => e.source === srcNodeId && e.target === mentionedNodeId,
+      )
+      if (exists) return
+      const result = state.addEdge(srcNodeId, mentionedNodeId)
+      if (result.ok) {
+        const edges = canvasStore.getState().edges
+        const updated = edges.map((e) =>
+          e.id === result.edgeId ? { ...e, data: { ...e.data, createdByMention: true } } : e,
+        )
+        canvasStore.getState().setEdges(updated)
+      }
+    },
+    [],
+  )
+
+  const handleMentionsChange = useCallback(
+    (currentMentionIds: string[], srcNodeId: string) => {
+      const state = canvasStore.getState()
+      const filtered = state.edges.filter((edge) => {
+        if (edge.source !== srcNodeId) return true
+        if (!edge.data.createdByMention) return true
+        return currentMentionIds.includes(edge.target)
+      })
+      if (filtered.length !== state.edges.length) {
+        state.setEdges(filtered)
+      }
+    },
+    [],
   )
 
   // ── 视频播放控制 ──
@@ -741,6 +781,8 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
             data={d}
             generating={generating}
             onUpdateData={updateData}
+            onMentionSelect={handleMentionSelect}
+            onMentionsChange={handleMentionsChange}
           />
         </div>
       )}
