@@ -124,7 +124,18 @@
 - REQ-073 wf-neo 双主题设计系统 — DESIGN.md 重置 + styles.css token + tailwind.config.ts ✅
 - REQ-074 界面中文化 — 19 个组件 UI 文案从英文改为中文 ✅
 - REQ-075 前端设计规范规则 — .qoder/rules/frontend-design-standards.md（glob 自动激活） ✅
-- REQ-076 画布引擎性能优化 — 消除双态同步 + React.memo + nodeTypes 模块级 + onlyRenderVisibleElements ✅
+ REQ-076 画布引擎性能优化 — 消除双态同步 + React.memo + nodeTypes 模块级 + onlyRenderVisibleElements ✅
+
+### hjwall 核心功能迁移（REQ-077 ~ REQ-084）— 2026-06-26
+
+- REQ-077 画布项目管理（多工作流创建/切换/重命名/删除） ✅
+- REQ-078 工作流保存/加载（Ctrl+S + 自动保存 + 加载恢复） ✅
+- REQ-079 画布内资产库面板（浮动面板+搜索+分类+时间排序） ✅
+- REQ-080 画布左侧操作栏增强（数据驱动+展开菜单+功能按钮） ✅
+- REQ-081 画布内 AI 对话（浮动 FAB + 展开面板 + Plan 应用） ✅
+- REQ-082 画布右键菜单（空白区添加节点+节点操作） ✅
+- REQ-083 节点引用创建（@mention 自动创建/清理连线） ✅
+- REQ-084 后端接口本地化验证（IPC 映射完整性确认） ✅
 
 ---
 
