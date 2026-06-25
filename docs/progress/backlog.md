@@ -137,6 +137,18 @@
 - REQ-083 节点引用创建（@mention 自动创建/清理连线） ✅
 - REQ-084 后端接口本地化验证（IPC 映射完整性确认） ✅
 
+### S3 媒体云存储架构（REQ-085）— 2026-06-26
+
+- REQ-085 S3 媒体云存储架构改造 ✅
+  - StorageProvider 策略模式接口（upload/query/rename）
+  - S3StorageProvider 实现（兼容 R2/COS/OSS/MinIO）
+  - StorageFactory 工厂 + 注册表
+  - 设置页存储配置选项卡
+  - 资产导入自动上传 S3
+  - Provider 直接使用云端 URL
+  - 生成结果自动回传 S3
+  - 项目治理文档更新（本地优先 → 混合存储）
+
 ---
 
 ## 安全与不变量（贯穿所有里程碑）
