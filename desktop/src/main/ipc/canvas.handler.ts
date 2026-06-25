@@ -4,9 +4,9 @@
  */
 
 import type { JobTicket } from '../../../../shared/jobs'
-import type { CanvasPlan } from '../../../../shared/plan'
+import type { CanvasPlan, PlanNode, PlanRunStep } from '../../../../shared/plan'
 import { canConnect } from '../../../../shared/connection-matrix'
-import type { CanvasGraphEdge, CanvasGraphSnapshot, CanvasSaveGraphRequest } from '../../../../shared/graph'
+import type { CanvasGraphEdge, CanvasGraphNode, CanvasGraphSnapshot, CanvasSaveGraphRequest } from '../../../../shared/graph'
 import type { IpcRegistrar } from './types'
 import type { WorkflowRepository } from '../db/repositories/workflow.repo'
 import type { OrchestratorRuntime } from '../agent/orchestrator'
@@ -34,6 +34,8 @@ export interface CanvasHandlerDependencies {
   idFactory?: () => string
   /** Current user identifier stored as graph version author. */
   currentUserId?: string
+  /** Node ID factory used when applying plan nodes to the graph. */
+  nodeIdFactory?: () => string
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -160,6 +162,122 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     return workflows.getLatestVersion(projectId)?.graph ?? defaultGraph()
   })
 
+  ipcMain.handle('canvas.applyPlan', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      // Without a workflow repository the plan cannot be persisted; report an empty application.
+      return { graphVersion: 'graph-version-unavailable', appliedNodeIds: [], appliedEdgeIds: [], dropped: [] }
+    }
+
+    if (!isObject(request) || !isObject(request.plan)) {
+      return { graphVersion: 'graph-version-unavailable', appliedNodeIds: [], appliedEdgeIds: [], dropped: [] }
+    }
+
+    const plan = request.plan as CanvasPlan
+    const mode = request.mode === 'apply' ? 'apply' : 'draft'
+    const projectId = 'default'
+    const existingGraph = workflows.getLatestVersion(projectId)?.graph ?? defaultGraph()
+    const nodeIdFactory = dependencies.nodeIdFactory ?? (() => `node-${crypto.randomUUID()}`)
+
+    // Map plan refs to stable graph node IDs.
+    const refToId = new Map<string, string>()
+    const appliedNodes: CanvasGraphNode[] = []
+    const appliedNodeIds: string[] = []
+
+    for (const planNode of plan.nodes) {
+      const id = nodeIdFactory()
+      refToId.set(planNode.ref, id)
+      appliedNodes.push({
+        id,
+        type: planNode.type,
+        position: { x: appliedNodes.length * 250, y: 0 },
+        data: planNode.data as CanvasGraphNode['data']
+      })
+      appliedNodeIds.push(id)
+    }
+
+    const appliedEdges: CanvasGraphEdge[] = []
+    const appliedEdgeIds: string[] = []
+    const dropped: string[] = [...plan.dropped]
+
+    for (const planEdge of plan.edges) {
+      const source = refToId.get(planEdge.source)
+      const target = refToId.get(planEdge.target)
+
+      if (!source || !target) {
+        dropped.push(`edge ${planEdge.source}->${planEdge.target}: unresolved ref`)
+        continue
+      }
+
+      const sourceNode = appliedNodes.find((n) => n.id === source)
+      const targetNode = appliedNodes.find((n) => n.id === target)
+
+      if (!sourceNode || !targetNode || !canConnect(sourceNode.type, targetNode.type)) {
+        dropped.push(`edge ${planEdge.source}->${planEdge.target}: connection matrix rejected`)
+        continue
+      }
+
+      const edgeId = `edge-${crypto.randomUUID()}`
+      appliedEdges.push({
+        id: edgeId,
+        source,
+        target,
+        data: { edgeType: planEdge.edgeType, ...(planEdge.imageRole ? { imageRole: planEdge.imageRole } : {}) } as CanvasGraphEdge['data']
+      })
+      appliedEdgeIds.push(edgeId)
+    }
+
+    const mergedGraph: CanvasGraphSnapshot = {
+      nodes: [...existingGraph.nodes, ...appliedNodes],
+      edges: [...existingGraph.edges, ...appliedEdges],
+      viewport: existingGraph.viewport
+    }
+
+    const graphVersion = idFactory()
+    workflows.addVersion({
+      id: graphVersion,
+      workflowId: projectId,
+      graph: mode === 'draft' ? sanitizeGraph(mergedGraph) : mergedGraph,
+      createdAt: clock(),
+      createdBy: dependencies.currentUserId ?? 'system'
+    })
+
+    return { graphVersion, appliedNodeIds, appliedEdgeIds, dropped }
+  })
+
+  ipcMain.handle('canvas.runPlan', (_event, request) => {
+    if (!isObject(request) || !Array.isArray(request.runSteps)) {
+      // Run plan requests without valid run steps cannot enqueue any jobs.
+      return { jobIds: [], status: 'queued' as const }
+    }
+
+    const runSteps = request.runSteps as PlanRunStep[]
+    const graphVersion = typeof request.graphVersion === 'string' ? request.graphVersion : 'unknown'
+    const jobIds: string[] = []
+
+    if (!dependencies.queue) {
+      return { jobIds: runSteps.map((_, i) => `job-plan-${graphVersion}-${i}`), status: 'queued' as const }
+    }
+
+    for (const step of runSteps) {
+      const jobType = step.action === 'imageRun'
+        ? 'canvas.generateImage'
+        : step.action === 'videoRun'
+          ? 'canvas.generateVideo'
+          : 'canvas.generateImage' // textPolish maps to image generation pipeline for now
+
+      const ticket = dependencies.queue.enqueue({
+        type: jobType,
+        targetId: step.ref,
+        payload: { nodeId: step.ref, action: step.action, graphVersion },
+        requestedBy: { type: 'user', id: dependencies.currentUserId ?? 'user-local' }
+      })
+      jobIds.push(ticket.jobId)
+    }
+
+    return { jobIds, status: 'queued' as const }
+  })
+}
   ipcMain.handle('canvas.listWorkflows', () => {
     const workflows = dependencies.workflows
     if (!workflows) {

@@ -15,7 +15,7 @@ import {
   Check,
   FolderOpen,
   Clock,
-  Nodes,
+  Box,
 } from 'lucide-react'
 
 interface WorkflowSummary {
@@ -284,7 +284,7 @@ export function ProjectManager({
                     {/* Meta */}
                     <div className="flex items-center gap-3 text-[12px] text-text-muted">
                       <span className="inline-flex items-center gap-1">
-                        <Nodes className="h-3 w-3" />
+                        <Box className="h-3 w-3" />
                         {wf.nodeCount} 节点
                       </span>
                       <span className="inline-flex items-center gap-1">
