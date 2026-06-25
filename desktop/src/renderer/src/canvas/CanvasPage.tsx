@@ -71,6 +71,10 @@ import ImageConfigV2Node from './nodes/ImageConfigV2Node'
 import VideoConfigV2Node from './nodes/VideoConfigV2Node'
 import { useCanvasRealtime } from './hooks/use-canvas-realtime'
 import { ProjectManager } from './components/ProjectManager'
+import CanvasChatBox from './components/CanvasChatBox'
+import { CanvasAssetPanel } from './components/CanvasAssetPanel'
+import { applyCanvasPlan } from './lib/apply-plan'
+import type { ApplyPlanOptions } from '../chat/PlanCard'
 import './canvas.css'
 
 import type {
@@ -80,6 +84,7 @@ import type {
   VideoNodeData,
   CanvasNodeData,
 } from '../../../../../shared/nodes'
+import type { CanvasPlan } from '../../../../../shared/plan'
 import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
 
 /* ─── Debounce utility ─── */
@@ -800,6 +805,63 @@ function CanvasPageInner(): JSX.Element {
     // 预留：未来触发全节点运行
   }, [])
 
+  /* ── 资产插入回调：将资产作为新节点添加到画布 ── */
+  const handleInsertAsset = useCallback(
+    (asset: { id: string; url: string; type: 'image' | 'video'; name: string }) => {
+      const nodeType: NodeType = asset.type === 'video' ? 'video' : 'image'
+      const currentNodes = canvasStore.getState().nodes
+      const count = currentNodes.filter((n) => n.type === nodeType).length
+      const offset = NODE_OFFSETS[nodeType] ?? { x: 160, y: 120 }
+      const position = { x: offset.x + count * 40, y: offset.y + count * 60 }
+      const id = `node-${crypto.randomUUID()}`
+      const data = {
+        ...defaultNodeData(nodeType, count + 1),
+        assetId: asset.id,
+        label: asset.name,
+      }
+      const newNode: Node = {
+        id,
+        type: nodeType,
+        position,
+        data: data as unknown as Record<string, unknown>,
+      }
+      setRfNodes((nds) => [...nds, newNode])
+      canvasStore.setState((prev) => {
+        const snapshot = { nodes: prev.nodes, edges: prev.edges, viewport: prev.viewport }
+        return {
+          past: [...prev.past, structuredClone(snapshot)].slice(-50),
+          future: [],
+          nodes: [...prev.nodes, { id, type: nodeType, position, data } as typeof prev.nodes[number]],
+        }
+      })
+    },
+    [setRfNodes],
+  )
+
+  /* ── AI 对话 Plan 应用回调 ── */
+  const handleApplyPlan = useCallback(
+    (p: CanvasPlan, options: ApplyPlanOptions) => {
+      applyCanvasPlan(p, canvasStore)
+      // 从 store 同步到 ReactFlow
+      const state = canvasStore.getState()
+      setRfNodes(state.nodes.map((n) => ({
+        id: n.id,
+        type: n.type,
+        position: n.position,
+        data: n.data as unknown as Record<string, unknown>,
+      })))
+      setRfEdges(state.edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: 'default' as const,
+      })))
+      // 自动执行时触发节点运行（未来接入）
+      void options
+    },
+    [setRfNodes, setRfEdges],
+  )
+
   return (
     <div className="flex h-screen w-screen flex-col bg-bg-base">
       {/* ── 顶栏 ── */}
@@ -1083,6 +1145,22 @@ function CanvasPageInner(): JSX.Element {
             onClose={() => setShowProjectManager(false)}
           />
         )}
+
+        {/* ── 资产库面板 ── */}
+        {showAssetPanel && (
+          <CanvasAssetPanel
+            open={showAssetPanel}
+            onClose={() => setShowAssetPanel(false)}
+            onInsertAsset={handleInsertAsset}
+          />
+        )}
+
+        {/* ── AI 对话面板 ── */}
+        <CanvasChatBox
+          open={showChatBox}
+          onToggle={() => setShowChatBox((v) => !v)}
+          onApplyPlan={handleApplyPlan}
+        />
       </div>
     </div>
   )
