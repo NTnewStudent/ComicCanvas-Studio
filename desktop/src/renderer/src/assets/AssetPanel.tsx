@@ -14,7 +14,7 @@ import type {
 import { cn } from '../lib/cn'
 
 export interface AssetLibraryApi {
-  listAssets: (input?: { folderId?: string; mediaType?: string }) => Promise<AssetRecord[]>
+  listAssets: (input?: { folderId?: string; mediaType?: string; keyword?: string }) => Promise<AssetRecord[]>
   getAssetFolders: () => Promise<AssetFolder[]>
   createAssetFolder: (input: AssetFolderCreateRequest) => Promise<AssetFolder>
   moveAsset: (input: AssetMoveRequest) => Promise<AssetRecord>

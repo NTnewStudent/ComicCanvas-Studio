@@ -159,4 +159,49 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     const projectId = isObject(request) && typeof request.projectId === 'string' ? request.projectId : 'default'
     return workflows.getLatestVersion(projectId)?.graph ?? defaultGraph()
   })
+
+  ipcMain.handle('canvas.listWorkflows', () => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return []
+    }
+    return workflows.list()
+  })
+
+  ipcMain.handle('canvas.createWorkflow', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return { id: 'workflow-unavailable', name: '' }
+    }
+    const name = isObject(request) && typeof request.name === 'string' ? request.name : '未命名工作流'
+    const id = `wf-${clock()}`
+    const now = clock()
+    workflows.create({ id, name, createdAt: now, updatedAt: now })
+    return { id, name }
+  })
+
+  ipcMain.handle('canvas.renameWorkflow', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return { id: '', name: '' }
+    }
+    const workflowId = isObject(request) && typeof request.workflowId === 'string' ? request.workflowId : ''
+    const name = isObject(request) && typeof request.name === 'string' ? request.name : ''
+    if (workflowId && name) {
+      workflows.rename(workflowId, name)
+    }
+    return { id: workflowId, name }
+  })
+
+  ipcMain.handle('canvas.deleteWorkflow', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return { id: '', deleted: true as const }
+    }
+    const workflowId = isObject(request) && typeof request.workflowId === 'string' ? request.workflowId : ''
+    if (workflowId) {
+      workflows.delete(workflowId)
+    }
+    return { id: workflowId, deleted: true as const }
+  })
 }

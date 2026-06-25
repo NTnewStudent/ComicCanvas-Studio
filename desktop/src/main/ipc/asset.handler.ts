@@ -181,10 +181,12 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
 
     const folderId = nullableStringField(request, 'folderId')
     const mediaType = isRecord(request) ? parseMediaType(request.mediaType) : undefined
+    const keyword = isRecord(request) && typeof request.keyword === 'string' ? request.keyword : undefined
 
     return options.assets.list({
       ...(isRecord(request) && 'folderId' in request ? { folderId } : {}),
-      ...(mediaType ? { mediaType } : {})
+      ...(mediaType ? { mediaType } : {}),
+      ...(keyword ? { keyword } : {})
     })
   })
 

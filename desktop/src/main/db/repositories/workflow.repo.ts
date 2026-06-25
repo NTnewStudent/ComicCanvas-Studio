@@ -53,6 +53,10 @@ export interface WorkflowRepository {
   list(): WorkflowSummary[]
   /** 列出指定工作流的版本历史 */
   listVersions(workflowId: string, limit?: number): WorkflowVersionSummary[]
+  /** 重命名工作流 */
+  rename(workflowId: string, name: string): void
+  /** 软删除工作流 */
+  delete(workflowId: string): void
 }
 
 /**
@@ -79,9 +83,12 @@ export function createWorkflowRepository(db: BetterSqliteDatabase): WorkflowRepo
         '$.nodes'
       )) as node_count
     FROM workflows w
+    WHERE w.deleted_at IS NULL
     ORDER BY w.updated_at DESC
   `)
   const selectVersions = db.prepare('SELECT id, created_at FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC LIMIT ?')
+  const updateWorkflowName = db.prepare('UPDATE workflows SET name = @name, updated_at = @updatedAt WHERE id = @workflowId')
+  const softDeleteWorkflow = db.prepare('UPDATE workflows SET deleted_at = @deletedAt WHERE id = @workflowId')
   const addVersionTransaction = db.transaction((record: WorkflowVersionCreateRecord) => {
     insertVersion.run({ ...record, graphJson: encodeJson(record.graph) })
     updateWorkflowTimestamp.run(record)
@@ -126,6 +133,12 @@ export function createWorkflowRepository(db: BetterSqliteDatabase): WorkflowRepo
         id: row.id,
         createdAt: new Date(row.created_at).toISOString()
       }))
+    },
+    rename(workflowId, name) {
+      updateWorkflowName.run({ workflowId, name, updatedAt: Date.now() })
+    },
+    delete(workflowId) {
+      softDeleteWorkflow.run({ workflowId, deletedAt: Date.now() })
     }
   }
 }

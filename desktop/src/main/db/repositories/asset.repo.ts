@@ -52,6 +52,7 @@ export interface AssetReferenceCreateRecord {
 export interface AssetListFilter {
   folderId?: string | null
   mediaType?: AssetMediaType
+  keyword?: string
 }
 
 interface AssetRow {
@@ -191,7 +192,7 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
     SELECT * FROM assets
     WHERE deleted_at IS NULL
       AND status NOT IN ('trashed', 'tombstoned')
-    ORDER BY created_at ASC, id ASC
+    ORDER BY created_at DESC, id ASC
   `)
   const updateAssetFolder = db.prepare('UPDATE assets SET folder_id = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
   const updateAssetStatus = db.prepare('UPDATE assets SET status = ?, updated_at = ?, deleted_at = ? WHERE id = ?')
@@ -332,9 +333,11 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
       return findAsset(id)
     },
     list(filter = {}) {
+      const keyword = filter.keyword?.trim().toLowerCase()
       return (selectActiveAssets.all() as AssetRow[])
         .filter((row) => !('folderId' in filter) || row.folder_id === (filter.folderId ?? null))
         .filter((row) => !filter.mediaType || row.media_type === filter.mediaType)
+        .filter((row) => !keyword || row.rel_path.toLowerCase().includes(keyword))
         .map(mapAsset)
     },
     createFolder(record) {

@@ -41,6 +41,10 @@ export type CanvasIpcChannel =
   | 'canvas.loadGraph'
   | 'canvas.graphChanged'
   | 'canvas.planReady'
+  | 'canvas.listWorkflows'
+  | 'canvas.createWorkflow'
+  | 'canvas.renameWorkflow'
+  | 'canvas.deleteWorkflow'
 
 export type JobIpcChannel =
   | 'job.enqueue'
@@ -152,6 +156,13 @@ export interface CanvasRunPlanResponse {
   status: 'queued'
 }
 
+export interface WorkflowSummaryView {
+  id: string
+  name: string
+  updatedAt: string
+  nodeCount: number
+}
+
 export interface IpcRequestMap {
   'canvas.chatSend': { message: string; agentId?: string }
   'canvas.chatGetPlan': { messageId: string }
@@ -160,13 +171,17 @@ export interface IpcRequestMap {
   'canvas.runNode': { nodeId: string }
   'canvas.saveGraph': CanvasSaveGraphRequest
   'canvas.loadGraph': CanvasLoadGraphRequest
+  'canvas.listWorkflows': void
+  'canvas.createWorkflow': { name: string }
+  'canvas.renameWorkflow': { workflowId: string; name: string }
+  'canvas.deleteWorkflow': { workflowId: string }
   'job.enqueue': JobCreateInput
   'job.get': { jobId: string }
   'job.list': JobListFilter
   'job.recover': Record<string, never>
   'asset.import': AssetImportRequest
   'asset.get': { assetId: string }
-  'asset.list': { folderId?: string; mediaType?: string }
+  'asset.list': { folderId?: string; mediaType?: string; keyword?: string }
   'asset.move': AssetMoveRequest
   'asset.trash': AssetTrashRequest
   'asset.getFolders': Record<string, never>
@@ -208,6 +223,10 @@ export interface IpcResponseMap {
   'canvas.runNode': JobTicket
   'canvas.saveGraph': CanvasSaveGraphResponse
   'canvas.loadGraph': CanvasGraphSnapshot
+  'canvas.listWorkflows': WorkflowSummaryView[]
+  'canvas.createWorkflow': { id: string; name: string }
+  'canvas.renameWorkflow': { id: string; name: string }
+  'canvas.deleteWorkflow': { id: string; deleted: true }
   'job.enqueue': JobTicket
   'job.get': JobRecord
   'job.list': JobRecord[]

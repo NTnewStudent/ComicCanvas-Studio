@@ -52,6 +52,7 @@ import {
   MessageSquare,
   Moon,
   Sun,
+  ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
 import { useStore } from 'zustand'
@@ -69,6 +70,7 @@ import { VideoNode } from './nodes/VideoNode'
 import ImageConfigV2Node from './nodes/ImageConfigV2Node'
 import VideoConfigV2Node from './nodes/VideoConfigV2Node'
 import { useCanvasRealtime } from './hooks/use-canvas-realtime'
+import { ProjectManager } from './components/ProjectManager'
 import './canvas.css'
 
 import type {
@@ -307,9 +309,10 @@ function CanvasPageInner(): JSX.Element {
   } | null>(null)
 
   /* ── Save/Load state ── */
-  const [currentWorkflowId] = useState(DEFAULT_WORKFLOW_ID)
+  const [currentWorkflowId, setCurrentWorkflowId] = useState(DEFAULT_WORKFLOW_ID)
   const [workflowName, setWorkflowName] = useState(DEFAULT_WORKFLOW_NAME)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [showProjectManager, setShowProjectManager] = useState(false)
   const isDirtyRef = useRef(false)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -427,6 +430,59 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [rfNodes, rfEdges, handleSave])
 
+  /* ── Load graph helper (reusable for initial load and workflow switch) ── */
+  const loadGraphForWorkflow = useCallback(async (workflowId: string) => {
+    try {
+      const snapshot = await window.comicCanvas.loadGraph({
+        projectId: workflowId,
+      })
+      if (!snapshot) return
+      // Only restore if there are actual nodes/edges
+      if (snapshot.nodes.length > 0 || snapshot.edges.length > 0) {
+        canvasStore.getState().setNodes(
+          snapshot.nodes.map((n) => ({
+            id: n.id,
+            type: n.type,
+            position: n.position,
+            data: n.data,
+          })),
+        )
+        canvasStore.getState().setEdges(
+          snapshot.edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            data: e.data,
+          })),
+        )
+        setRfNodes(snapshot.nodes.map((n) => ({
+          id: n.id,
+          type: n.type,
+          position: n.position,
+          data: n.data as unknown as Record<string, unknown>,
+        })))
+        setRfEdges(snapshot.edges.map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          type: 'default',
+        })))
+        if (snapshot.viewport) {
+          canvasStore.getState().setViewport(snapshot.viewport)
+        }
+      } else {
+        // Empty workflow - clear canvas
+        canvasStore.getState().setNodes([])
+        canvasStore.getState().setEdges([])
+        setRfNodes([])
+        setRfEdges([])
+      }
+      isDirtyRef.current = false
+    } catch {
+      // Silently fall back to empty canvas
+    }
+  }, [setRfNodes, setRfEdges])
+
   /* ── Load graph on mount ── */
   useEffect(() => {
     let cancelled = false
@@ -480,6 +536,43 @@ function CanvasPageInner(): JSX.Element {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /* ── Switch workflow handler ── */
+  const handleSwitchWorkflow = useCallback(async (workflowId: string, name: string) => {
+    // Save current workflow first if dirty
+    if (isDirtyRef.current) {
+      try {
+        const state = canvasStore.getState()
+        const snapshot: CanvasGraphSnapshot = {
+          nodes: state.nodes.map((n) => ({
+            id: n.id,
+            type: n.type,
+            position: n.position,
+            data: n.data,
+          })),
+          edges: state.edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            data: e.data,
+          })),
+          viewport: state.viewport,
+        }
+        await window.comicCanvas.saveGraph({
+          projectId: currentWorkflowId,
+          graph: snapshot,
+        })
+      } catch {
+        // Continue even if save fails
+      }
+    }
+    // Switch to new workflow
+    setCurrentWorkflowId(workflowId)
+    setWorkflowName(name)
+    skipNextPersistRef.current = true
+    await loadGraphForWorkflow(workflowId)
+    setShowProjectManager(false)
+  }, [currentWorkflowId, loadGraphForWorkflow])
 
   /* ── Cleanup timers ── */
   useEffect(() => {
@@ -719,7 +812,13 @@ function CanvasPageInner(): JSX.Element {
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h1 className="text-[15px] font-semibold text-text-base">{workflowName}</h1>
+          <button
+            onClick={() => setShowProjectManager(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[15px] font-semibold text-text-base transition hover:bg-bg-hover"
+          >
+            {workflowName}
+            <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
+          </button>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -974,6 +1073,15 @@ function CanvasPageInner(): JSX.Element {
               </div>
             ))}
           </div>
+        )}
+
+        {/* ── 项目管理器 ── */}
+        {showProjectManager && (
+          <ProjectManager
+            currentWorkflowId={currentWorkflowId}
+            onSwitchWorkflow={handleSwitchWorkflow}
+            onClose={() => setShowProjectManager(false)}
+          />
         )}
       </div>
     </div>

@@ -5,7 +5,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 
-import type { AssetChangedEvent, IpcEventChannel, IpcEventMap, IpcRequestMap, IpcResponseMap } from '../../../shared/ipc'
+import type { AssetChangedEvent, IpcEventChannel, IpcEventMap, IpcRequestMap, IpcResponseMap, WorkflowSummaryView } from '../../../shared/ipc'
 import type { JobTerminalEvent } from '../../../shared/jobs'
 
 export interface ComicCanvasApi {
@@ -37,6 +37,10 @@ export interface ComicCanvasApi {
   onCanvasPlanReady(handler: (event: IpcEventMap['canvas.planReady']) => void): () => void
   saveGraph(input: IpcRequestMap['canvas.saveGraph']): Promise<IpcResponseMap['canvas.saveGraph']>
   loadGraph(input: IpcRequestMap['canvas.loadGraph']): Promise<IpcResponseMap['canvas.loadGraph']>
+  listWorkflows(): Promise<WorkflowSummaryView[]>
+  createWorkflow(input: IpcRequestMap['canvas.createWorkflow']): Promise<IpcResponseMap['canvas.createWorkflow']>
+  renameWorkflow(input: IpcRequestMap['canvas.renameWorkflow']): Promise<IpcResponseMap['canvas.renameWorkflow']>
+  deleteWorkflow(input: IpcRequestMap['canvas.deleteWorkflow']): Promise<IpcResponseMap['canvas.deleteWorkflow']>
 }
 
 type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady'>
@@ -76,6 +80,10 @@ function invokeMain<TChannel extends 'asset.createFolder'>(channel: TChannel, re
 function invokeMain<TChannel extends 'asset.deleteFolder'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.saveGraph'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.loadGraph'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.listWorkflows'>(channel: TChannel): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.createWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.renameWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.deleteWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TResponse>(channel: string, request?: unknown): Promise<TResponse> {
   return ipcRenderer.invoke(channel, request) as Promise<TResponse>
 }
@@ -323,7 +331,38 @@ const api: ComicCanvasApi = {
    * @throws Error when the main process rejects the load request.
    * @see docs/api-contracts/canvas-plan.md
    */
-  loadGraph: (input) => invokeMain('canvas.loadGraph', input)
+  loadGraph: (input) => invokeMain('canvas.loadGraph', input),
+  /**
+   * Lists all available workflows with summary information.
+   * @returns Workflow summaries including name, node count, and update time.
+   * @throws Error when the main process rejects the list request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  listWorkflows: () => invokeMain('canvas.listWorkflows'),
+  /**
+   * Creates a new workflow with the given name.
+   * @param input - Workflow creation request with name.
+   * @returns Created workflow ID and name.
+   * @throws Error when the main process rejects the create request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  createWorkflow: (input) => invokeMain('canvas.createWorkflow', input),
+  /**
+   * Renames an existing workflow.
+   * @param input - Rename request with workflow ID and new name.
+   * @returns Updated workflow ID and name.
+   * @throws Error when the main process rejects the rename request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  renameWorkflow: (input) => invokeMain('canvas.renameWorkflow', input),
+  /**
+   * Soft-deletes a workflow.
+   * @param input - Deletion request with workflow ID.
+   * @returns Deletion confirmation.
+   * @throws Error when the main process rejects the delete request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  deleteWorkflow: (input) => invokeMain('canvas.deleteWorkflow', input)
 }
 
 contextBridge.exposeInMainWorld('comicCanvas', api)
