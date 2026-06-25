@@ -122,11 +122,17 @@ function imageMetadata(bytes: Uint8Array, mimeType: string): GatewayMediaMetadat
 }
 
 function imagePayload(request: GatewayRequest): Record<string, unknown> {
+  // Extract reference image URLs for APIs that support image conditioning/editing
+  const referenceUrls = request.references
+    .filter((ref) => (ref.role === 'reference' || ref.role === 'style') && ref.url.length > 0)
+    .map((ref) => ref.url)
+
   return {
     model: request.modelKey,
     prompt: request.prompt,
     n: 1,
     response_format: 'b64_json',
+    ...(referenceUrls.length > 0 ? { image_urls: referenceUrls } : {}),
     ...request.parameters
   }
 }

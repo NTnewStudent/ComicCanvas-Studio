@@ -205,7 +205,9 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
           job,
           gateways,
           assets: assetPipeline,
-          gatewayId: 'stub-main'
+          gatewayId: 'stub-main',
+          assetRepo: assets,
+          assetRoot: options.assetRoot
         })
     }
   })
@@ -215,7 +217,9 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     orchestrator,
     queue: autoQueue,
     clock,
-    currentUserId: options.currentUserId ?? 'user-local'
+    currentUserId: options.currentUserId ?? 'user-local',
+    assets,
+    graphStore
   })
   registerJobHandlers(options.ipcMain)
   registerAssetHandlers(options.ipcMain, {

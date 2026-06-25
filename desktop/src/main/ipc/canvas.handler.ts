@@ -7,10 +7,14 @@ import type { JobTicket } from '../../../../shared/jobs'
 import type { CanvasPlan, PlanRunStep } from '../../../../shared/plan'
 import { canConnect } from '../../../../shared/connection-matrix'
 import type { CanvasGraphEdge, CanvasGraphNode, CanvasGraphSnapshot, CanvasSaveGraphRequest } from '../../../../shared/graph'
+import type { GatewayReference } from '../../../../shared/gateway'
+import type { VideoNodeData, ReferenceAsset } from '../../../../shared/nodes'
 import type { IpcRegistrar } from './types'
 import type { WorkflowRepository } from '../db/repositories/workflow.repo'
+import type { AssetRepository } from '../db/repositories/asset.repo'
 import type { OrchestratorRuntime } from '../agent/orchestrator'
 import type { JobQueue } from '../jobs/queue'
+import type { CanvasGraphStore } from '../tools/canvas'
 
 function createPendingTicket(jobId: string): JobTicket {
   return {
@@ -36,6 +40,10 @@ export interface CanvasHandlerDependencies {
   currentUserId?: string
   /** Node ID factory used when applying plan nodes to the graph. */
   nodeIdFactory?: () => string
+  /** Asset repository for resolving cloud URLs on reference assets. */
+  assets?: AssetRepository
+  /** Graph store for reading current canvas node data. */
+  graphStore?: Pick<CanvasGraphStore, 'getGraph'>
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -87,6 +95,100 @@ function parseSaveGraphRequest(request: unknown): CanvasSaveGraphRequest {
 }
 
 /**
+ * Resolves GatewayReference[] from a node's data and the asset repository.
+ * For video nodes: reads referenceAssets from VideoNodeData.
+ * For all nodes: also looks up connected edges with imageRole to find upstream image references.
+ * Falls back to local safeUrl when no cloud URL is available.
+ */
+function resolveNodeReferences(
+  nodeId: string,
+  deps: CanvasHandlerDependencies
+): Array<{ assetId: string; role: string; url: string; mediaType: string }> {
+  const graphStore = deps.graphStore
+  const assets = deps.assets
+  if (!graphStore) {
+    return []
+  }
+
+  const graph = graphStore.getGraph()
+  const node = graph.nodes.find((n) => n.id === nodeId)
+  if (!node) {
+    return []
+  }
+
+  const result: Array<{ assetId: string; role: string; url: string; mediaType: string }> = []
+  const seen = new Set<string>()
+
+  // 1. Resolve from VideoNodeData.referenceAssets
+  const nodeData = node.data as Partial<VideoNodeData>
+  if (Array.isArray(nodeData.referenceAssets)) {
+    for (const refAsset of nodeData.referenceAssets as ReferenceAsset[]) {
+      if (seen.has(refAsset.id)) continue
+      seen.add(refAsset.id)
+
+      const assetRecord = assets?.getById(refAsset.id)
+      const url = assetRecord?.url ?? refAsset.url ?? assetRecord?.safeUrl ?? ''
+      result.push({
+        assetId: refAsset.id,
+        role: 'reference',
+        url,
+        mediaType: refAsset.type
+      })
+    }
+  }
+
+  // 2. Resolve firstFrame/lastFrame from VideoNodeData asset IDs
+  if (typeof nodeData.firstFrameAssetId === 'string' && nodeData.firstFrameAssetId.length > 0) {
+    const assetRecord = assets?.getById(nodeData.firstFrameAssetId)
+    if (assetRecord && !seen.has(assetRecord.id)) {
+      seen.add(assetRecord.id)
+      result.push({
+        assetId: assetRecord.id,
+        role: 'first_frame',
+        url: assetRecord.url ?? assetRecord.safeUrl,
+        mediaType: assetRecord.mediaType
+      })
+    }
+  }
+  if (typeof nodeData.lastFrameAssetId === 'string' && nodeData.lastFrameAssetId.length > 0) {
+    const assetRecord = assets?.getById(nodeData.lastFrameAssetId)
+    if (assetRecord && !seen.has(assetRecord.id)) {
+      seen.add(assetRecord.id)
+      result.push({
+        assetId: assetRecord.id,
+        role: 'last_frame',
+        url: assetRecord.url ?? assetRecord.safeUrl,
+        mediaType: assetRecord.mediaType
+      })
+    }
+  }
+
+  // 3. Resolve from incoming edges with imageRole (upstream image nodes)
+  for (const edge of graph.edges) {
+    if (edge.target !== nodeId || !edge.data.imageRole) continue
+    const sourceNode = graph.nodes.find((n) => n.id === edge.source)
+    if (!sourceNode) continue
+
+    const sourceData = sourceNode.data as { assetId?: string | null }
+    if (typeof sourceData.assetId !== 'string' || sourceData.assetId.length === 0) continue
+    if (seen.has(sourceData.assetId)) continue
+    seen.add(sourceData.assetId)
+
+    const assetRecord = assets?.getById(sourceData.assetId)
+    if (assetRecord) {
+      result.push({
+        assetId: assetRecord.id,
+        role: edge.data.imageRole,
+        url: assetRecord.url ?? assetRecord.safeUrl,
+        mediaType: assetRecord.mediaType
+      })
+    }
+  }
+
+  return result
+}
+
+/**
  * Registers canvas invoke handlers.
  * @param ipcMain - Electron-compatible IPC registrar.
  * @param dependencies - Optional workflow repository and deterministic test dependencies.
@@ -101,11 +203,14 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
   ipcMain.handle('canvas.runNode', (_event, request) => {
     const nodeId = typeof request === 'object' && request !== null && 'nodeId' in request ? String(request.nodeId) : 'unknown'
 
+    // Resolve references from the current graph node data and asset DB
+    const references = resolveNodeReferences(nodeId, dependencies)
+
     if (dependencies.queue) {
       return dependencies.queue.enqueue({
         type: 'canvas.generateImage',
         targetId: nodeId,
-        payload: { nodeId },
+        payload: { nodeId, references },
         requestedBy: { type: 'user', id: dependencies.currentUserId ?? 'user-local' }
       })
     }
@@ -266,10 +371,13 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
           ? 'canvas.generateVideo'
           : 'canvas.generateImage' // textPolish maps to image generation pipeline for now
 
+      // Resolve references for plan step nodes
+      const references = resolveNodeReferences(step.ref, dependencies)
+
       const ticket = dependencies.queue.enqueue({
         type: jobType,
         targetId: step.ref,
-        payload: { nodeId: step.ref, action: step.action, graphVersion },
+        payload: { nodeId: step.ref, action: step.action, graphVersion, references },
         requestedBy: { type: 'user', id: dependencies.currentUserId ?? 'user-local' }
       })
       jobIds.push(ticket.jobId)

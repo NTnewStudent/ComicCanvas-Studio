@@ -5,17 +5,23 @@
  * @see docs/api-contracts/assets-files.md
  */
 
-import type { GatewayRequest } from '../../../../shared/gateway'
+import type { GatewayReference, GatewayRequest } from '../../../../shared/gateway'
 import type { JobResult } from '../../../../shared/jobs'
 import type { PersistedJobRecord } from '../db/repositories/job.repo'
 import type { AssetPipeline } from '../assets/pipeline'
 import type { GatewayRegistry } from '../providers/registry'
+import { uploadGeneratedAssetToCloud } from '../jobs/upload-result'
+import type { AssetRepository } from '../db/repositories/asset.repo'
 
 export interface ImageNodeSmokePathInput {
   job: PersistedJobRecord
   gateways: GatewayRegistry
   assets: AssetPipeline
   gatewayId: string
+  /** Asset repository for S3 upload URL updates. */
+  assetRepo?: AssetRepository
+  /** Asset root directory for resolving local file paths. */
+  assetRoot?: string
 }
 
 function readStringPayload(job: PersistedJobRecord, key: string, fallback: string): string {
@@ -29,6 +35,42 @@ function readParameters(job: PersistedJobRecord): Record<string, unknown> {
 }
 
 /**
+ * Reconstructs GatewayReference[] from the serialized job payload.
+ * The canvas handler serializes references as plain objects in the payload;
+ * this function restores them to the GatewayReference shape for the provider.
+ */
+function readReferences(job: PersistedJobRecord): GatewayReference[] {
+  const raw = job.payload.references
+  if (!Array.isArray(raw)) {
+    return []
+  }
+
+  const result: GatewayReference[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const ref = item as Record<string, unknown>
+    const assetId = typeof ref.assetId === 'string' ? ref.assetId : ''
+    const url = typeof ref.url === 'string' ? ref.url : ''
+    const mediaType = typeof ref.mediaType === 'string' ? ref.mediaType : 'image'
+    const role = typeof ref.role === 'string' ? ref.role : undefined
+
+    if (!assetId) continue
+
+    const gatewayRef: GatewayReference = {
+      assetId,
+      mediaType: mediaType as GatewayReference['mediaType'],
+      url
+    }
+    if (role === 'first_frame' || role === 'last_frame' || role === 'reference' || role === 'style') {
+      gatewayRef.role = role
+    }
+    result.push(gatewayRef)
+  }
+
+  return result
+}
+
+/**
  * Runs the M1 image generation smoke path against injected local services.
  * @param input - Job, gateway, asset pipeline, and selected gateway ID.
  * @returns Job result referencing the persisted generated asset.
@@ -36,11 +78,13 @@ function readParameters(job: PersistedJobRecord): Record<string, unknown> {
  * @see docs/api-contracts/jobs.md
  */
 export async function runImageNodeSmokePath(input: ImageNodeSmokePathInput): Promise<JobResult> {
+  const references = readReferences(input.job)
+
   const request: GatewayRequest = {
     channel: 'image',
     modelKey: readStringPayload(input.job, 'modelKey', 'stub-image'),
     prompt: readStringPayload(input.job, 'prompt', ''),
-    references: [],
+    references,
     parameters: readParameters(input.job),
     idempotencyKey: input.job.id
   }
@@ -56,12 +100,19 @@ export async function runImageNodeSmokePath(input: ImageNodeSmokePathInput): Pro
     metadata: gatewayResult.metadata
   })
 
+  // Upload generated asset to S3 if storage is configured (backward-compatible: no-op if not)
+  let cloudUrl: string | undefined
+  if (input.assetRepo && input.assetRoot) {
+    cloudUrl = await uploadGeneratedAssetToCloud(asset, input.assetRoot, input.assetRepo)
+  }
+
   return {
     kind: 'asset',
     assetId: asset.id,
     metadata: {
       safeUrl: asset.safeUrl,
-      orientation: asset.metadata.orientation
+      orientation: asset.metadata.orientation,
+      ...(cloudUrl ? { cloudUrl } : {})
     }
   }
 }

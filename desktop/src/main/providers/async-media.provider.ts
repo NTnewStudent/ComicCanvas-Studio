@@ -148,6 +148,7 @@ async function fetchJson(fetchImpl: typeof fetch, apiKey: string, url: string, i
 }
 
 function submitPayload(request: GatewayRequest): Record<string, unknown> {
+  // references[].url contains cloud URLs (S3) resolved by the canvas handler at enqueue time
   return {
     channel: request.channel,
     model: request.modelKey,

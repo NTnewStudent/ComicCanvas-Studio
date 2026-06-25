@@ -45,7 +45,9 @@ export interface GatewayConfigInput {
 }
 
 export interface GatewayReference extends AssetRef {
-  role?: 'reference' | 'first_frame' | 'last_frame'
+  role?: 'reference' | 'first_frame' | 'last_frame' | 'style'
+  /** Cloud URL (set when asset was imported/uploaded to S3; fallback to local safeUrl when no cloud) */
+  url: string
 }
 
 export interface GatewayRequest {
