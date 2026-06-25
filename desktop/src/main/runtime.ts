@@ -24,6 +24,7 @@ import { registerAssetHandlers } from './ipc/asset.handler'
 import { registerCanvasHandlers } from './ipc/canvas.handler'
 import { registerGatewayHandlers } from './ipc/gateway.handler'
 import { registerJobHandlers } from './ipc/job.handler'
+import { registerToolHandlers } from './ipc/tool.handler'
 import { createIpcJobEventBus } from './jobs/ipc-fanout'
 import { createJobQueue } from './jobs/queue'
 import { createJobWorker, type JobWorker } from './jobs/worker'
@@ -31,6 +32,8 @@ import { createGatewayConfigReloader } from './providers/gateway-reloader'
 import { createGatewayRegistry } from './providers/registry'
 import { createStubProvider } from './providers/stub.provider'
 import { runImageNodeSmokePath } from './smoke/m1-smoke'
+import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
+import { createToolRuntime } from './tools/runtime'
 
 export interface MainProcessRuntimeOptions {
   ipcMain: IpcRegistrar
@@ -104,6 +107,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const assets = createAssetRepository(db)
   const agents = createAgentRepository(db)
   const workflows = createWorkflowRepository(db)
+  try {
+    workflows.create({ id: 'default', name: 'Default workspace', createdAt: clock(), updatedAt: clock() })
+  } catch {
+    // The default workflow is created once; repeated runtime starts keep using the existing row.
+  }
   const jobEvents = createIpcJobEventBus(options.getWindows)
   const planEvents = createIpcCanvasPlanEventBus(options.getWindows)
   const queue = createJobQueue({
@@ -121,6 +129,20 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   gateways.set('stub-main', createStubProvider({ id: 'stub-main' }))
   const reloader = createGatewayConfigReloader({ registry: gateways })
   const agentRegistry = createAgentRegistry({ agents, clock })
+  const graphStore: CanvasGraphStore = {
+    getGraph() {
+      return workflows.getLatestVersion('default')?.graph ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
+    },
+    setGraph(graph) {
+      workflows.addVersion({
+        id: `tool-graph-version-${clock()}`,
+        workflowId: 'default',
+        graph,
+        createdAt: clock(),
+        createdBy: options.currentUserId ?? 'tool-runtime'
+      })
+    }
+  }
   let draining: Promise<void> | null = null
   let worker: JobWorker | null = null
 
@@ -162,6 +184,14 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
     clock
   })
+  const toolRuntime = createToolRuntime({
+    tools: createCanvasTools({
+      graphStore,
+      queue: autoQueue,
+      clock
+    }),
+    clock
+  })
   worker = createJobWorker({
     jobs,
     events: jobEvents,
@@ -190,6 +220,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerAssetHandlers(options.ipcMain)
   registerGatewayHandlers(options.ipcMain, { reloader })
   registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
+  registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
 
   async function drainJobsForTests(): Promise<void> {
     await drainJobs()

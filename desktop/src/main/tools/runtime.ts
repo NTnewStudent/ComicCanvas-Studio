@@ -59,6 +59,8 @@ export interface ToolRuntimeOptions {
 export interface ToolRuntime {
   list(includeDisabled?: boolean): ToolDescriptor[]
   register(tool: ToolDefinition<unknown, unknown>): void
+  enable(toolId: string): ToolDescriptor | ToolError
+  disable(toolId: string): ToolDescriptor | ToolError
   invoke(input: ToolInvocationInput): Promise<ToolInvocationResult>
 }
 
@@ -84,6 +86,26 @@ function createRecord(input: ToolInvocationInput, invocationId: string, createdA
     traceId: input.traceId,
     status,
     createdAt
+  }
+}
+
+function cloneDescriptor(descriptor: ToolDescriptor): ToolDescriptor {
+  const owner: ToolDescriptor['owner'] =
+    descriptor.owner.kind === 'builtin'
+      ? { kind: 'builtin', id: descriptor.owner.id }
+      : { kind: 'plugin', id: descriptor.owner.id }
+
+  return {
+    ...descriptor,
+    owner,
+    permissions: descriptor.permissions.map((permission) => ({ ...permission }))
+  }
+}
+
+function cloneToolDefinition(tool: ToolDefinition<unknown, unknown>): ToolDefinition<unknown, unknown> {
+  return {
+    ...tool,
+    descriptor: cloneDescriptor(tool.descriptor)
   }
 }
 
@@ -116,7 +138,8 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
   let writeChain: Promise<void> = Promise.resolve()
 
   for (const tool of options.tools ?? []) {
-    toolsById.set(tool.descriptor.id, tool)
+    const registered = cloneToolDefinition(tool)
+    toolsById.set(registered.descriptor.id, registered)
   }
 
   async function execute(input: ToolInvocationInput): Promise<ToolInvocationResult> {
@@ -206,11 +229,32 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
   return {
     list(includeDisabled = false) {
       return Array.from(toolsById.values())
-        .map((tool) => tool.descriptor)
+        .map((tool) => cloneDescriptor(tool.descriptor))
         .filter((descriptor) => includeDisabled || descriptor.enabled)
     },
     register(tool) {
-      toolsById.set(tool.descriptor.id, tool)
+      const registered = cloneToolDefinition(tool)
+      toolsById.set(registered.descriptor.id, registered)
+    },
+    enable(toolId) {
+      const tool = toolsById.get(toolId)
+
+      if (!tool) {
+        return toolError('tool_not_found', 'Tool is missing, disabled, or quarantined.')
+      }
+
+      tool.descriptor = { ...tool.descriptor, enabled: true }
+      return cloneDescriptor(tool.descriptor)
+    },
+    disable(toolId) {
+      const tool = toolsById.get(toolId)
+
+      if (!tool) {
+        return toolError('tool_not_found', 'Tool is missing, disabled, or quarantined.')
+      }
+
+      tool.descriptor = { ...tool.descriptor, enabled: false }
+      return cloneDescriptor(tool.descriptor)
     },
     invoke(input) {
       const tool = toolsById.get(input.toolId)

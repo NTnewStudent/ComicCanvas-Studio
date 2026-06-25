@@ -236,7 +236,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: component and routing integration tests.
   - Covers: R6.
 
-- [ ] 39. Implement Tool management UI.
+- [x] 39. Implement Tool management UI.
   - File: `desktop/src/renderer/settings/ToolList.tsx`.
   - Reference: `hjwall/pc-client/src/components/common/` and project form/list patterns.
   - Include: tool list, read/write/concurrency badges, enable/disable, permission integration.

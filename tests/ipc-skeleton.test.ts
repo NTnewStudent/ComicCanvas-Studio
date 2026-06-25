@@ -10,6 +10,8 @@ import { registerAssetHandlers } from '../desktop/src/main/ipc/asset.handler'
 import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
 import { createSafeErrorEnvelope, registerGatewayHandlers } from '../desktop/src/main/ipc/gateway.handler'
 import { registerJobHandlers } from '../desktop/src/main/ipc/job.handler'
+import { registerToolHandlers } from '../desktop/src/main/ipc/tool.handler'
+import { createToolRuntime } from '../desktop/src/main/tools/runtime'
 
 type Handler = (_event: unknown, request: unknown) => unknown
 
@@ -48,6 +50,7 @@ describe('M1 IPC skeleton', () => {
     registerAssetHandlers(ipcMain)
     registerGatewayHandlers(ipcMain)
     registerAgentHandlers(ipcMain, { registry: agentRegistry })
+    registerToolHandlers(ipcMain, { runtime: createToolRuntime(), currentUserId: 'user-local' })
 
     expect(Array.from(handlers.keys()).sort()).toEqual([
       'agent.delete',
@@ -68,7 +71,11 @@ describe('M1 IPC skeleton', () => {
       'gateway.test',
       'job.enqueue',
       'job.get',
-      'job.list'
+      'job.list',
+      'tool.disable',
+      'tool.enable',
+      'tool.invoke',
+      'tool.list'
     ] satisfies IpcInvokeChannel[])
   })
 
@@ -169,7 +176,7 @@ describe('M1 IPC skeleton', () => {
   })
 
   it('documents every new IPC handler with API contract anchors', () => {
-    for (const file of ['canvas.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts', 'agent.handler.ts']) {
+    for (const file of ['canvas.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts', 'agent.handler.ts', 'tool.handler.ts']) {
       const source = readFileSync(`desktop/src/main/ipc/${file}`, 'utf8')
 
       expect(source, `${file} must link to an API contract`).toMatch(/@see docs\/api-contracts\//u)

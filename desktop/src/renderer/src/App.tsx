@@ -8,6 +8,7 @@ import type { ApplyPlanOptions } from './chat/PlanCard'
 import { cn } from './lib/cn'
 import { AgentList } from './settings/AgentList'
 import { GatewayList } from './settings/GatewayList'
+import { ToolList } from './settings/ToolList'
 import type { CanvasPlan } from '../../../../shared/plan'
 
 type HealthState = 'checking' | 'ok' | 'degraded' | 'failed'
@@ -103,6 +104,7 @@ export function App(): JSX.Element {
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
           <div className="flex min-w-0 flex-col gap-6">
             <GatewayList />
+            <ToolList />
             <AgentList />
           </div>
           <ChatPanel onApplyPlan={applyChatPlan} />

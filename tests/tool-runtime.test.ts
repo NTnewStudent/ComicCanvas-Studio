@@ -220,4 +220,61 @@ describe('M4 ToolRuntime', () => {
     writeTwo.resolve()
     await writeB
   })
+
+  it('disables and re-enables tools before invocation', async () => {
+    let calls = 0
+    const runtime = createToolRuntime({
+      idFactory: () => 'invoke-toggle',
+      clock: () => 1_782_800_000_300,
+      tools: [
+        defineTool({
+          descriptor: {
+            id: 'test.toggle',
+            name: 'Toggle',
+            description: 'Can be disabled from settings.',
+            category: 'custom',
+            owner: { kind: 'builtin', id: 'core' },
+            inputSchemaRef: 'test.toggle.input',
+            outputSchemaRef: 'test.toggle.output',
+            permissions: [],
+            concurrency: 'readonly',
+            enabled: true
+          },
+          inputSchema: z.object({}),
+          outputSchema: z.object({ ok: z.boolean() }),
+          renderToolUseMessage: () => 'Toggle',
+          call() {
+            calls += 1
+            return { ok: true }
+          }
+        })
+      ]
+    })
+
+    expect(runtime.disable('test.toggle')).toMatchObject({ id: 'test.toggle', enabled: false })
+    expect(runtime.list(true).find((tool) => tool.id === 'test.toggle')).toMatchObject({ enabled: false })
+
+    const disabled = await runtime.invoke({
+      toolId: 'test.toggle',
+      input: {},
+      actor,
+      traceId: 'trace-disabled'
+    })
+
+    expect(disabled.record.status).toBe('failed')
+    expect(disabled.error).toMatchObject({ errorClass: 'tool_not_found' })
+    expect(calls).toBe(0)
+
+    expect(runtime.enable('test.toggle')).toMatchObject({ id: 'test.toggle', enabled: true })
+
+    const enabled = await runtime.invoke({
+      toolId: 'test.toggle',
+      input: {},
+      actor,
+      traceId: 'trace-enabled'
+    })
+
+    expect(enabled.record.status).toBe('completed')
+    expect(calls).toBe(1)
+  })
 })

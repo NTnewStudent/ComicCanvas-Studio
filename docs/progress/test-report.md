@@ -1470,3 +1470,45 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 49 test files / 151 tests, desktop/shared build, and repository verification all passing.
+
+### M5-39 Tool Management UI
+
+Scope:
+
+- Extended `desktop/src/main/tools/runtime.ts` with `enable` and `disable`, descriptor cloning, disabled-tool listing, and disabled invocation rejection through the existing `tool_not_found` safe error path.
+- Added `desktop/src/main/ipc/tool.handler.ts` for `tool.list`, `tool.invoke`, `tool.enable`, and `tool.disable`.
+- Wired the real main-process runtime to `createToolRuntime`, built-in canvas tools, and `registerToolHandlers`.
+- Exposed typed preload methods: `listTools`, `enableTool`, `disableTool`, and `invokeTool`.
+- Added Tailwind + `cn` renderer settings UI in `desktop/src/renderer/src/settings/ToolList.tsx`, following the existing Gateway/Agent settings card patterns and `hjwall/pc-client` dense settings references without copying source.
+- Mounted Tool settings in `App.tsx` and updated M5 progress/backlog status.
+
+Verification:
+
+```bash
+bun x vitest run tests/tool-runtime.test.ts tests/tool-management-ipc.test.ts tests/tool-settings-ui.test.tsx tests/gateway-preload.test.ts tests/ipc-skeleton.test.ts --reporter=dot
+```
+
+Result:
+
+- RED before implementation: failed because `runtime.disable` was missing, `desktop/src/main/ipc/tool.handler.ts` was missing, preload did not expose tool actions, and `ToolList` did not exist.
+- PASS after implementation: Tool runtime, tool IPC, preload, IPC skeleton, and Tool settings UI tests passed, 5 test files and 15 tests.
+
+```bash
+bun x vitest run tests/tool-runtime.test.ts tests/tool-management-ipc.test.ts tests/tool-settings-ui.test.tsx tests/gateway-preload.test.ts tests/ipc-skeleton.test.ts tests/main-runtime-wiring.test.ts --reporter=dot
+bun run typecheck
+bun run lint
+```
+
+Result:
+
+- PASS: targeted M5-39 plus main runtime wiring tests passed, 6 test files and 17 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 51 test files / 156 tests, desktop/shared build, and repository verification all passing.

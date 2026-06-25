@@ -21,6 +21,10 @@ export interface ComicCanvasApi {
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
   testGateway(input: IpcRequestMap['gateway.test']): Promise<IpcResponseMap['gateway.test']>
   reloadGateways(input: IpcRequestMap['gateway.reload']): Promise<IpcResponseMap['gateway.reload']>
+  listTools(): Promise<IpcResponseMap['tool.list']>
+  enableTool(input: IpcRequestMap['tool.enable']): Promise<IpcResponseMap['tool.enable']>
+  disableTool(input: IpcRequestMap['tool.disable']): Promise<IpcResponseMap['tool.disable']>
+  invokeTool(input: IpcRequestMap['tool.invoke']): Promise<IpcResponseMap['tool.invoke']>
   onJobCompleted(handler: (event: Extract<JobTerminalEvent, { channel: 'job.completed' }>) => void): () => void
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
@@ -37,6 +41,7 @@ type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.
  * @see docs/api-contracts/audit-observability.md
  * @see docs/api-contracts/gateway-providers.md
  * @see docs/api-contracts/agents.md
+ * @see docs/api-contracts/tools-plugins.md
  */
 function invokeMain<TResponse>(channel: 'app.health'): Promise<TResponse>
 function invokeMain<TChannel extends 'canvas.runNode'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -50,6 +55,10 @@ function invokeMain<TChannel extends 'gateway.save'>(channel: TChannel, request:
 function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.test'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'tool.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'tool.enable'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'tool.disable'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'tool.invoke'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TResponse>(channel: string, request?: unknown): Promise<TResponse> {
   return ipcRenderer.invoke(channel, request) as Promise<TResponse>
 }
@@ -172,6 +181,37 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/gateway-providers.md
    */
   reloadGateways: (input) => invokeMain('gateway.reload', input),
+  /**
+   * Lists built-in and plugin tools visible to settings.
+   * @returns Tool descriptors including disabled tools.
+   * @throws Error when the main process rejects the tool list request.
+   * @see docs/api-contracts/tools-plugins.md
+   */
+  listTools: () => invokeMain('tool.list', { includeDisabled: true }),
+  /**
+   * Enables a tool for future invocations.
+   * @param input - Tool enable request.
+   * @returns Updated tool descriptor.
+   * @throws Error when the main process rejects the tool enable request.
+   * @see docs/api-contracts/tools-plugins.md
+   */
+  enableTool: (input) => invokeMain('tool.enable', input),
+  /**
+   * Disables a tool for future invocations.
+   * @param input - Tool disable request.
+   * @returns Updated tool descriptor.
+   * @throws Error when the main process rejects the tool disable request.
+   * @see docs/api-contracts/tools-plugins.md
+   */
+  disableTool: (input) => invokeMain('tool.disable', input),
+  /**
+   * Invokes a whitelisted tool through the main-process ToolRuntime.
+   * @param input - Tool invocation request.
+   * @returns Tool invocation record.
+   * @throws Error when the main process rejects the tool invocation request.
+   * @see docs/api-contracts/tools-plugins.md
+   */
+  invokeTool: (input) => invokeMain('tool.invoke', input),
   /**
    * Subscribes to completed job terminal events.
    * @param handler - Event payload handler.
