@@ -101,7 +101,7 @@
 | REQ-053 | 用户自定义 agent（设置页创建 + DB 持久化 + AgentRegistry） | ✅ |
 | REQ-054 | 对话区 agent 选择器（@mention 风格） | ✅ |
 | REQ-055 | 工具管理设置页（启用/禁用 + ToolRuntime 拒绝路径） | ✅ |
-| REQ-056 | 资产文件夹（用户自定义 + 嵌套 + 拖拽整理） | ⬜ |
+| REQ-056 | 资产文件夹（用户自定义 + 嵌套 + 拖拽整理） | ✅ |
 
 ---
 
@@ -120,8 +120,8 @@
 
 ## 当前焦点
 
-**当前焦点** → M5 第 40 项（Asset library folders）
-**下一步** → 实现资产文件夹设置与资产库 UI，复用 AssetRepository/assets contract，把嵌套文件夹、移动、删除和 reference-safe tombstone 路径接入本地资产管理。
+**当前焦点** → M5 第 41 项（SkillRegistry and skill management）
+**下一步** → 实现内置/用户/plugin skill 发现、metadata-first 列表、懒加载引用、权限校验与 reload 一致性，并接入设置页管理 UI。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

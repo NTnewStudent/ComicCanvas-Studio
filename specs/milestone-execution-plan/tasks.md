@@ -243,7 +243,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: disabling tool causes ToolRuntime permission rejection.
   - Covers: R6.
 
-- [ ] 40. Implement asset library folders.
+- [x] 40. Implement asset library folders.
   - File: `desktop/src/renderer/assets/AssetPanel.tsx`.
   - Reference: `hjwall/pc-client/src/modules/asset/` and `hjwall/pc-client/src/modules/workflow-canvas/components/AssetLibraryPanel.tsx`.
   - Include: nested folder tree, move assets, delete folder with reference-safe behavior, tombstones.

@@ -25,6 +25,12 @@ export interface ComicCanvasApi {
   enableTool(input: IpcRequestMap['tool.enable']): Promise<IpcResponseMap['tool.enable']>
   disableTool(input: IpcRequestMap['tool.disable']): Promise<IpcResponseMap['tool.disable']>
   invokeTool(input: IpcRequestMap['tool.invoke']): Promise<IpcResponseMap['tool.invoke']>
+  listAssets(input?: IpcRequestMap['asset.list']): Promise<IpcResponseMap['asset.list']>
+  moveAsset(input: IpcRequestMap['asset.move']): Promise<IpcResponseMap['asset.move']>
+  trashAsset(input: IpcRequestMap['asset.trash']): Promise<IpcResponseMap['asset.trash']>
+  getAssetFolders(): Promise<IpcResponseMap['asset.getFolders']>
+  createAssetFolder(input: IpcRequestMap['asset.createFolder']): Promise<IpcResponseMap['asset.createFolder']>
+  deleteAssetFolder(input: IpcRequestMap['asset.deleteFolder']): Promise<IpcResponseMap['asset.deleteFolder']>
   onJobCompleted(handler: (event: Extract<JobTerminalEvent, { channel: 'job.completed' }>) => void): () => void
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
@@ -42,6 +48,7 @@ type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.
  * @see docs/api-contracts/gateway-providers.md
  * @see docs/api-contracts/agents.md
  * @see docs/api-contracts/tools-plugins.md
+ * @see docs/api-contracts/assets-files.md
  */
 function invokeMain<TResponse>(channel: 'app.health'): Promise<TResponse>
 function invokeMain<TChannel extends 'canvas.runNode'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -59,6 +66,12 @@ function invokeMain<TChannel extends 'tool.list'>(channel: TChannel, request: Ip
 function invokeMain<TChannel extends 'tool.enable'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'tool.disable'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'tool.invoke'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.move'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.trash'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.getFolders'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.createFolder'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.deleteFolder'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TResponse>(channel: string, request?: unknown): Promise<TResponse> {
   return ipcRenderer.invoke(channel, request) as Promise<TResponse>
 }
@@ -212,6 +225,53 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/tools-plugins.md
    */
   invokeTool: (input) => invokeMain('tool.invoke', input),
+  /**
+   * Lists renderer-safe asset records for the local asset library.
+   * @param input - Optional folder and media-type filters.
+   * @returns Asset records with safe URLs and relative storage paths only.
+   * @throws Error when the main process rejects the asset list request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  listAssets: (input = {}) => invokeMain('asset.list', input),
+  /**
+   * Moves one asset to a folder or back to the library root.
+   * @param input - Asset move request.
+   * @returns Updated asset record.
+   * @throws Error when the main process rejects the asset move request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  moveAsset: (input) => invokeMain('asset.move', input),
+  /**
+   * Trashes or tombstones an asset with reference-integrity checks.
+   * @param input - Asset trash request.
+   * @returns Trash result including blocking references for safe mode.
+   * @throws Error when the main process rejects the asset trash request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  trashAsset: (input) => invokeMain('asset.trash', input),
+  /**
+   * Lists active asset folders in path order.
+   * @returns Asset folders visible to the renderer library.
+   * @throws Error when the main process rejects the folder list request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  getAssetFolders: () => invokeMain('asset.getFolders', {}),
+  /**
+   * Creates a user asset folder under the selected parent.
+   * @param input - Folder creation request.
+   * @returns Created folder record.
+   * @throws Error when the main process rejects the folder creation request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  createAssetFolder: (input) => invokeMain('asset.createFolder', input),
+  /**
+   * Deletes a folder tree and preserves referenced assets as tombstones when requested.
+   * @param input - Folder deletion request.
+   * @returns Folder deletion result.
+   * @throws Error when the main process rejects the folder deletion request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  deleteAssetFolder: (input) => invokeMain('asset.deleteFolder', input),
   /**
    * Subscribes to completed job terminal events.
    * @param handler - Event payload handler.

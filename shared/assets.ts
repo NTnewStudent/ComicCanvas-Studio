@@ -76,3 +76,22 @@ export interface AssetTrashResponse {
   status: 'trashed' | 'tombstoned' | 'rejected'
   blockingReferences: AssetReference[]
 }
+
+export interface AssetFolderCreateRequest {
+  name: string
+  parentId: string | null
+  type: AssetFolderType
+}
+
+export interface AssetFolderDeleteRequest {
+  folderId: string
+  mode: 'safe' | 'force-tombstone'
+}
+
+export interface AssetFolderDeleteResponse {
+  folderId: string
+  status: 'deleted' | 'rejected'
+  affectedAssetIds: string[]
+  tombstonedAssetIds: string[]
+  blockingReferences: AssetReference[]
+}

@@ -1512,3 +1512,44 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 51 test files / 156 tests, desktop/shared build, and repository verification all passing.
+
+### M5-40 Asset Library Folders
+
+Scope:
+
+- Added nested asset folder contracts for `asset.getFolders`, `asset.createFolder`, and `asset.deleteFolder` in `shared/assets.ts`, `shared/ipc.ts`, and `docs/api-contracts/assets-files.md`.
+- Extended `AssetRepository` with folder CRUD, asset listing by folder/media type, asset moves, reference records, safe trash rejection, and force-tombstone folder deletion.
+- Wired asset IPC handlers and preload methods for list/move/trash/folder create/folder delete, with runtime repository injection.
+- Added Tailwind + `cn` renderer UI in `desktop/src/renderer/src/assets/AssetPanel.tsx`, mounted in `App.tsx`, adapting `hjwall/pc-client` asset-library patterns without copying source.
+- Updated IPC skeleton coverage for the expanded asset channel set.
+
+Verification:
+
+```bash
+bun x vitest run tests/asset-folders-repo.test.ts tests/asset-folders-ipc.test.ts tests/asset-preload.test.ts tests/asset-panel-ui.test.tsx --reporter=dot
+```
+
+Result:
+
+- RED before implementation: failed because `createFolder`, expanded asset IPC handlers, preload asset methods, and `AssetPanel` were missing.
+- PASS after implementation: asset folder repository, IPC, preload, and renderer UI tests passed, 4 test files and 5 tests.
+
+```bash
+bun run typecheck
+bun run lint
+bun run test -- --reporter=dot
+```
+
+Result:
+
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+- PASS: full test suite passed, 55 test files and 161 tests.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 55 test files / 161 tests, desktop/shared build, and repository verification all passing.

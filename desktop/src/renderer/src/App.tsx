@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useCanvasRealtime } from './canvas/hooks/use-canvas-realtime'
 import { createCanvasPlanExecutionController } from './canvas/lib/canvas-plan-execution'
 import { canvasStore } from './canvas/store/canvas.store'
+import { AssetPanel } from './assets/AssetPanel'
 import { ChatPanel } from './chat/ChatPanel'
 import type { ApplyPlanOptions } from './chat/PlanCard'
 import { cn } from './lib/cn'
@@ -103,6 +104,7 @@ export function App(): JSX.Element {
         </div>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
           <div className="flex min-w-0 flex-col gap-6">
+            <AssetPanel />
             <GatewayList />
             <ToolList />
             <AgentList />

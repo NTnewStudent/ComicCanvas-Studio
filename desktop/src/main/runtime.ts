@@ -217,7 +217,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     currentUserId: options.currentUserId ?? 'user-local'
   })
   registerJobHandlers(options.ipcMain)
-  registerAssetHandlers(options.ipcMain)
+  registerAssetHandlers(options.ipcMain, {
+    assets,
+    clock,
+    idFactory: (prefix) => `${prefix}-${crypto.randomUUID()}`
+  })
   registerGatewayHandlers(options.ipcMain, { reloader })
   registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })

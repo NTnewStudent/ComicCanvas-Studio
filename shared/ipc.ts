@@ -12,7 +12,17 @@
  */
 
 import type { CanvasGraphSnapshot, CanvasLoadGraphRequest, CanvasSaveGraphRequest, CanvasSaveGraphResponse } from './graph'
-import type { AssetFolder, AssetImportRequest, AssetMoveRequest, AssetRecord, AssetTrashRequest, AssetTrashResponse } from './assets'
+import type {
+  AssetFolder,
+  AssetFolderCreateRequest,
+  AssetFolderDeleteRequest,
+  AssetFolderDeleteResponse,
+  AssetImportRequest,
+  AssetMoveRequest,
+  AssetRecord,
+  AssetTrashRequest,
+  AssetTrashResponse
+} from './assets'
 import type { GatewayConfigInput, GatewayConfigView } from './gateway'
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
 import type { CanvasPlan, PlanRunStep } from './plan'
@@ -49,6 +59,7 @@ export type AssetIpcChannel =
   | 'asset.trash'
   | 'asset.getFolders'
   | 'asset.createFolder'
+  | 'asset.deleteFolder'
   | 'asset.changed'
 
 export type GatewayIpcChannel =
@@ -159,7 +170,8 @@ export interface IpcRequestMap {
   'asset.move': AssetMoveRequest
   'asset.trash': AssetTrashRequest
   'asset.getFolders': Record<string, never>
-  'asset.createFolder': Omit<AssetFolder, 'id' | 'createdAt'>
+  'asset.createFolder': AssetFolderCreateRequest
+  'asset.deleteFolder': AssetFolderDeleteRequest
   'gateway.list': Record<string, never>
   'gateway.save': GatewayConfigInput
   'gateway.delete': { gatewayId: string }
@@ -207,6 +219,7 @@ export interface IpcResponseMap {
   'asset.trash': AssetTrashResponse
   'asset.getFolders': AssetFolder[]
   'asset.createFolder': AssetFolder
+  'asset.deleteFolder': AssetFolderDeleteResponse
   'gateway.list': GatewayConfigView[]
   'gateway.save': GatewayConfigView
   'gateway.delete': { gatewayId: string; deleted: true }
