@@ -55,6 +55,8 @@ export const assets = sqliteTable('assets', {
   mimeType: text('mime_type'),
   sizeBytes: integer('size_bytes'),
   hash: text('hash'),
+  url: text('url'),
+  s3Key: text('s3_key'),
   folderId: text('folder_id'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),

@@ -28,6 +28,10 @@ export interface AssetRecord {
   relativePath: string
   safeUrl: string
   metadata: AssetMetadata
+  /** Cloud URL (primary access address, set when uploaded to S3) */
+  url?: string
+  /** S3 object key (for delete/management, set when uploaded to S3) */
+  s3Key?: string
   folderId?: string
   createdAt: number
   updatedAt: number

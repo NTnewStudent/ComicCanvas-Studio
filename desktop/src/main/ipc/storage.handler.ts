@@ -13,6 +13,14 @@ import type { StorageConfig } from '../storage/storage-config'
 let currentConfig: StorageConfig | null = null
 
 /**
+ * Returns the current storage configuration for use by other handlers.
+ * @returns Current StorageConfig or null if not yet configured.
+ */
+export function getCurrentStorageConfig(): StorageConfig | null {
+  return currentConfig
+}
+
+/**
  * Maps the shared IPC StorageConfigInput to the internal StorageConfig type.
  * Strips undefined optional fields to satisfy exactOptionalPropertyTypes.
  * @param input - Storage configuration from the renderer process.

@@ -26,6 +26,10 @@ export interface AssetCreateRecord {
   relativePath: string
   safeUrl: string
   metadata: AssetMetadata
+  /** Cloud URL from S3 upload (optional, set when cloud storage is configured) */
+  url?: string
+  /** S3 object key (optional, set when cloud storage is configured) */
+  s3Key?: string
   folderId?: string
   createdAt: number
   updatedAt: number
@@ -68,6 +72,8 @@ interface AssetRow {
   mime_type: string | null
   size_bytes: number | null
   hash: string | null
+  url: string | null
+  s3_key: string | null
   folder_id: string | null
   created_at: number
   updated_at: number
@@ -112,6 +118,8 @@ export interface AssetRepository {
   listReferences(assetId: string): AssetReference[]
   /** Trashes or tombstones an asset according to reference safety mode. */
   trashAsset(request: AssetTrashRequest, updatedAt: number): AssetTrashResponse
+  /** Updates the cloud URL and S3 key for an existing asset. */
+  updateUrl(assetId: string, url: string, s3Key: string): void
   /** Deletes a folder tree and safely trashes or tombstones contained assets. */
   deleteFolder(request: AssetFolderDeleteRequest, updatedAt: number): AssetFolderDeleteResponse
 }
@@ -137,6 +145,8 @@ function mapAsset(row: AssetRow): AssetRecord {
     updatedAt: row.updated_at
   }
 
+  if (row.url !== null) asset.url = row.url
+  if (row.s3_key !== null) asset.s3Key = row.s3_key
   if (row.folder_id !== null) {
     asset.folderId = row.folder_id
   }
@@ -181,10 +191,10 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
   const insertAsset = db.prepare(`
     INSERT INTO assets (
       id, media_type, status, rel_path, safe_url, width, height, duration_ms, orientation,
-      mime_type, size_bytes, hash, folder_id, created_at, updated_at
+      mime_type, size_bytes, hash, url, s3_key, folder_id, created_at, updated_at
     ) VALUES (
       @id, @mediaType, @status, @relativePath, @safeUrl, @width, @height, @durationMs, @orientation,
-      @mimeType, @sizeBytes, @hash, @folderId, @createdAt, @updatedAt
+      @mimeType, @sizeBytes, @hash, @url, @s3Key, @folderId, @createdAt, @updatedAt
     )
   `)
   const selectAsset = db.prepare('SELECT * FROM assets WHERE id = ?')
@@ -196,6 +206,7 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
   `)
   const updateAssetFolder = db.prepare('UPDATE assets SET folder_id = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
   const updateAssetStatus = db.prepare('UPDATE assets SET status = ?, updated_at = ?, deleted_at = ? WHERE id = ?')
+  const updateAssetUrl = db.prepare('UPDATE assets SET url = ?, s3_key = ? WHERE id = ?')
   const insertFolder = db.prepare(`
     INSERT INTO asset_folders (
       id, parent_id, name, type, rel_path, created_at, updated_at
@@ -326,6 +337,8 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
         mimeType: record.metadata.mimeType ?? null,
         sizeBytes: record.metadata.sizeBytes ?? null,
         hash: record.metadata.hash ?? null,
+        url: record.url ?? null,
+        s3Key: record.s3Key ?? null,
         folderId: record.folderId ?? null
       })
     },
@@ -374,6 +387,9 @@ export function createAssetRepository(db: BetterSqliteDatabase): AssetRepository
     },
     trashAsset(request, updatedAt) {
       return trashAssetTransaction(request, updatedAt)
+    },
+    updateUrl(assetId, url, s3Key) {
+      updateAssetUrl.run(url, s3Key, assetId)
     },
     deleteFolder(request, updatedAt) {
       return deleteFolderTransaction(request, updatedAt)

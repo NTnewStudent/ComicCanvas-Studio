@@ -19,6 +19,10 @@ const migrations = [
   {
     id: '0001_initial_core_platform',
     fileName: '0001_initial_core_platform.sql'
+  },
+  {
+    id: '0002_add_asset_cloud_fields',
+    fileName: '0002_add_asset_cloud_fields.sql'
   }
 ] as const
 

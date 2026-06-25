@@ -16,6 +16,8 @@ import type { AssetCreateFolderRecord, AssetRepository } from '../db/repositorie
 import type { IpcRegistrar } from './types'
 import { copyFileSync, mkdirSync, statSync } from 'node:fs'
 import { dirname, extname, join } from 'node:path'
+import { getCurrentStorageConfig } from './storage.handler'
+import { storageFactory } from '../storage/storage-factory'
 
 type AssetIdPrefix = 'asset' | 'folder'
 
@@ -177,7 +179,7 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
   const clock = options.clock ?? Date.now
   const idFactory = options.idFactory ?? ((prefix: AssetIdPrefix) => `${prefix}-${crypto.randomUUID()}`)
 
-  ipcMain.handle('asset.import', (_event, request) => {
+  ipcMain.handle('asset.import', async (_event, request) => {
     const folderId = nullableStringField(request, 'folderId')
     const mediaType = isRecord(request) ? parseMediaType(request.mediaType) : undefined
     const sourcePath = stringField(request, 'sourcePath')
@@ -193,6 +195,42 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
     const resolvedMediaType = mediaType ?? inferMediaType(extension)
     const relativePath = join('imported', resolvedMediaType, `${id}${extension}`)
 
+    // Try cloud upload if storage is configured
+    const storageConfig = getCurrentStorageConfig()
+    if (storageConfig && options.assets) {
+      const provider = storageFactory.create(storageConfig)
+      const key = `assets/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}${extension}`
+
+      const url = await provider.upload(sourcePath, key)
+
+      let sizeBytes: number | undefined
+      try {
+        sizeBytes = statSync(sourcePath).size
+      } catch {
+        // File stat failures are non-fatal; size is recorded as undefined.
+      }
+
+      const record: AssetRecord = {
+        id,
+        mediaType: resolvedMediaType,
+        status: 'ready',
+        relativePath,
+        safeUrl: `cc-asset://asset/${id}`,
+        url,
+        s3Key: key,
+        metadata: {
+          mimeType: extensionToMime(extension),
+          ...(sizeBytes !== undefined ? { sizeBytes } : {})
+        },
+        ...(folderId ? { folderId } : {}),
+        createdAt: now,
+        updatedAt: now
+      }
+      options.assets.create(record)
+      return record
+    }
+
+    // Fallback: no cloud storage configured → local copy (original behavior)
     if (options.assetRoot && options.assets) {
       // Copy the local file into the asset root and register it in the DB.
       const targetDir = join(options.assetRoot, dirname(relativePath))
@@ -268,13 +306,27 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
     return options.assets.moveAsset(moveRequest, clock())
   })
 
-  ipcMain.handle('asset.trash', (_event, request) => {
+  ipcMain.handle('asset.trash', async (_event, request) => {
     const trashRequest = parseTrashRequest(request)
     if (!options.assets) {
       return {
         assetId: trashRequest.assetId,
         status: 'trashed',
         blockingReferences: []
+      }
+    }
+
+    // Delete S3 object if the asset was uploaded to cloud storage
+    const asset = options.assets.getById(trashRequest.assetId)
+    if (asset?.s3Key) {
+      const storageConfig = getCurrentStorageConfig()
+      if (storageConfig) {
+        try {
+          const provider = storageFactory.create(storageConfig)
+          await provider.delete(asset.s3Key)
+        } catch (err) {
+          console.warn('S3 delete failed for asset', trashRequest.assetId, err)
+        }
       }
     }
 
