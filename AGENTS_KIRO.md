@@ -16,7 +16,7 @@ alwaysApply: false
 
 ## 项目身份
 
-**ComicCanvas Studio — AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，本地优先）
+**ComicCanvas Studio — AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，混合存储：媒体文件上云 + 项目文件本地）
 
 核心价值：
 1. **画布**：用户手动操作 React Flow 画布，节点化生成图片 / 视频（text/image/video 三节点）
@@ -39,7 +39,7 @@ alwaysApply: false
 > 包管理：**Bun 1.3.14**（`.bun-version` + `bun.lock`）。不引入 `package-lock.json`、`npm run` 或 `npx`。
 
 > ⚠️ 无 Redis / 无 BullMQ / 无 WebSocket：进程内持久化任务队列 + Electron IPC 事件替代。
-> ⚠️ 资产不走 COS：生成字节落本地 `appData/assets/`，DB 存相对路径，渲染走 `cc-asset://` 安全协议。
+> ⚠️ 媒体文件通过 S3 兼容存储（StorageProvider 接口），DB 存云端 URL；项目文件（画布 JSON、工作流数据）保持本地存储。
 
 ---
 

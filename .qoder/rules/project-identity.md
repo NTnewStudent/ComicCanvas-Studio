@@ -5,7 +5,9 @@ alwaysApply: true
 
 # ComicCanvas Studio — 项目身份
 
-**AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，本地优先）
+**AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，混合存储：媒体文件上云 + 项目文件本地）
+
+媒体文件（图片/视频）通过 S3 兼容接口存储在云端，项目文件（画布 JSON、工作流数据）保持本地。
 
 两条核心能力：
 1. **画布**：用户手动操作 React Flow 画布，节点化生成图片 / 视频（text/image/video 三节点）
@@ -28,7 +30,7 @@ alwaysApply: true
 > 包管理：**Bun 1.3.14**（`.bun-version` + `bun.lock`）。不引入 `package-lock.json`、`npm run` 或 `npx` 作为项目入口。
 
 > ⚠️ 无 Redis / 无 BullMQ / 无 WebSocket：进程内持久化任务队列 + Electron IPC 事件替代。
-> ⚠️ 资产不走 COS：生成字节落本地 `appData/assets/`，DB 存相对路径，渲染走 `cc-asset://` 安全协议。
+> ⚠️ 媒体文件通过 S3 兼容存储（StorageProvider 接口），DB 存云端 URL；项目文件（画布 JSON、工作流数据）保持本地存储。
 
 ---
 
@@ -106,6 +108,8 @@ type RunAction = 'imageRun' | 'videoRun' | 'textPolish'
 - ❌ 渲染层 `setInterval` 轮询资产状态
 - ❌ 直接引用 hjwall / cc-haha 源码文件（仅参考其设计与契约）
 - ❌ 子 agent 提权（工具集超出父 agent）/ 递归深度超 `MAX_SPAWN_DEPTH(2)`
+- ❌ 媒体文件直接存本地而不上传到已配置的 S3 存储（必须通过 StorageProvider 接口上传）
+- ❌ 在代码中硬编码 S3 端点/密钥（必须通过设置页配置，密钥用 safeStorage 加密）
 
 ---
 

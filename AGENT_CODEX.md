@@ -56,7 +56,7 @@ For multi-step tasks, state a brief plan with verify checks per step.
 
 ## 项目身份
 
-**ComicCanvas Studio — AIGC 漫剧画布 + Agent 自动编排桌面客户端**。一个离线优先（local-first）的 **Electron + TypeScript + Node.js** 应用。
+**ComicCanvas Studio — AIGC 漫剧画布 + Agent 自动编排桌面客户端**。一个混合存储（媒体文件上云 + 项目文件本地）的 **Electron + TypeScript + Node.js** 应用。媒体文件（图片/视频）通过 S3 兼容接口存储在云端，项目文件（画布 JSON、工作流数据）保持本地。
 
 核心价值：
 1. **画布**：用户手动操作画布，生成图片 / 视频（text/image/video 三节点），节点化编排。
@@ -86,7 +86,7 @@ Codex/GPT 环境的原生入口是 `.codex/config.toml`、`.codex/agents/*.toml`
 > 包管理、依赖锁定、前端/后端构建与 CI/CD 命令统一使用 **Bun 1.3.14**（`.bun-version` + `bun.lock`）。Electron 主进程运行时仍是 Electron/Node 环境；不要重新引入 `package-lock.json`、`.npmrc`、`npm run` 或 `npx` 作为项目入口。
 
 > ⚠️ 桌面端**无 Redis / 无 BullMQ / 无 WS**：用进程内持久化任务队列 + Electron IPC 事件替代。
-> ⚠️ 资产**不走 COS**：生成字节落本地 `appData/assets/`，DB 存相对路径，渲染走自定义安全协议。
+> ⚠️ 媒体文件通过 S3 兼容存储（StorageProvider 接口），DB 存云端 URL；项目文件（画布 JSON、工作流数据）保持本地存储。
 
 ## 🎭 Agent 分工
 
@@ -148,6 +148,8 @@ Claude Code 环境按其兼容目录内的 README 上岗；Codex 环境只使用
 - ❌ 渲染进程开启 `nodeIntegration`、关闭 `contextIsolation`（见 electron 安全规则）
 - ❌ 使用 `any`（用 `unknown` + 类型收窄）
 - ❌ 未在 `docs/api-contracts/` 登记契约就开新 IPC 通道
+- ❌ 媒体文件直接存本地而不上传到已配置的 S3 存储（必须通过 StorageProvider 接口上传）
+- ❌ 在代码中硬编码 S3 端点/密钥（必须通过设置页配置，密钥用 safeStorage 加密）
 
 ## 项目记录（LTM）
 
