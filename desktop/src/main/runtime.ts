@@ -4,18 +4,22 @@
  * @see docs/api-contracts/jobs.md
  * @see docs/api-contracts/assets-files.md
  * @see docs/api-contracts/gateway-providers.md
+ * @see docs/api-contracts/agents.md
  */
 
 import type { CanvasPlan } from '../../../shared/plan'
 import type { IpcRegistrar } from './ipc/types'
 import { createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
+import { createAgentRegistry } from './agent/registry'
 import { createIpcCanvasPlanEventBus } from './ipc/canvas-plan-fanout'
 import { createAssetPipeline } from './assets/pipeline'
 import { applyMigrations, openDatabaseAtPath } from './db/migrate'
+import { createAgentRepository } from './db/repositories/agent.repo'
 import { createAssetRepository } from './db/repositories/asset.repo'
 import { createChatMessageRepository } from './db/repositories/chat-message.repo'
 import { createJobRepository } from './db/repositories/job.repo'
 import { createWorkflowRepository } from './db/repositories/workflow.repo'
+import { registerAgentHandlers } from './ipc/agent.handler'
 import { registerAssetHandlers } from './ipc/asset.handler'
 import { registerCanvasHandlers } from './ipc/canvas.handler'
 import { registerGatewayHandlers } from './ipc/gateway.handler'
@@ -98,6 +102,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
 
   const jobs = createJobRepository(db)
   const assets = createAssetRepository(db)
+  const agents = createAgentRepository(db)
   const workflows = createWorkflowRepository(db)
   const jobEvents = createIpcJobEventBus(options.getWindows)
   const planEvents = createIpcCanvasPlanEventBus(options.getWindows)
@@ -115,6 +120,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const gateways = createGatewayRegistry()
   gateways.set('stub-main', createStubProvider({ id: 'stub-main' }))
   const reloader = createGatewayConfigReloader({ registry: gateways })
+  const agentRegistry = createAgentRegistry({ agents, clock })
   let draining: Promise<void> | null = null
   let worker: JobWorker | null = null
 
@@ -183,6 +189,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerJobHandlers(options.ipcMain)
   registerAssetHandlers(options.ipcMain)
   registerGatewayHandlers(options.ipcMain, { reloader })
+  registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
 
   async function drainJobsForTests(): Promise<void> {
     await drainJobs()

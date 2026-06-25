@@ -32,8 +32,45 @@ interface AgentListRequest {
 Response:
 
 ```ts
-interface AgentListResponse {
-  agents: AgentDefinition[]
+type AgentListResponse = AgentDefinition[]
+```
+
+### `agent.save`
+
+Request:
+
+```ts
+type AgentSaveRequest = AgentDefinition
+```
+
+Response:
+
+```ts
+type AgentSaveResponse = AgentDefinition
+```
+
+Rules:
+
+- Saved custom agents SHALL be persisted with `source: 'user'`.
+- Built-in agent IDs SHALL return `agent_builtin_readonly` and SHALL NOT mutate persisted rows.
+- `name`, `instructions`, `maxTurns`, tool policy, skill policy, gateway policy, context policy, and permission policy SHALL be validated before persistence.
+
+### `agent.delete`
+
+Request:
+
+```ts
+interface AgentDeleteRequest {
+  agentId: string
+}
+```
+
+Response:
+
+```ts
+interface AgentDeleteResponse {
+  agentId: string
+  deleted: true
 }
 ```
 
@@ -116,6 +153,7 @@ Rules:
 | `agent_policy_invalid` | Agent configuration violates policy schema. |
 | `agent_context_failed` | Context Pack could not be built safely. |
 | `agent_permission_denied` | Tool, skill, or spawn permission was denied. |
+| `agent_builtin_readonly` | Built-in agent definition cannot be edited or deleted. |
 | `agent_depth_exceeded` | Spawn depth exceeded configured maximum. |
 | `agent_run_failed` | Agent loop failed with safe error metadata. |
 
@@ -130,6 +168,8 @@ Rules:
 
 - Unit: built-in agent registry contains required agent IDs.
 - Unit: custom agent policy validation rejects overbroad or malformed settings.
+- Integration: custom agent settings create, edit, list, and delete through typed IPC/preload APIs.
+- UI: custom agent form validates required fields and prevents built-in delete/edit actions.
 - Property: sub-agent permission intersection never expands access.
 - Integration: sub-agent draft graph writes do not change the persisted workflow graph before parent merge.
 - Integration: `agent.run` returns job/run ticket and streams terminal event.

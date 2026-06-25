@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import type { IpcInvokeChannel } from '../shared/ipc'
+import { createAgentRegistry } from '../desktop/src/main/agent/registry'
+import type { AgentRepository } from '../desktop/src/main/db/repositories/agent.repo'
+import { registerAgentHandlers } from '../desktop/src/main/ipc/agent.handler'
 import { registerAssetHandlers } from '../desktop/src/main/ipc/asset.handler'
 import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
 import { createSafeErrorEnvelope, registerGatewayHandlers } from '../desktop/src/main/ipc/gateway.handler'
@@ -27,16 +30,29 @@ function createFakeIpcMain(): { ipcMain: FakeIpcMain; handlers: Map<string, Hand
   }
 }
 
+function createAgentRepo(): AgentRepository {
+  return {
+    list: () => [],
+    upsert: (agent) => agent,
+    delete: () => false
+  }
+}
+
 describe('M1 IPC skeleton', () => {
-  it('registers canvas, job, asset, and gateway invoke handlers', () => {
+  it('registers canvas, job, asset, gateway, and agent invoke handlers', () => {
     const { ipcMain, handlers } = createFakeIpcMain()
+    const agentRegistry = createAgentRegistry({ agents: createAgentRepo() })
 
     registerCanvasHandlers(ipcMain)
     registerJobHandlers(ipcMain)
     registerAssetHandlers(ipcMain)
     registerGatewayHandlers(ipcMain)
+    registerAgentHandlers(ipcMain, { registry: agentRegistry })
 
     expect(Array.from(handlers.keys()).sort()).toEqual([
+      'agent.delete',
+      'agent.list',
+      'agent.save',
       'asset.get',
       'asset.import',
       'asset.list',
@@ -153,7 +169,7 @@ describe('M1 IPC skeleton', () => {
   })
 
   it('documents every new IPC handler with API contract anchors', () => {
-    for (const file of ['canvas.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts']) {
+    for (const file of ['canvas.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts', 'agent.handler.ts']) {
       const source = readFileSync(`desktop/src/main/ipc/${file}`, 'utf8')
 
       expect(source, `${file} must link to an API contract`).toMatch(/@see docs\/api-contracts\//u)

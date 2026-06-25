@@ -13,6 +13,9 @@ export interface ComicCanvasApi {
   runCanvasNode(input: IpcRequestMap['canvas.runNode']): Promise<IpcResponseMap['canvas.runNode']>
   sendCanvasChat(input: IpcRequestMap['canvas.chatSend']): Promise<IpcResponseMap['canvas.chatSend']>
   getCanvasPlan(input: IpcRequestMap['canvas.chatGetPlan']): Promise<IpcResponseMap['canvas.chatGetPlan']>
+  listAgents(): Promise<IpcResponseMap['agent.list']>
+  saveAgent(input: IpcRequestMap['agent.save']): Promise<IpcResponseMap['agent.save']>
+  deleteAgent(input: IpcRequestMap['agent.delete']): Promise<IpcResponseMap['agent.delete']>
   listGateways(): Promise<IpcResponseMap['gateway.list']>
   saveGateway(input: IpcRequestMap['gateway.save']): Promise<IpcResponseMap['gateway.save']>
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
@@ -33,11 +36,15 @@ type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.
  * @throws Error when the main process rejects the invoke request.
  * @see docs/api-contracts/audit-observability.md
  * @see docs/api-contracts/gateway-providers.md
+ * @see docs/api-contracts/agents.md
  */
 function invokeMain<TResponse>(channel: 'app.health'): Promise<TResponse>
 function invokeMain<TChannel extends 'canvas.runNode'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.chatSend'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.chatGetPlan'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -104,6 +111,29 @@ const api: ComicCanvasApi = {
    */
   getCanvasPlan: (input) => invokeMain('canvas.chatGetPlan', input),
   /**
+   * Lists built-in and custom agent definitions.
+   * @returns Agent definitions visible to settings surfaces.
+   * @throws Error when the main process rejects the agent list request.
+   * @see docs/api-contracts/agents.md
+   */
+  listAgents: () => invokeMain('agent.list', {}),
+  /**
+   * Saves a custom user agent definition.
+   * @param input - User agent definition to persist.
+   * @returns Saved agent definition.
+   * @throws Error when the main process rejects the agent save request.
+   * @see docs/api-contracts/agents.md
+   */
+  saveAgent: (input) => invokeMain('agent.save', input),
+  /**
+   * Deletes a custom user agent definition.
+   * @param input - Agent deletion request.
+   * @returns Deletion confirmation.
+   * @throws Error when the main process rejects the agent delete request.
+   * @see docs/api-contracts/agents.md
+   */
+  deleteAgent: (input) => invokeMain('agent.delete', input),
+  /**
    * Lists configured gateway providers.
    * @returns Gateway configuration views.
    * @throws Error when the main process rejects the gateway list request.
@@ -165,8 +195,7 @@ const api: ComicCanvasApi = {
    * @throws Error when Electron listener registration fails.
    * @see docs/api-contracts/assets-files.md
    */
-  onAssetChanged: (handler) => subscribeMain('asset.changed', handler)
-  ,
+  onAssetChanged: (handler) => subscribeMain('asset.changed', handler),
   /**
    * Subscribes to CanvasPlan readiness events after async orchestration completes.
    * @param handler - Event payload handler.

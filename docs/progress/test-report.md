@@ -1389,3 +1389,46 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 47 test files / 142 tests, build, and repository verification all passing.
+
+
+### M5-37 Custom Agent Settings
+
+Scope:
+
+- Added `desktop/src/main/agent/registry.ts` and `desktop/src/main/ipc/agent.handler.ts` so built-in agents and persisted custom agents share one registry boundary.
+- Completed `desktop/src/main/db/repositories/agent.repo.ts` CRUD persistence for user agents through `agents.policy_json`.
+- Exposed typed preload APIs: `listAgents`, `saveAgent`, and `deleteAgent`, and registered the AgentRegistry in the real main-process runtime.
+- Added Tailwind + `cn` renderer settings UI in `AgentList.tsx` and `AgentForm.tsx`, following the existing Gateway settings style and `hjwall/pc-client` dense settings/confirm-dialog interaction patterns without copying reference source.
+- Mounted Agent settings in `App.tsx` and kept built-in agents read-only while user agents can be created, edited, and deleted.
+- Updated `docs/api-contracts/agents.md`, the canonical milestone tasks, and backlog status for REQ-053.
+
+Verification:
+
+```bash
+bun x vitest run tests/agent-settings-ipc.test.ts tests/agent-settings-ui.test.tsx
+```
+
+Result:
+
+- RED before implementation: backend failed because `desktop/src/main/agent/registry.ts` was missing; UI failed because `AgentForm` and `AgentList` were missing.
+- PASS after implementation: custom Agent settings IPC and UI tests passed, 2 test files and 8 tests.
+
+```bash
+bun x vitest run tests/agent-settings-ipc.test.ts tests/agent-settings-ui.test.tsx tests/gateway-preload.test.ts tests/ipc-skeleton.test.ts tests/main-runtime-wiring.test.ts
+bun x tsc --noEmit --pretty false
+bun x eslint . --max-warnings=0
+```
+
+Result:
+
+- PASS: targeted M5-37, preload, IPC skeleton, and main runtime wiring tests passed, 5 test files and 17 tests.
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 49 test files / 150 tests, desktop/shared build, and repository verification all passing.

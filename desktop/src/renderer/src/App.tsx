@@ -6,6 +6,7 @@ import { canvasStore } from './canvas/store/canvas.store'
 import { ChatPanel } from './chat/ChatPanel'
 import type { ApplyPlanOptions } from './chat/PlanCard'
 import { cn } from './lib/cn'
+import { AgentList } from './settings/AgentList'
 import { GatewayList } from './settings/GatewayList'
 import type { CanvasPlan } from '../../../../shared/plan'
 
@@ -100,7 +101,10 @@ export function App(): JSX.Element {
           </div>
         </div>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
-          <GatewayList />
+          <div className="flex min-w-0 flex-col gap-6">
+            <GatewayList />
+            <AgentList />
+          </div>
           <ChatPanel onApplyPlan={applyChatPlan} />
         </div>
       </section>

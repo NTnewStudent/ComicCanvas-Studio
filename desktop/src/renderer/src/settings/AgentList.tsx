@@ -1,0 +1,261 @@
+import { useEffect, useMemo, useState } from 'react'
+import { AlertTriangle, Bot, CheckCircle2, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
+
+import type { AgentDefinition } from '../../../../../shared/agents'
+import type { IpcRequestMap, IpcResponseMap } from '../../../../../shared/ipc'
+import { cn } from '../lib/cn'
+import { AgentForm } from './AgentForm'
+
+export interface AgentSettingsApi {
+  listAgents: () => Promise<AgentDefinition[]>
+  saveAgent: (input: AgentDefinition) => Promise<AgentDefinition>
+  deleteAgent: (request: IpcRequestMap['agent.delete']) => Promise<IpcResponseMap['agent.delete']>
+}
+
+export interface AgentListProps {
+  api?: AgentSettingsApi
+}
+
+type LoadState = 'loading' | 'ready' | 'error'
+
+function agentApi(): AgentSettingsApi {
+  return window.comicCanvas
+}
+
+function listTools(agent: AgentDefinition): string[] {
+  return agent.allowedTools === '*' ? ['all tools'] : agent.allowedTools
+}
+
+function listSkills(agent: AgentDefinition): string[] {
+  return agent.allowedSkills === '*' ? ['all skills'] : agent.allowedSkills
+}
+
+function upsertAgent(current: AgentDefinition[], saved: AgentDefinition): AgentDefinition[] {
+  const existing = current.findIndex((agent) => agent.id === saved.id)
+
+  if (existing === -1) {
+    return [...current, saved]
+  }
+
+  return current.map((agent) => (agent.id === saved.id ? saved : agent))
+}
+
+/**
+ * Renders custom and built-in agent settings through the typed preload API.
+ * @param props - Optional API override for component tests.
+ * @returns Agent settings panel.
+ * @throws Error never intentionally; request failures are shown as panel status.
+ * @see docs/api-contracts/agents.md
+ */
+export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
+  const [agents, setAgents] = useState<AgentDefinition[]>([])
+  const [loadState, setLoadState] = useState<LoadState>('loading')
+  const [editing, setEditing] = useState<AgentDefinition | 'new' | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState<AgentDefinition | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const orderedAgents = useMemo(() => agents.slice().sort((left, right) => Number(left.source === 'user') - Number(right.source === 'user')), [agents])
+
+  useEffect(() => {
+    async function loadAgents(): Promise<void> {
+      setLoadState('loading')
+
+      try {
+        const items = await api.listAgents()
+        setAgents(items)
+        setLoadState('ready')
+      } catch {
+        // Settings failures should stay in-panel so renderer isolation never leaks raw IPC errors.
+        setLoadState('error')
+        setMessage('Agent list failed to load.')
+      }
+    }
+
+    void loadAgents()
+  }, [api])
+
+  async function save(input: AgentDefinition): Promise<void> {
+    setSaving(true)
+    setMessage(null)
+
+    try {
+      const saved = await api.saveAgent(input)
+      setAgents((current) => upsertAgent(current, saved))
+      setEditing(null)
+      setMessage(`Saved ${saved.name}`)
+    } catch {
+      // Save failures are surfaced as a safe status line instead of exposing transport details.
+      setMessage('Agent save failed.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleting) {
+      return
+    }
+
+    const target = deleting
+    try {
+      await api.deleteAgent({ agentId: target.id })
+      setAgents((current) => current.filter((agent) => agent.id !== target.id))
+      setDeleting(null)
+      setMessage(`Deleted ${target.name}`)
+    } catch {
+      // Delete failures remain recoverable from the settings surface.
+      setMessage('Agent delete failed.')
+    }
+  }
+
+  return (
+    <section className="flex w-full max-w-6xl flex-col gap-5 rounded-xl border border-border-secondary bg-bg-surface p-5 shadow-card">
+      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="mb-1 text-[12px] font-semibold uppercase text-text-muted">Agent settings</p>
+          <h1 className="text-[24px] font-bold leading-tight text-text-base">Agent registry</h1>
+          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-text-secondary">
+            Manage built-in and custom agents for canvas planning, tool access, and comic-drama generation workflows.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setEditing('new')}
+          className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover"
+          aria-label="Add agent"
+        >
+          <Plus className="h-4 w-4" />
+          Add agent
+        </button>
+      </header>
+
+      {message && (
+        <div className="inline-flex max-w-max items-center gap-2 rounded-pill border border-border-secondary bg-bg-card px-3 py-1.5 text-[13px] text-text-secondary">
+          <CheckCircle2 className="h-4 w-4 text-semantic-success" />
+          {message}
+        </div>
+      )}
+
+      {editing === 'new' && <AgentForm saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
+      {editing !== null && editing !== 'new' && <AgentForm agent={editing} saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
+
+      {loadState === 'loading' && <p className="text-[13px] text-text-muted">Loading agents...</p>}
+      {loadState === 'error' && <p className="text-[13px] text-semantic-negative">Agent settings could not be loaded.</p>}
+
+      {loadState === 'ready' && (
+        <div className="grid gap-3 xl:grid-cols-2">
+          {orderedAgents.map((agent) => {
+            const builtin = agent.source === 'builtin'
+
+            return (
+              <article key={agent.id} className="flex flex-col gap-4 rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate text-[16px] font-semibold text-text-base">{agent.name}</h2>
+                      <span
+                        className={cn(
+                          'rounded-pill border px-2 py-0.5 text-[12px] font-medium',
+                          builtin ? 'border-border-secondary bg-bg-input text-text-muted' : 'border-border-primary bg-bg-hover text-brand'
+                        )}
+                      >
+                        {agent.source}
+                      </span>
+                      {!agent.enabled && <span className="rounded-pill border border-border-input bg-bg-input px-2 py-0.5 text-[12px] text-text-muted">disabled</span>}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-text-secondary">{agent.description}</p>
+                  </div>
+                  <Bot className={cn('h-5 w-5 shrink-0', builtin ? 'text-text-muted' : 'text-brand')} />
+                </div>
+
+                <dl className="grid gap-2 text-[12px] text-text-secondary">
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-text-muted">Effort</dt>
+                    <dd className="rounded-pill bg-bg-input px-2 py-0.5">{agent.effort}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-text-muted">Max turns</dt>
+                    <dd className="font-mono text-[12px] text-brand">{agent.maxTurns}</dd>
+                  </div>
+                </dl>
+
+                <div className="flex flex-wrap gap-2">
+                  {listTools(agent).slice(0, 5).map((tool) => (
+                    <span key={tool} className="rounded-pill border border-border-input bg-bg-input px-2 py-1 text-[12px] font-medium text-text-secondary">
+                      {tool}
+                    </span>
+                  ))}
+                  {listTools(agent).length > 5 && <span className="rounded-pill border border-border-input bg-bg-input px-2 py-1 text-[12px] text-text-muted">+{listTools(agent).length - 5}</span>}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {listSkills(agent).slice(0, 4).map((skill) => (
+                    <span key={skill} className="rounded-pill border border-border-secondary bg-bg-card px-2 py-1 text-[12px] text-text-muted">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-auto flex flex-wrap justify-end gap-2">
+                  {builtin ? (
+                    <span className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-muted">
+                      <Lock className="h-4 w-4" />
+                      Built-in
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setEditing(agent)}
+                        className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-base transition hover:border-border-primary"
+                        aria-label={`Edit ${agent.name}`}
+                      >
+                        <Pencil className="h-4 w-4 text-brand" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(agent)}
+                        className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-semantic-negative transition hover:border-border-primary"
+                        aria-label={`Delete ${agent.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
+
+      {deleting && (
+        <div role="alertdialog" aria-modal="true" aria-label={`Delete agent ${deleting.name}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-border-secondary bg-bg-surface p-5 shadow-pop">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-semantic-negative" />
+              <div className="min-w-0">
+                <h2 className="text-[16px] font-semibold text-text-base">Delete agent {deleting.name}</h2>
+                <p className="mt-2 text-[13px] leading-relaxed text-text-secondary">This removes the custom agent configuration from the local registry.</p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleting(null)}
+                className="rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] font-medium text-text-base"
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={() => void confirmDelete()} className="rounded-lg bg-semantic-negative px-3 py-2 text-[13px] font-semibold text-white">
+                Confirm delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
