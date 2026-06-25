@@ -35,6 +35,8 @@ export interface ComicCanvasApi {
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
   onCanvasPlanReady(handler: (event: IpcEventMap['canvas.planReady']) => void): () => void
+  saveGraph(input: IpcRequestMap['canvas.saveGraph']): Promise<IpcResponseMap['canvas.saveGraph']>
+  loadGraph(input: IpcRequestMap['canvas.loadGraph']): Promise<IpcResponseMap['canvas.loadGraph']>
 }
 
 type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady'>
@@ -72,6 +74,8 @@ function invokeMain<TChannel extends 'asset.trash'>(channel: TChannel, request: 
 function invokeMain<TChannel extends 'asset.getFolders'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.createFolder'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.deleteFolder'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.saveGraph'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.loadGraph'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TResponse>(channel: string, request?: unknown): Promise<TResponse> {
   return ipcRenderer.invoke(channel, request) as Promise<TResponse>
 }
@@ -303,7 +307,23 @@ const api: ComicCanvasApi = {
    * @throws Error when Electron listener registration fails.
    * @see docs/api-contracts/canvas-plan.md
    */
-  onCanvasPlanReady: (handler) => subscribeMain('canvas.planReady', handler)
+  onCanvasPlanReady: (handler) => subscribeMain('canvas.planReady', handler),
+  /**
+   * Persists a canvas graph snapshot for the given project.
+   * @param input - Save request including project ID and graph snapshot.
+   * @returns New graph version identifier.
+   * @throws Error when the main process rejects the save request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  saveGraph: (input) => invokeMain('canvas.saveGraph', input),
+  /**
+   * Loads the latest canvas graph snapshot for the given project.
+   * @param input - Load request including project ID.
+   * @returns Graph snapshot or default empty graph.
+   * @throws Error when the main process rejects the load request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  loadGraph: (input) => invokeMain('canvas.loadGraph', input)
 }
 
 contextBridge.exposeInMainWorld('comicCanvas', api)

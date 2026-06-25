@@ -33,10 +33,26 @@ interface WorkflowVersionRow {
   created_by: string
 }
 
+export interface WorkflowSummary {
+  id: string
+  name: string
+  updatedAt: string
+  nodeCount: number
+}
+
+export interface WorkflowVersionSummary {
+  id: string
+  createdAt: string
+}
+
 export interface WorkflowRepository {
   create(record: WorkflowCreateRecord): void
   addVersion(record: WorkflowVersionCreateRecord): void
   getLatestVersion(workflowId: string): WorkflowVersionRecord | null
+  /** 列出所有工作流摘要 */
+  list(): WorkflowSummary[]
+  /** 列出指定工作流的版本历史 */
+  listVersions(workflowId: string, limit?: number): WorkflowVersionSummary[]
 }
 
 /**
@@ -54,6 +70,18 @@ export function createWorkflowRepository(db: BetterSqliteDatabase): WorkflowRepo
   `)
   const updateWorkflowTimestamp = db.prepare('UPDATE workflows SET updated_at = @createdAt WHERE id = @workflowId')
   const selectLatest = db.prepare('SELECT * FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC LIMIT 1')
+  const selectAllWorkflows = db.prepare(`
+    SELECT w.id, w.name, w.updated_at,
+      (SELECT COUNT(*) FROM json_each(
+        (SELECT wv2.graph_json FROM workflow_versions wv2
+         WHERE wv2.workflow_id = w.id
+         ORDER BY wv2.created_at DESC LIMIT 1),
+        '$.nodes'
+      )) as node_count
+    FROM workflows w
+    ORDER BY w.updated_at DESC
+  `)
+  const selectVersions = db.prepare('SELECT id, created_at FROM workflow_versions WHERE workflow_id = ? ORDER BY created_at DESC LIMIT ?')
   const addVersionTransaction = db.transaction((record: WorkflowVersionCreateRecord) => {
     insertVersion.run({ ...record, graphJson: encodeJson(record.graph) })
     updateWorkflowTimestamp.run(record)
@@ -80,6 +108,24 @@ export function createWorkflowRepository(db: BetterSqliteDatabase): WorkflowRepo
         createdAt: row.created_at,
         createdBy: row.created_by
       }
+    },
+    list() {
+      interface WorkflowListRow { id: string; name: string; updated_at: number; node_count: number | null }
+      const rows = selectAllWorkflows.all() as WorkflowListRow[]
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        updatedAt: new Date(row.updated_at).toISOString(),
+        nodeCount: row.node_count ?? 0
+      }))
+    },
+    listVersions(workflowId, limit = 20) {
+      interface VersionListRow { id: string; created_at: number }
+      const rows = selectVersions.all(workflowId, limit) as VersionListRow[]
+      return rows.map((row) => ({
+        id: row.id,
+        createdAt: new Date(row.created_at).toISOString()
+      }))
     }
   }
 }

@@ -42,6 +42,9 @@ import {
   FileText,
   ImagePlus,
   Clapperboard,
+  Save,
+  Check,
+  Loader2,
   type LucideIcon,
 } from 'lucide-react'
 import { useStore } from 'zustand'
@@ -66,6 +69,7 @@ import type {
   VideoNodeData,
   CanvasNodeData,
 } from '../../../../../shared/nodes'
+import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
 
 /* ─── Debounce utility ─── */
 
@@ -238,6 +242,15 @@ const CONTEXT_MENU_NODE_OPTIONS: {
   { type: 'videoConfigV2', label: '生视频 V2', icon: Clapperboard },
 ]
 
+/* ─── Default workflow ID ─── */
+
+const DEFAULT_WORKFLOW_ID = 'default'
+const DEFAULT_WORKFLOW_NAME = '未命名工作流'
+
+/* ─── Save status type ─── */
+
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
 /* ─── CanvasPageInner（必须在 ReactFlowProvider 内） ─── */
 
 function CanvasPageInner(): JSX.Element {
@@ -251,6 +264,14 @@ function CanvasPageInner(): JSX.Element {
     y: number
     nodeId?: string
   } | null>(null)
+
+  /* ── Save/Load state ── */
+  const [currentWorkflowId] = useState(DEFAULT_WORKFLOW_ID)
+  const [workflowName, setWorkflowName] = useState(DEFAULT_WORKFLOW_NAME)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const isDirtyRef = useRef(false)
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /* ── Store selectors（仅用于撤销/重做 UI 和持久化回调） ── */
   const pastLen = useStore(canvasStore, (s) => s.past.length)
@@ -300,7 +321,132 @@ function CanvasPageInner(): JSX.Element {
 
   useEffect(() => {
     persistToStore(rfNodes, rfEdges)
+    // Mark dirty for auto-save
+    isDirtyRef.current = true
   }, [rfNodes, rfEdges, persistToStore])
+
+  /* ── Save graph handler ── */
+  const handleSave = useCallback(async () => {
+    try {
+      setSaveStatus('saving')
+      const state = canvasStore.getState()
+      const snapshot: CanvasGraphSnapshot = {
+        nodes: state.nodes.map((n) => ({
+          id: n.id,
+          type: n.type,
+          position: n.position,
+          data: n.data,
+        })),
+        edges: state.edges.map((e) => ({
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          data: e.data,
+        })),
+        viewport: state.viewport,
+      }
+      await window.comicCanvas.saveGraph({
+        projectId: currentWorkflowId,
+        graph: snapshot,
+      })
+      isDirtyRef.current = false
+      setSaveStatus('saved')
+      // Reset status after 2s
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+      saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000)
+    } catch {
+      setSaveStatus('error')
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+      saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 3000)
+    }
+  }, [currentWorkflowId])
+
+  /* ── Ctrl+S / Cmd+S keyboard shortcut ── */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        handleSave()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleSave])
+
+  /* ── Debounced auto-save (2s after changes) ── */
+  useEffect(() => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    autoSaveTimerRef.current = setTimeout(() => {
+      if (isDirtyRef.current) {
+        handleSave()
+      }
+    }, 2000)
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    }
+  }, [rfNodes, rfEdges, handleSave])
+
+  /* ── Load graph on mount ── */
+  useEffect(() => {
+    let cancelled = false
+    async function loadGraph() {
+      try {
+        const snapshot = await window.comicCanvas.loadGraph({
+          projectId: currentWorkflowId,
+        })
+        if (cancelled || !snapshot) return
+        // Only restore if there are actual nodes/edges
+        if (snapshot.nodes.length > 0 || snapshot.edges.length > 0) {
+          canvasStore.getState().setNodes(
+            snapshot.nodes.map((n) => ({
+              id: n.id,
+              type: n.type,
+              position: n.position,
+              data: n.data,
+            })),
+          )
+          canvasStore.getState().setEdges(
+            snapshot.edges.map((e) => ({
+              id: e.id,
+              source: e.source,
+              target: e.target,
+              data: e.data,
+            })),
+          )
+          setRfNodes(snapshot.nodes.map((n) => ({
+            id: n.id,
+            type: n.type,
+            position: n.position,
+            data: n.data as unknown as Record<string, unknown>,
+          })))
+          setRfEdges(snapshot.edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            type: 'default',
+          })))
+          if (snapshot.viewport) {
+            canvasStore.getState().setViewport(snapshot.viewport)
+          }
+        }
+        setWorkflowName(DEFAULT_WORKFLOW_NAME)
+        isDirtyRef.current = false
+      } catch {
+        // Silently fall back to empty canvas
+      }
+    }
+    loadGraph()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /* ── Cleanup timers ── */
+  useEffect(() => {
+    return () => {
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
+    }
+  }, [])
 
   /* ── Undo/Redo：从 store 重新同步到 ReactFlow ── */
   const prevPastLen = useRef(pastLen)
@@ -532,7 +678,7 @@ function CanvasPageInner(): JSX.Element {
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <h1 className="text-[15px] font-semibold text-text-base">画布工作区</h1>
+          <h1 className="text-[15px] font-semibold text-text-base">{workflowName}</h1>
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -555,6 +701,34 @@ function CanvasPageInner(): JSX.Element {
           >
             <Redo2 className="h-3.5 w-3.5" />
             重做
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition hover:bg-bg-hover hover:text-text-base"
+            aria-label="保存"
+          >
+            {saveStatus === 'saving' ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                保存中...
+              </>
+            ) : saveStatus === 'saved' ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-green-400" />
+                <span className="text-green-400">已保存</span>
+              </>
+            ) : saveStatus === 'error' ? (
+              <>
+                <Save className="h-3.5 w-3.5 text-red-400" />
+                <span className="text-red-400">保存失败</span>
+              </>
+            ) : (
+              <>
+                <Save className="h-3.5 w-3.5" />
+                保存
+              </>
+            )}
           </button>
           <button
             type="button"
