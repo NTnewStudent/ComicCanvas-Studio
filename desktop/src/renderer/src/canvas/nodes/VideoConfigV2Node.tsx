@@ -624,7 +624,12 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
       )}
 
       {/* ── 标签行 ── */}
-      <article className={cn('cc-node-card relative flex flex-col items-center p-0')}>
+      <article
+        className={cn(
+          'cc-node-card relative flex flex-col items-center p-0',
+          selected && 'cc-node-selected',
+        )}
+      >
         <header className="flex w-full items-center gap-[5px] self-start px-3 pt-2.5 pb-1.5 text-[12px] text-text-muted">
           <Film className="h-3.5 w-3.5 text-text-muted" />
           <span className="font-semibold text-text-muted">
