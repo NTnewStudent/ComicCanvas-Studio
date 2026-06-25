@@ -3,6 +3,7 @@ import {
   LayoutGrid,
   Settings,
   MessageSquare,
+  FolderOpen,
   Sun,
   Moon,
   Monitor,
@@ -54,13 +55,14 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'canvas', label: '画布', icon: LayoutGrid, to: '/canvas' },
+  { key: 'projects', label: '项目', icon: LayoutGrid, to: '/projects' },
+  { key: 'assets', label: '资产', icon: FolderOpen, to: '/assets' },
   { key: 'settings', label: '设置', icon: Settings, to: '/settings' },
   { key: 'chat', label: '对话', icon: MessageSquare, to: '/chat' },
 ]
 
 function isActivePath(currentPath: string, targetPath: string): boolean {
-  if (targetPath === '/canvas') return currentPath === '/canvas' || currentPath === '/'
+  if (targetPath === '/projects') return currentPath === '/projects' || currentPath === '/'
   return currentPath.startsWith(targetPath)
 }
 

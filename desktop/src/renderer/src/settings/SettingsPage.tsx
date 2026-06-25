@@ -1,18 +1,16 @@
 import { useState } from 'react'
-import { Globe, Bot, Wrench, FolderOpen } from 'lucide-react'
+import { Globe, Bot, Wrench } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { GatewayList } from './GatewayList'
 import { AgentList } from './AgentList'
 import { ToolList } from './ToolList'
-import { AssetPanel } from '../assets/AssetPanel'
 
-type SettingsTab = 'gateway' | 'agent' | 'tool' | 'asset'
+type SettingsTab = 'gateway' | 'agent' | 'tool'
 
 const tabs: { id: SettingsTab; label: string; icon: typeof Globe }[] = [
   { id: 'gateway', label: '网关', icon: Globe },
   { id: 'agent', label: 'Agent', icon: Bot },
   { id: 'tool', label: '工具', icon: Wrench },
-  { id: 'asset', label: '资产', icon: FolderOpen },
 ]
 
 export default function SettingsPage(): JSX.Element {
@@ -44,7 +42,6 @@ export default function SettingsPage(): JSX.Element {
         {activeTab === 'gateway' && <GatewayList />}
         {activeTab === 'agent' && <AgentList />}
         {activeTab === 'tool' && <ToolList />}
-        {activeTab === 'asset' && <AssetPanel />}
       </div>
     </div>
   )

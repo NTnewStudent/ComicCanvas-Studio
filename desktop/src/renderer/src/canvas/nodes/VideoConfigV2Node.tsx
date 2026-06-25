@@ -56,7 +56,6 @@ import {
   V2_VIDEO_WIDTH_PORTRAIT,
   V2_VIDEO_WIDTH_LANDSCAPE,
   V2_VIDEO_ASPECT_RATIO,
-  V2_NODE_RADIUS,
   isPortraitRatio,
 } from '../lib/node-sizing'
 import RunStatusBadge from '../components/RunStatusBadge'
@@ -571,8 +570,6 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
   const previewCardStyle: CSSProperties = {
     width: cardWidth,
     height: cardHeight,
-    borderRadius: V2_NODE_RADIUS,
-    overflow: 'hidden',
     position: 'relative',
     cursor: 'pointer',
   }
@@ -625,10 +622,7 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
 
       {/* ── 标签行 ── */}
       <article
-        className={cn(
-          'cc-node-card relative flex flex-col items-center p-0',
-          selected && 'cc-node-selected',
-        )}
+        className="relative flex flex-col items-center p-0"
       >
         <header className="flex w-full items-center gap-[5px] self-start px-3 pt-2.5 pb-1.5 text-[12px] text-text-muted">
           <Film className="h-3.5 w-3.5 text-text-muted" />
@@ -643,8 +637,8 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
           <div
             data-testid="video-v2-preview"
             className={cn(
-              'group relative border border-border-primary bg-canvas-surface shadow-card transition-all duration-200',
-              selected && 'border-2 border-brand',
+              'group relative overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+              selected && 'border-border-primary shadow-active',
             )}
             style={previewCardStyle}
             onMouseEnter={handlePreviewMouseEnter}

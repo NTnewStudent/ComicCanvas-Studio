@@ -7,6 +7,8 @@ import { WorkspaceLayout } from './components/WorkspaceLayout'
 /* ------------------------------------------------------------------ */
 
 const CanvasPage = lazy(() => import('./canvas/CanvasPage'))
+const ProjectsListPage = lazy(() => import('./projects/ProjectsListPage'))
+const AssetPage = lazy(() => import('./assets/AssetPage'))
 const SettingsPage = lazy(() => import('./settings/SettingsPage'))
 const ChatPage = lazy(() => import('./chat/ChatPage'))
 
@@ -29,7 +31,7 @@ function SuspensePage({ children }: { children: React.ReactNode }): JSX.Element 
 const routes: RouteObject[] = [
   {
     path: '/',
-    element: <Navigate to="/canvas" replace />,
+    element: <Navigate to="/projects" replace />,
   },
   {
     path: '/canvas',
@@ -38,6 +40,14 @@ const routes: RouteObject[] = [
   {
     element: <WorkspaceLayout />,
     children: [
+      {
+        path: '/projects',
+        element: <SuspensePage><ProjectsListPage /></SuspensePage>,
+      },
+      {
+        path: '/assets',
+        element: <SuspensePage><AssetPage /></SuspensePage>,
+      },
       {
         path: '/settings',
         element: <SuspensePage><SettingsPage /></SuspensePage>,

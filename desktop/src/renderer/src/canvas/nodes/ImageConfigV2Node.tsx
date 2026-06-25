@@ -298,8 +298,8 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
       {/* ══════ 预览卡 ══════ */}
       <div
         className={cn(
-          'cc-node-card group relative w-[360px] overflow-hidden rounded-[20px] border border-border-primary bg-canvas-surface shadow-card',
-          selected && 'cc-node-selected border-brand',
+          'group relative w-[360px] overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+          selected && 'border-border-primary shadow-active',
           generating && 'cc-generating-ring',
           hasError && 'cc-failed-shake',
         )}
@@ -318,7 +318,7 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
 
         {/* 预览区域 */}
         <div
-          className="relative w-full overflow-hidden rounded-[20px]"
+          className="relative w-full overflow-hidden rounded-lg border border-border-input bg-bg-input"
           style={{ aspectRatio }}
           data-testid="image-config-v2-preview"
         >
@@ -354,7 +354,7 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
           ) : (
             /* 空态 */
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-text-muted">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-canvas-surface">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-bg-card">
                 <ImageIcon className="h-6 w-6 opacity-60" />
               </span>
               <span className="text-[12px] font-bold">暂无图片</span>
