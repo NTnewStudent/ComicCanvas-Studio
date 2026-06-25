@@ -14,11 +14,15 @@ import type {
 } from '../../../../shared/assets'
 import type { AssetCreateFolderRecord, AssetRepository } from '../db/repositories/asset.repo'
 import type { IpcRegistrar } from './types'
+import { copyFileSync, mkdirSync, statSync } from 'node:fs'
+import { dirname, extname, join } from 'node:path'
 
 type AssetIdPrefix = 'asset' | 'folder'
 
 export interface AssetHandlerOptions {
   assets?: AssetRepository
+  /** Filesystem root for imported/generated assets. */
+  assetRoot?: string
   clock?: () => number
   idFactory?: (prefix: AssetIdPrefix) => string
 }
@@ -139,6 +143,28 @@ function parseDeleteFolderRequest(request: unknown): AssetFolderDeleteRequest {
   return { folderId, mode }
 }
 
+function inferMediaType(extension: string): AssetMediaType {
+  const ext = extension.toLowerCase()
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg'].includes(ext)) return 'image'
+  if (['.mp4', '.webm', '.mov', '.avi', '.mkv'].includes(ext)) return 'video'
+  if (['.txt', '.md', '.json', '.csv'].includes(ext)) return 'text'
+  if (['.pdf', '.doc', '.docx'].includes(ext)) return 'document'
+  return 'other'
+}
+
+function extensionToMime(extension: string): string {
+  const ext = extension.toLowerCase()
+  const map: Record<string, string> = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.svg': 'image/svg+xml',
+    '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+    '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+    '.pdf': 'application/pdf'
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
 /**
  * Registers asset invoke handlers.
  * @param ipcMain - Electron-compatible IPC registrar.
@@ -154,9 +180,52 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
   ipcMain.handle('asset.import', (_event, request) => {
     const folderId = nullableStringField(request, 'folderId')
     const mediaType = isRecord(request) ? parseMediaType(request.mediaType) : undefined
-    const imported = createAssetRecord('imported-asset', folderId)
+    const sourcePath = stringField(request, 'sourcePath')
 
-    return mediaType ? { ...imported, mediaType } satisfies AssetRecord : imported
+    if (!sourcePath) {
+      // Import requests without a source path cannot resolve the local file.
+      throw new Error('asset_source_path_required')
+    }
+
+    const now = clock()
+    const id = idFactory('asset')
+    const extension = extname(sourcePath) || '.png'
+    const resolvedMediaType = mediaType ?? inferMediaType(extension)
+    const relativePath = join('imported', resolvedMediaType, `${id}${extension}`)
+
+    if (options.assetRoot && options.assets) {
+      // Copy the local file into the asset root and register it in the DB.
+      const targetDir = join(options.assetRoot, dirname(relativePath))
+      mkdirSync(targetDir, { recursive: true })
+      copyFileSync(sourcePath, join(options.assetRoot, relativePath))
+
+      let sizeBytes: number | undefined
+      try {
+        sizeBytes = statSync(sourcePath).size
+      } catch {
+        // File stat failures are non-fatal; size is recorded as undefined.
+      }
+
+      const record: AssetRecord = {
+        id,
+        mediaType: resolvedMediaType,
+        status: 'ready',
+        relativePath,
+        safeUrl: `cc-asset://asset/${id}`,
+        metadata: {
+          mimeType: extensionToMime(extension),
+          ...(sizeBytes !== undefined ? { sizeBytes } : {})
+        },
+        ...(folderId ? { folderId } : {}),
+        createdAt: now,
+        updatedAt: now
+      }
+      options.assets.create(record)
+      return record
+    }
+
+    // Fallback: no repository or asset root available (test/dev scaffold).
+    return createAssetRecord(id, folderId)
   })
 
   ipcMain.handle('asset.get', (_event, request) => {

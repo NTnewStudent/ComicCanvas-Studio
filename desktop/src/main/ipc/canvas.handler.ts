@@ -4,7 +4,7 @@
  */
 
 import type { JobTicket } from '../../../../shared/jobs'
-import type { CanvasPlan, PlanNode, PlanRunStep } from '../../../../shared/plan'
+import type { CanvasPlan, PlanRunStep } from '../../../../shared/plan'
 import { canConnect } from '../../../../shared/connection-matrix'
 import type { CanvasGraphEdge, CanvasGraphNode, CanvasGraphSnapshot, CanvasSaveGraphRequest } from '../../../../shared/graph'
 import type { IpcRegistrar } from './types'
@@ -173,7 +173,7 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
       return { graphVersion: 'graph-version-unavailable', appliedNodeIds: [], appliedEdgeIds: [], dropped: [] }
     }
 
-    const plan = request.plan as CanvasPlan
+    const plan = request.plan as unknown as CanvasPlan
     const mode = request.mode === 'apply' ? 'apply' : 'draft'
     const projectId = 'default'
     const existingGraph = workflows.getLatestVersion(projectId)?.graph ?? defaultGraph()
@@ -191,7 +191,7 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
         id,
         type: planNode.type,
         position: { x: appliedNodes.length * 250, y: 0 },
-        data: planNode.data as CanvasGraphNode['data']
+        data: planNode.data as unknown as CanvasGraphNode['data']
       })
       appliedNodeIds.push(id)
     }
@@ -222,7 +222,7 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
         id: edgeId,
         source,
         target,
-        data: { edgeType: planEdge.edgeType, ...(planEdge.imageRole ? { imageRole: planEdge.imageRole } : {}) } as CanvasGraphEdge['data']
+        data: { edgeType: planEdge.edgeType, createdAt: clock(), ...(planEdge.imageRole ? { imageRole: planEdge.imageRole } : {}) } as CanvasGraphEdge['data']
       })
       appliedEdgeIds.push(edgeId)
     }
@@ -277,7 +277,7 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
 
     return { jobIds, status: 'queued' as const }
   })
-}
+
   ipcMain.handle('canvas.listWorkflows', () => {
     const workflows = dependencies.workflows
     if (!workflows) {

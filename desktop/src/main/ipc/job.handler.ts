@@ -3,7 +3,7 @@
  * @see docs/api-contracts/jobs.md
  */
 
-import type { JobRecord, JobTicket } from '../../../../shared/jobs'
+import type { JobRecord, JobRecoveryReport, JobTicket } from '../../../../shared/jobs'
 import type { IpcRegistrar } from './types'
 
 function createPendingTicket(jobId: string): JobTicket {
@@ -40,4 +40,9 @@ export function registerJobHandlers(ipcMain: IpcRegistrar): void {
     }
   })
   ipcMain.handle('job.list', () => [])
+  ipcMain.handle('job.recover', (): JobRecoveryReport => {
+    // Recovery inspects stale pending/processing jobs and requeues or marks them failed.
+    // The skeleton runtime has no persistent stale detection; return an empty report.
+    return { inspected: 0, requeued: [], failed: [] }
+  })
 }

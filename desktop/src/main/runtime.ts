@@ -219,6 +219,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerJobHandlers(options.ipcMain)
   registerAssetHandlers(options.ipcMain, {
     assets,
+    assetRoot: options.assetRoot,
     clock,
     idFactory: (prefix) => `${prefix}-${crypto.randomUUID()}`
   })
