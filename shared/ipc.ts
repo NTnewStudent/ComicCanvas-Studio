@@ -115,6 +115,11 @@ export type AuditIpcChannel =
   | 'audit.list'
   | 'health.check'
 
+export type StorageIpcChannel =
+  | 'storage.getConfig'
+  | 'storage.saveConfig'
+  | 'storage.testConnection'
+
 export type IpcChannel =
   | CanvasIpcChannel
   | JobIpcChannel
@@ -125,6 +130,31 @@ export type IpcChannel =
   | SkillIpcChannel
   | KnowledgeIpcChannel
   | AuditIpcChannel
+  | StorageIpcChannel
+
+/** S3-compatible storage configuration (shared type for IPC contract) */
+export interface StorageConfigInput {
+  /** Provider ID ('s3' | 'r2' | 'cos' | 'oss') */
+  provider: string
+  /** Service endpoint URL */
+  endpoint: string
+  /** Region (R2 uses 'auto') */
+  region?: string
+  /** Bucket name */
+  bucket: string
+  /** Access key ID */
+  accessKeyId: string
+  /** Secret access key */
+  secretAccessKey: string
+  /** Public URL prefix (CDN domain, optional) */
+  publicUrlPrefix?: string
+}
+
+/** Storage connection test result */
+export interface StorageConnectionTestResult {
+  ok: boolean
+  error?: string
+}
 
 export interface SafeErrorEnvelope {
   errorClass: string
@@ -213,6 +243,9 @@ export interface IpcRequestMap {
   'context.build': ContextBuildInput
   'audit.list': { traceId?: string; actorId?: string; capability?: string; limit: number }
   'health.check': { components?: string[] }
+  'storage.getConfig': void
+  'storage.saveConfig': StorageConfigInput
+  'storage.testConnection': StorageConfigInput
 }
 
 export interface IpcResponseMap {
@@ -265,6 +298,9 @@ export interface IpcResponseMap {
   'context.build': ContextPack
   'audit.list': { entries: Array<Record<string, unknown>> }
   'health.check': { status: 'ok' | 'degraded' | 'failed'; checks: Array<Record<string, unknown>>; checkedAt: number }
+  'storage.getConfig': StorageConfigInput | null
+  'storage.saveConfig': void
+  'storage.testConnection': StorageConnectionTestResult
 }
 
 export interface IpcEventMap {

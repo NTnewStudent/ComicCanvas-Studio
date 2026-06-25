@@ -25,6 +25,7 @@ import { registerCanvasHandlers } from './ipc/canvas.handler'
 import { registerGatewayHandlers } from './ipc/gateway.handler'
 import { registerJobHandlers } from './ipc/job.handler'
 import { registerToolHandlers } from './ipc/tool.handler'
+import { registerStorageHandlers } from './ipc/storage.handler'
 import { createIpcJobEventBus } from './jobs/ipc-fanout'
 import { createJobQueue } from './jobs/queue'
 import { createJobWorker, type JobWorker } from './jobs/worker'
@@ -226,6 +227,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerGatewayHandlers(options.ipcMain, { reloader })
   registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
+  registerStorageHandlers(options.ipcMain)
 
   async function drainJobsForTests(): Promise<void> {
     await drainJobs()

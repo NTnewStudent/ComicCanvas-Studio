@@ -5,7 +5,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 
-import type { AssetChangedEvent, IpcEventChannel, IpcEventMap, IpcRequestMap, IpcResponseMap, WorkflowSummaryView } from '../../../shared/ipc'
+import type { AssetChangedEvent, IpcEventChannel, IpcEventMap, IpcRequestMap, IpcResponseMap, StorageConfigInput, StorageConnectionTestResult, WorkflowSummaryView } from '../../../shared/ipc'
 import type { JobTerminalEvent } from '../../../shared/jobs'
 
 export interface ComicCanvasApi {
@@ -41,6 +41,12 @@ export interface ComicCanvasApi {
   createWorkflow(input: IpcRequestMap['canvas.createWorkflow']): Promise<IpcResponseMap['canvas.createWorkflow']>
   renameWorkflow(input: IpcRequestMap['canvas.renameWorkflow']): Promise<IpcResponseMap['canvas.renameWorkflow']>
   deleteWorkflow(input: IpcRequestMap['canvas.deleteWorkflow']): Promise<IpcResponseMap['canvas.deleteWorkflow']>
+  /** Returns the current storage configuration or null. */
+  getStorageConfig(): Promise<IpcResponseMap['storage.getConfig']>
+  /** Saves a storage configuration. */
+  saveStorageConfig(input: StorageConfigInput): Promise<void>
+  /** Tests a storage provider connection. */
+  testStorageConnection(input: StorageConfigInput): Promise<StorageConnectionTestResult>
 }
 
 type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady'>
@@ -84,6 +90,9 @@ function invokeMain<TChannel extends 'canvas.listWorkflows'>(channel: TChannel):
 function invokeMain<TChannel extends 'canvas.createWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.renameWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.deleteWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'storage.getConfig'>(channel: TChannel): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'storage.saveConfig'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'storage.testConnection'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TResponse>(channel: string, request?: unknown): Promise<TResponse> {
   return ipcRenderer.invoke(channel, request) as Promise<TResponse>
 }
@@ -362,7 +371,29 @@ const api: ComicCanvasApi = {
    * @throws Error when the main process rejects the delete request.
    * @see docs/api-contracts/canvas-plan.md
    */
-  deleteWorkflow: (input) => invokeMain('canvas.deleteWorkflow', input)
+  deleteWorkflow: (input) => invokeMain('canvas.deleteWorkflow', input),
+  /**
+   * Returns the current storage configuration or null if not yet configured.
+   * @returns Storage configuration or null.
+   * @throws Error when the main process rejects the config request.
+   * @see docs/api-contracts/storage-config.md
+   */
+  getStorageConfig: () => invokeMain('storage.getConfig'),
+  /**
+   * Saves a storage provider configuration.
+   * @param input - Storage configuration to persist.
+   * @throws Error when the main process rejects the save request.
+   * @see docs/api-contracts/storage-config.md
+   */
+  saveStorageConfig: (input) => invokeMain('storage.saveConfig', input),
+  /**
+   * Tests a storage provider connection with the given configuration.
+   * @param input - Storage configuration to test.
+   * @returns Connection test result with ok flag and optional error.
+   * @throws Error when the main process rejects the test request.
+   * @see docs/api-contracts/storage-config.md
+   */
+  testStorageConnection: (input) => invokeMain('storage.testConnection', input)
 }
 
 contextBridge.exposeInMainWorld('comicCanvas', api)
