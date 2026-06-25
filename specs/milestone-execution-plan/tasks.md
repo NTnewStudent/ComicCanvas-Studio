@@ -218,7 +218,7 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: superset tools rejected, depth exceeded rejected, normal child result accepted.
   - Covers: R6, INV-4.
 
-- [ ] 36. Implement sub-agent isolation and merge.
+- [x] 36. Implement sub-agent isolation and merge.
   - Include: draft graph/context copy, no DB write before parent merge, `applySubAgentResult` sanitization.
   - Verify: child write does not change persisted graph before merge.
   - Covers: R6.

@@ -1350,3 +1350,42 @@ bun run ci
 Result:
 
 - PASS: full CI completed with lint, typecheck, 46 test files / 140 tests, build, and repository verification all passing.
+
+### M5-36 Sub-Agent Isolation And Merge
+
+Scope:
+
+- Read `desktop/src/main/tools/canvas/index.ts`, `desktop/src/main/db/repositories/workflow.repo.ts`, `shared/graph.ts`, `shared/plan.ts`, and current canvas graph persistence tests before implementation.
+- Added `desktop/src/main/agent/sub-agent-isolation.ts` with `createIsolatedSubAgentDraft` and `applySubAgentResult`.
+- Reused the existing `CanvasGraphStore` contract so child canvas tools write only to a cloned draft graph until the parent explicitly merges.
+- Added `desktop/src/main/agent/sanitize-graph.ts` to strip executable strings from child draft graph node data and drop unsupported values before persistence.
+- Updated agents and canvas-plan contracts to state that sub-agent draft writes do not persist before parent merge and that merge revalidates edges through the shared connection matrix.
+
+Verification:
+
+```bash
+bun x vitest run tests/sub-agent-isolation.test.ts
+```
+
+Result:
+
+- RED before implementation: failed because `desktop/src/main/agent/sub-agent-isolation.ts` did not exist.
+- PASS after implementation: sub-agent isolation and merge tests passed, 1 test file and 2 tests.
+
+```bash
+bun x tsc --noEmit --pretty false
+bun x eslint . --max-warnings=0
+```
+
+Result:
+
+- PASS: TypeScript strict compile completed with exit code 0.
+- PASS: lint completed with exit code 0.
+
+```bash
+bun run ci
+```
+
+Result:
+
+- PASS: full CI completed with lint, typecheck, 47 test files / 142 tests, build, and repository verification all passing.

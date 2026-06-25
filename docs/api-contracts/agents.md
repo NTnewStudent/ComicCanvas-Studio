@@ -15,6 +15,7 @@ Non-goals:
 - No hidden write path around tools.
 - No sub-agent permission expansion.
 - No executable CanvasPlan output.
+- No persisted graph writes from child draft tools before parent-controlled merge.
 
 ## Request/Response Contracts
 
@@ -105,6 +106,7 @@ Rules:
 - Agent-produced CanvasPlan SHALL be sanitized before application.
 - Child permissions SHALL be parent permissions intersected with target/requested policy.
 - Sub-agent spawn results SHALL include an independent trace with run ID, parent run/trace IDs, effective permissions, dropped permissions, terminal status, and timings.
+- Sub-agent canvas tools SHALL run against an isolated draft graph copy; `applySubAgentResult` SHALL sanitize that draft and persist a new graph version only when the parent explicitly merges it.
 
 ## Errors
 
@@ -129,5 +131,6 @@ Rules:
 - Unit: built-in agent registry contains required agent IDs.
 - Unit: custom agent policy validation rejects overbroad or malformed settings.
 - Property: sub-agent permission intersection never expands access.
+- Integration: sub-agent draft graph writes do not change the persisted workflow graph before parent merge.
 - Integration: `agent.run` returns job/run ticket and streams terminal event.
 - Injection: executable CanvasPlan strings are dropped or rejected before apply.

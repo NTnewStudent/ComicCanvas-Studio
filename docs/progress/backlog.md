@@ -97,7 +97,7 @@
 | :--- | :--- | :--- |
 | REQ-050 | super-agent（allowedTools '*'，默认入口） | ⬜ |
 | REQ-051 | agent.spawnSubAgent（内联定义 + 权限继承 + 深度上限） | ✅ |
-| REQ-052 | 子 agent 隔离上下文执行 + 结果返回 | ⬜ |
+| REQ-052 | 子 agent 隔离上下文执行 + 结果返回 | ✅ |
 | REQ-053 | 用户自定义 agent（设置页创建 + DB 持久化 + AgentRegistry） | ⬜ |
 | REQ-054 | 对话区 agent 选择器（@mention 风格） | ⬜ |
 | REQ-055 | 工具管理设置页（启用/禁用 + 插件 Tool 热加载） | ⬜ |
@@ -121,7 +121,7 @@
 ## 当前焦点
 
 **当前焦点** → M5 第 36 项（sub-agent isolation and merge）
-**下一步** → 实现子 agent 隔离草稿图/上下文副本、父级 merge 前禁止写入持久化 graph，并补齐 `applySubAgentResult` 清洗与测试。
+**下一步** → 进入 M5 第 37 项 custom Agent settings，先登记 AgentRegistry/设置页契约，再按 Tailwind + `cn` + `global/design/DESIGN.md` 和 `hjwall/pc-client` 设置 UI 模式实现。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
 ---

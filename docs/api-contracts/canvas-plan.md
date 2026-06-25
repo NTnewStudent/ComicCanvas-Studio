@@ -95,6 +95,7 @@ Rules:
 - Every node type SHALL be one of `text`, `image`, or `video`.
 - Every edge SHALL be revalidated through `shared/connection-matrix.ts`.
 - Every run step SHALL use the `RunAction` whitelist from `shared/plan.ts`.
+- Sub-agent draft graph merge SHALL sanitize child-produced graph JSON, strip executable strings from node data, revalidate edges through `shared/connection-matrix.ts`, and write a new immutable workflow version only after parent approval.
 
 ### `canvas.runPlan`
 
@@ -213,6 +214,7 @@ IPC responses SHALL expose stable error classes and safe messages only.
 - Unit: sanitize illegal node types, illegal edges, executable strings, and invalid run actions.
 - Property: generated edge pairs match `shared/connection-matrix.ts`.
 - Integration: `canvas.applyPlan` mutates graph only after sanitization.
+- Integration: `applySubAgentResult` does not persist child draft graph changes before parent merge and drops executable node data plus illegal edges during merge.
 - Integration: `canvas.runPlan` returns job tickets and never returns asset bytes, URLs, absolute paths, or provider temporary URLs.
 - Integration: `canvas.saveGraph` then handler recreation then `canvas.loadGraph` returns latest nodes, legal edges, positions, and viewport.
 - Repository: workflow version persistence runs through repository APIs and keeps graph JSON inside `workflow_versions`.
