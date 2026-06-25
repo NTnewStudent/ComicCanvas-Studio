@@ -28,7 +28,7 @@ import {
   type OnNodeDrag,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams, Navigate } from 'react-router-dom'
 import {
   ArrowLeft,
   Undo2,
@@ -314,7 +314,8 @@ function CanvasPageInner(): JSX.Element {
   } | null>(null)
 
   /* ── Save/Load state ── */
-  const [currentWorkflowId, setCurrentWorkflowId] = useState(DEFAULT_WORKFLOW_ID)
+  const [innerSearchParams] = useSearchParams()
+  const [currentWorkflowId, setCurrentWorkflowId] = useState(innerSearchParams.get('id') || DEFAULT_WORKFLOW_ID)
   const [workflowName, setWorkflowName] = useState(DEFAULT_WORKFLOW_NAME)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [showProjectManager, setShowProjectManager] = useState(false)
@@ -868,9 +869,9 @@ function CanvasPageInner(): JSX.Element {
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-secondary bg-bg-surface px-4">
         <div className="flex items-center gap-3">
           <Link
-            to="/settings"
+            to="/projects"
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-hover hover:text-text-base"
-            aria-label="返回设置"
+            aria-label="返回项目列表"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
@@ -1169,6 +1170,11 @@ function CanvasPageInner(): JSX.Element {
 /* ─── CanvasPage（带 ReactFlowProvider） ─── */
 
 export default function CanvasPage(): JSX.Element {
+  const [searchParams] = useSearchParams()
+  const workflowId = searchParams.get('id')
+  if (!workflowId) {
+    return <Navigate to="/projects" replace />
+  }
   return (
     <ReactFlowProvider>
       <CanvasPageInner />
