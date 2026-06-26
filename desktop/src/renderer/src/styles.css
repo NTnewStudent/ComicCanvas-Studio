@@ -203,3 +203,85 @@
     font-family: var(--cc-font-sans);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   全局微交互动画工具类（对齐 DESIGN.md ease-luxury 曲线）
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* 入场动画：淡入 + 向上滑动 */
+@keyframes cc-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 纯淡入 */
+@keyframes cc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 从右侧滑入（Toast） */
+@keyframes cc-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 品牌色呼吸脉冲（新建按钮引导） */
+@keyframes cc-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--cc-accent) 0%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--cc-accent) 20%, transparent);
+  }
+}
+
+/* 入场动画类 */
+.cc-anim-fade-in-up {
+  animation: cc-fade-in-up 0.4s var(--cc-ease-luxury) both;
+}
+
+.cc-anim-fade-in {
+  animation: cc-fade-in 0.3s var(--cc-ease-luxury) both;
+}
+
+/* Toast 弹出 */
+.cc-anim-slide-in-right {
+  animation: cc-slide-in-right 0.35s var(--cc-ease-luxury) both;
+}
+
+/* 品牌色呼吸（新建按钮） */
+.cc-anim-breathe {
+  animation: cc-breathe 2.5s ease-in-out infinite;
+}
+
+/* 骨架屏脉冲 */
+.cc-skeleton {
+  background: color-mix(in srgb, var(--cc-text-primary) 6%, transparent);
+  animation: cc-fade-in 0.3s var(--cc-ease-luxury) both;
+}
+
+/* 逐项入场延迟（0~5） */
+.cc-stagger-0 { animation-delay: 0ms; }
+.cc-stagger-1 { animation-delay: 50ms; }
+.cc-stagger-2 { animation-delay: 100ms; }
+.cc-stagger-3 { animation-delay: 150ms; }
+.cc-stagger-4 { animation-delay: 200ms; }
+.cc-stagger-5 { animation-delay: 250ms; }

@@ -870,14 +870,14 @@ function CanvasPageInner(): JSX.Element {
         <div className="flex items-center gap-3">
           <Link
             to="/projects"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-hover hover:text-text-base"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
             aria-label="返回项目列表"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <button
             onClick={() => setShowProjectManager(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[15px] font-semibold text-text-base transition hover:bg-bg-hover"
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[15px] font-semibold text-text-base transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
           >
             {workflowName}
             <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
@@ -889,7 +889,7 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={handleUndo}
             disabled={pastLen === 0}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition hover:bg-bg-hover hover:text-text-base disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="撤销"
           >
             <Undo2 className="h-3.5 w-3.5" />
@@ -899,7 +899,7 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={handleRedo}
             disabled={futureLen === 0}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition hover:bg-bg-hover hover:text-text-base disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="重做"
           >
             <Redo2 className="h-3.5 w-3.5" />
@@ -908,7 +908,7 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={handleSave}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition hover:bg-bg-hover hover:text-text-base"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
             aria-label="保存"
           >
             {saveStatus === 'saving' ? (
@@ -936,7 +936,7 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={handleRunAll}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
             aria-label="运行全部"
           >
             <Play className="h-3.5 w-3.5" />
@@ -990,7 +990,7 @@ function CanvasPageInner(): JSX.Element {
               }}
             />
             <div
-              className="fixed z-50 w-[180px] rounded-xl border border-border-secondary bg-bg-panel p-1.5 shadow-[0_15px_45px_rgba(0,0,0,0.12)]"
+              className="cc-anim-fade-in fixed z-50 w-[180px] rounded-xl border border-border-secondary bg-bg-panel p-1.5 shadow-[0_15px_45px_rgba(0,0,0,0.12)]"
               style={{ left: contextMenu.x, top: contextMenu.y }}
             >
               {contextMenu.type === 'pane' ? (
@@ -1002,7 +1002,7 @@ function CanvasPageInner(): JSX.Element {
                     <button
                       key={opt.type}
                       onClick={() => handleAddNodeAtContextMenu(opt.type)}
-                      className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-hover"
+                      className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                     >
                       <opt.icon className="h-4 w-4 text-text-secondary group-hover:text-brand" />
                       <span className="text-[13px] font-medium text-text-base">
@@ -1018,7 +1018,7 @@ function CanvasPageInner(): JSX.Element {
                   </p>
                   <button
                     onClick={() => handleCopyNode(contextMenu.nodeId!)}
-                    className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-hover"
+                    className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                   >
                     <Copy className="h-4 w-4 text-text-secondary group-hover:text-brand" />
                     <span className="text-[13px] font-medium text-text-base">
@@ -1027,7 +1027,7 @@ function CanvasPageInner(): JSX.Element {
                   </button>
                   <button
                     onClick={() => handleDeleteNode(contextMenu.nodeId!)}
-                    className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-bg-hover"
+                    className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                   >
                     <Trash2 className="h-4 w-4 text-text-secondary group-hover:text-red-400" />
                     <span className="text-[13px] font-medium text-text-base">
@@ -1046,7 +1046,7 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={() => setIsAddMenuOpen((v) => !v)}
-            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${isAddMenuOpen ? 'bg-brand text-bg-base' : 'text-text-secondary hover:bg-bg-hover hover:text-text-base'}`}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury active:scale-90 ${isAddMenuOpen ? 'bg-brand text-bg-base' : 'text-text-secondary hover:border-brand/30 hover:bg-bg-hover hover:text-text-base'}`}
             title={isAddMenuOpen ? '收起' : '添加节点'}
           >
             {isAddMenuOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -1061,7 +1061,7 @@ function CanvasPageInner(): JSX.Element {
               key={tool.type}
               type="button"
               onClick={() => { handleAddNode(tool.type); setIsAddMenuOpen(false) }}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:border-brand/30 hover:bg-bg-hover hover:text-text-base active:scale-90"
               title={`添加${tool.label}`}
             >
               <tool.icon className="h-4 w-4" />
@@ -1075,7 +1075,7 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={handleSave}
-            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-bg-hover ${saveStatus === 'saving' ? 'text-brand' : saveStatus === 'saved' ? 'text-green-400' : 'text-text-secondary hover:text-text-base'}`}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${saveStatus === 'saving' ? 'text-brand' : saveStatus === 'saved' ? 'text-green-400' : 'text-text-secondary hover:text-text-base'}`}
             title={saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '已保存' : '保存 (Ctrl+S)'}
           >
             {saveStatus === 'saving' ? <Loader2 className="h-4 w-4 animate-spin" /> : saveStatus === 'saved' ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
@@ -1085,7 +1085,7 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={() => setShowAssetPanel((v) => !v)}
-            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-bg-hover ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
             title="资产库"
           >
             <Folder className="h-4 w-4" />
@@ -1095,7 +1095,7 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={() => setShowChatBox((v) => !v)}
-            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-bg-hover ${showChatBox ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showChatBox ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
             title="对话"
           >
             <MessageSquare className="h-4 w-4" />
@@ -1105,38 +1105,38 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
-            className="flex h-10 w-10 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
             title={themePreference === 'dark' ? '切换亮色' : '切换暗色'}
           >
             {themePreference === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </button>
         </aside>
 
-        {/* ── 展开式节点菜单 ── */}
-        {isAddMenuOpen && (
-          <div className="absolute left-[72px] top-1/2 z-30 w-[220px] -translate-y-1/2 rounded-xl border border-border-primary bg-bg-panel p-3 shadow-pop">
-            {Array.from(new Set(EXTRA_NODE_TYPES.map((n) => n.category))).map((cat) => (
-              <div key={cat}>
-                <p className="px-2 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">{cat}</p>
-                <div className="flex flex-col gap-0.5">
-                  {EXTRA_NODE_TYPES.filter((n) => n.category === cat).map((opt) => (
-                    <button
-                      key={opt.type}
-                      type="button"
-                      onClick={() => { handleAddNode(opt.type); setIsAddMenuOpen(false) }}
-                      className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-bg-hover"
-                    >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-hover text-text-secondary transition-colors group-hover:bg-brand/10 group-hover:text-brand">
-                        <opt.icon className="h-4 w-4" />
-                      </span>
-                      <span className="text-[13px] font-medium text-text-base">{opt.label}</span>
-                    </button>
-                  ))}
-                </div>
+        {/* ── 展开式节点菜单（始终渲染，切换可见性实现过渡动画） ── */}
+        <div
+          className={`absolute left-[72px] top-1/2 z-30 w-[220px] -translate-y-1/2 rounded-xl border border-border-primary bg-bg-panel p-3 shadow-pop transition-all duration-300 ease-luxury ${isAddMenuOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-2 opacity-0'}`}
+        >
+          {Array.from(new Set(EXTRA_NODE_TYPES.map((n) => n.category))).map((cat) => (
+            <div key={cat}>
+              <p className="px-2 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">{cat}</p>
+              <div className="flex flex-col gap-0.5">
+                {EXTRA_NODE_TYPES.filter((n) => n.category === cat).map((opt) => (
+                  <button
+                    key={opt.type}
+                    type="button"
+                    onClick={() => { handleAddNode(opt.type); setIsAddMenuOpen(false) }}
+                    className="group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-hover text-text-secondary transition-all duration-200 ease-luxury group-hover:bg-brand/10 group-hover:text-brand group-hover:scale-110">
+                      <opt.icon className="h-4 w-4" />
+                    </span>
+                    <span className="text-[13px] font-medium text-text-base">{opt.label}</span>
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ))}
+        </div>
 
         {/* ── 项目管理器 ── */}
         {showProjectManager && (

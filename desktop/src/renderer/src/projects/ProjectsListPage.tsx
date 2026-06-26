@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Box, Clock, FolderOpen, X, Check, Trash2, Pencil } from 'lucide-react'
+import { cn } from '../lib/cn'
 
 interface WorkflowSummary {
   id: string
@@ -117,7 +118,7 @@ export default function ProjectsListPage(): JSX.Element {
         </div>
         <button
           onClick={openCreateDialog}
-          className="cc-btn-primary inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-[13px] font-semibold text-bg-base transition hover:bg-brand-hover"
+          className="cc-anim-breathe cc-btn-primary inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-[13px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
         >
           <Plus className="h-4 w-4" />
           新建项目
@@ -162,12 +163,18 @@ export default function ProjectsListPage(): JSX.Element {
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-6 pb-6">
         {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <span className="text-[13px] text-text-muted">加载中…</span>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="cc-skeleton rounded-2xl border border-border-primary p-4" style={{ animationDelay: `${i * 40}ms` }}>
+                <div className="cc-skeleton mb-3 h-24 w-full rounded-xl" />
+                <div className="cc-skeleton mb-2 h-4 w-2/3 rounded-lg" />
+                <div className="cc-skeleton h-3 w-1/2 rounded-lg" />
+              </div>
+            ))}
           </div>
         ) : workflows.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 py-24">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-bg-hover">
+          <div className="flex h-full flex-col items-center justify-center gap-4 py-24 cc-anim-fade-in">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-bg-hover transition-transform duration-300 ease-luxury hover:scale-110">
               <FolderOpen className="h-8 w-8 text-text-muted" />
             </div>
             <div className="flex flex-col items-center gap-2">
@@ -176,7 +183,7 @@ export default function ProjectsListPage(): JSX.Element {
             </div>
             <button
               onClick={openCreateDialog}
-              className="mt-2 inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-5 text-[14px] font-semibold text-bg-base transition hover:bg-brand-hover"
+              className="mt-2 cc-anim-breathe inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-5 text-[14px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
             >
               <Plus className="h-4 w-4" />
               新建项目
@@ -184,14 +191,18 @@ export default function ProjectsListPage(): JSX.Element {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-            {workflows.map((wf) => {
+            {workflows.map((wf, idx) => {
               const isRenaming = renamingId === wf.id
               const isDeleting = deletingId === wf.id
 
               return (
                 <div
                   key={wf.id}
-                  className="group relative cursor-pointer rounded-2xl border border-border-primary bg-bg-card p-4 transition-all hover:bg-bg-hover hover:border-border-primary hover:shadow-sm"
+                  className={cn(
+                    'group relative cursor-pointer rounded-2xl border border-border-primary bg-bg-card p-4 transition-all duration-200 ease-luxury cc-anim-fade-in-up',
+                    'hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-float',
+                  )}
+                  style={{ animationDelay: `${Math.min(idx, 8) * 50}ms` }}
                   onClick={() => {
                     if (!isRenaming && !isDeleting) {
                       navigate(`/canvas?id=${wf.id}`)

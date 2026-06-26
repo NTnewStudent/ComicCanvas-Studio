@@ -474,13 +474,12 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
             </div>
           </div>
 
-          {/* 加载态 */}
+          {/* 加载态：骨架屏 */}
           {assetState === 'loading' && (
-            <div className="flex flex-1 items-center justify-center">
-              <p className="flex items-center gap-2 text-[13px] text-text-muted">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                资产加载中…
-              </p>
+            <div className="grid grid-cols-2 gap-4 px-4 pb-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+                <div key={i} className="cc-skeleton aspect-square w-full rounded-xl" style={{ animationDelay: `${i * 40}ms` }} />
+              ))}
             </div>
           )}
 
@@ -493,7 +492,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
 
           {/* 空状态（对齐 hjwall AssetGrid 空状态） */}
           {assetState === 'ready' && filteredAssets.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center py-20 text-text-muted">
+            <div className="flex flex-1 flex-col items-center justify-center py-20 text-text-muted cc-anim-fade-in">
               <span className="mb-2 text-4xl">📁</span>
               <p className="text-sm">
                 {searchKeyword ? '未找到匹配的资产' : '暂无资产'}
@@ -507,24 +506,25 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
           {/* ── 网格视图（对齐 hjwall AssetGrid 样式） ── */}
           {assetState === 'ready' && filteredAssets.length > 0 && viewMode === 'grid' && (
             <div className="grid grid-cols-2 gap-4 px-4 pb-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {filteredAssets.map((asset) => {
+              {filteredAssets.map((asset, idx) => {
                 const label = assetLabel(asset)
                 return (
                   <article
                     key={asset.id}
                     onClick={() => setPreviewAsset(asset)}
-                    className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-xl transition hover:ring-1 hover:ring-white/20"
+                    className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-xl border border-transparent transition-all duration-200 ease-luxury cc-anim-fade-in-up hover:border-brand/30 hover:shadow-float hover:ring-1 hover:ring-white/20"
+                    style={{ animationDelay: `${Math.min(idx, 8) * 40}ms` }}
                   >
                     {/* 缩略图 */}
-                    <div className="relative z-0 h-full w-full">
+                    <div className="relative z-0 h-full w-full overflow-hidden">
                       {asset.mediaType === 'image' ? (
                         <img
                           src={asset.safeUrl}
                           alt={label}
-                          className="h-full w-full object-cover"
+                          className="h-full w-full object-cover transition-transform duration-300 ease-luxury group-hover:scale-105"
                         />
                       ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-elevated">
+                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-elevated transition-transform duration-300 ease-luxury group-hover:scale-105">
                           <span className="text-4xl">
                             {MEDIA_TYPE_ICONS[asset.mediaType] ?? MEDIA_TYPE_ICONS.other}
                           </span>
@@ -536,7 +536,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                     </div>
 
                     {/* Hover 遮罩 — 文件名 + 大小（对齐 hjwall AssetCard 底部滑入） */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-full bg-gradient-to-t from-black/80 to-transparent p-3 transition group-hover:translate-y-0">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-full bg-gradient-to-t from-black/80 to-transparent p-3 transition-all duration-300 ease-luxury group-hover:translate-y-0">
                       <p className="truncate text-xs font-normal text-white">{asset.id}</p>
                       <p className="text-[12px] text-white/70">
                         {formatFileSize(asset.metadata.sizeBytes)}
@@ -562,7 +562,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
 
                     {/* 移动下拉（底部，hover 时可见） */}
                     <div className="absolute inset-x-0 bottom-0 z-20 hidden group-hover:block">
-                      <div className="translate-y-full bg-black/70 p-2 transition group-hover:translate-y-0">
+                      <div className="translate-y-full bg-black/70 p-2 transition-all duration-300 ease-luxury group-hover:translate-y-0">
                         <select
                           aria-label={`移动 ${label}`}
                           value={asset.folderId ?? '__root__'}
@@ -599,7 +599,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                   <div
                     key={asset.id}
                     onClick={() => setPreviewAsset(asset)}
-                    className="group flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-2 transition hover:border-border-secondary hover:bg-bg-card"
+                    className="group flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-2 transition-all duration-200 ease-luxury hover:border-border-secondary hover:bg-bg-card hover:shadow-sm"
                   >
                     {/* 缩略图 */}
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-secondary bg-bg-input">
@@ -676,11 +676,11 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
           role="dialog"
           aria-modal="true"
           aria-labelledby="asset-preview-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="cc-anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
           onClick={() => setPreviewAsset(null)}
         >
           <div
-            className="relative max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl border border-border-secondary bg-bg-elevated shadow-pop"
+            className="cc-anim-fade-in-up relative max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl border border-border-secondary bg-bg-elevated shadow-pop"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 预览头部 */}

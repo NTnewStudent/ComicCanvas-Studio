@@ -22,29 +22,47 @@ export default function SettingsPage(): JSX.Element {
     <div className="flex flex-col h-full">
       {/* 选项卡导航 */}
       <nav className="flex items-center gap-1 px-6 pt-4 pb-2 border-b border-border-secondary">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-md text-sm transition-colors duration-200',
-              activeTab === tab.id
-                ? 'bg-bg-card text-text-base border border-border-primary'
-                : 'text-text-secondary hover:text-text-base hover:bg-bg-hover'
-            )}
-          >
-            <tab.icon size={16} />
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'group relative flex items-center gap-2 rounded-md px-4 py-2 text-sm transition-all duration-200 ease-luxury',
+                active
+                  ? 'text-text-base'
+                  : 'text-text-secondary hover:text-text-base hover:bg-bg-hover',
+              )}
+            >
+              <tab.icon
+                size={16}
+                className={cn(
+                  'transition-transform duration-200 ease-luxury',
+                  active ? 'text-brand' : 'group-hover:scale-110',
+                )}
+              />
+              {tab.label}
+              {/* 底部滑动指示条 */}
+              <span
+                className={cn(
+                  'absolute -bottom-2 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-brand transition-all duration-300 ease-luxury',
+                  active ? 'scale-x-100 opacity-100' : 'scale-x-0 opacity-0',
+                )}
+              />
+            </button>
+          )
+        })}
       </nav>
 
       {/* 选项卡内容 */}
       <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === 'gateway' && <GatewayList />}
-        {activeTab === 'agent' && <AgentList />}
-        {activeTab === 'tool' && <ToolList />}
-        {activeTab === 'storage' && <StorageSettingsForm />}
+        <div key={activeTab} className="cc-anim-fade-in">
+          {activeTab === 'gateway' && <GatewayList />}
+          {activeTab === 'agent' && <AgentList />}
+          {activeTab === 'tool' && <ToolList />}
+          {activeTab === 'storage' && <StorageSettingsForm />}
+        </div>
       </div>
     </div>
   )

@@ -35,9 +35,9 @@ function ThemeCycleButton() {
       onClick={cycle}
       aria-label="切换主题"
       title="切换主题"
-      className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors duration-200 hover:bg-bg-hover hover:text-text-base"
+      className="group flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
     >
-      <Icon className="h-4 w-4" strokeWidth={2} aria-hidden />
+      <Icon className="h-4 w-4 transition-transform duration-200 ease-luxury group-hover:scale-105" strokeWidth={2} aria-hidden />
     </button>
   )
 }
@@ -77,18 +77,25 @@ function SidebarNavItem({
     <NavLink
       to={item.to}
       className={cn(
-        'group relative flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-[13px] font-bold transition-all duration-150',
+        'group relative flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-[13px] font-bold transition-all duration-200 ease-luxury',
         active
-          ? 'bg-bg-hover text-text-base shadow-sm'
+          ? 'bg-bg-success-subtle text-text-base shadow-sm'
           : 'text-text-secondary hover:bg-bg-hover hover:text-text-base',
       )}
     >
+      {/* 左侧品牌色指示条 */}
+      <span
+        className={cn(
+          'absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand transition-all duration-200 ease-luxury',
+          active ? 'opacity-100' : 'opacity-0 group-hover:opacity-40',
+        )}
+      />
       <Icon
         className={cn(
-          'h-4 w-4 shrink-0 transition-all duration-150',
+          'h-4 w-4 shrink-0 transition-all duration-200 ease-luxury',
           active
-            ? 'text-text-base'
-            : 'text-text-muted group-hover:translate-x-0.5 group-hover:text-text-secondary',
+            ? 'text-brand'
+            : 'text-text-muted group-hover:scale-110 group-hover:text-text-secondary',
         )}
       />
       <span className="truncate">{item.label}</span>
