@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Globe, Bot, Wrench, HardDrive } from 'lucide-react'
+import { IconWorld, IconRobot, IconTool, IconDatabase } from '@tabler/icons-react'
 import { cn } from '../lib/cn'
 import { GatewayList } from './GatewayList'
 import { AgentList } from './AgentList'
@@ -8,11 +8,11 @@ import StorageSettingsForm from './StorageSettingsForm'
 
 type SettingsTab = 'gateway' | 'agent' | 'tool' | 'storage'
 
-const tabs: { id: SettingsTab; label: string; icon: typeof Globe }[] = [
-  { id: 'gateway', label: '网关', icon: Globe },
-  { id: 'agent', label: 'Agent', icon: Bot },
-  { id: 'tool', label: '工具', icon: Wrench },
-  { id: 'storage', label: '存储', icon: HardDrive },
+const tabs: { id: SettingsTab; label: string; icon: typeof IconWorld }[] = [
+  { id: 'gateway', label: '网关', icon: IconWorld },
+  { id: 'agent', label: 'Agent', icon: IconRobot },
+  { id: 'tool', label: '工具', icon: IconTool },
+  { id: 'storage', label: '存储', icon: IconDatabase },
 ]
 
 export default function SettingsPage(): JSX.Element {

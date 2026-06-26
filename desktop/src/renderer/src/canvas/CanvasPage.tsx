@@ -30,31 +30,30 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Link, useSearchParams, Navigate } from 'react-router-dom'
 import {
-  ArrowLeft,
-  Undo2,
-  Redo2,
-  Play,
-  Type,
-  ImageIcon,
-  Video,
-  Copy,
-  Trash2,
-  FileText,
-  ImagePlus,
-  Clapperboard,
-  Film,
-  Save,
-  Check,
-  Loader2,
-  Plus,
-  X,
-  Folder,
-  MessageSquare,
-  Moon,
-  Sun,
-  ChevronDown,
-  type LucideIcon,
-} from 'lucide-react'
+  IconArrowLeft,
+  IconArrowBackUp,
+  IconArrowForwardUp,
+  IconPlayerPlay,
+  IconTypography,
+  IconPhoto,
+  IconVideo,
+  IconCopy,
+  IconTrash,
+  IconFileText,
+  IconPhotoPlus,
+  IconMovie,
+  IconDeviceFloppy,
+  IconCheck,
+  IconLoader2,
+  IconPlus,
+  IconX,
+  IconFolder,
+  IconMessage,
+  IconMoon,
+  IconSun,
+  IconChevronDown,
+} from '@tabler/icons-react'
+import type { TablerIcon } from '@tabler/icons-react'
 import { useStore } from 'zustand'
 
 import { useThemeStore } from '../stores/useThemeStore'
@@ -249,23 +248,23 @@ const NODE_OFFSETS: Record<NodeType, { x: number; y: number }> = {
 const CONTEXT_MENU_NODE_OPTIONS: {
   type: NodeType
   label: string
-  icon: LucideIcon
+  icon: TablerIcon
 }[] = [
-  { type: 'text', label: '文本', icon: FileText },
-  { type: 'image', label: '图片', icon: ImageIcon },
-  { type: 'imageConfigV2', label: '生图 V2', icon: ImagePlus },
-  { type: 'video', label: '视频', icon: Video },
-  { type: 'videoConfigV2', label: '生视频 V2', icon: Clapperboard },
+  { type: 'text', label: '文本', icon: IconFileText },
+  { type: 'image', label: '图片', icon: IconPhoto },
+  { type: 'imageConfigV2', label: '生图 V2', icon: IconPhotoPlus },
+  { type: 'video', label: '视频', icon: IconVideo },
+  { type: 'videoConfigV2', label: '生视频 V2', icon: IconMovie },
 ]
 
 /* ─── Quick tools（左侧直接添加按钮） ─── */
 
-const QUICK_TOOLS: { type: NodeType; label: string; icon: LucideIcon }[] = [
-  { type: 'text', label: '文本', icon: Type },
-  { type: 'image', label: '图片', icon: ImageIcon },
-  { type: 'imageConfigV2', label: '生图 V2', icon: ImagePlus },
-  { type: 'video', label: '视频', icon: Video },
-  { type: 'videoConfigV2', label: '生视频 V2', icon: Film },
+const QUICK_TOOLS: { type: NodeType; label: string; icon: TablerIcon }[] = [
+  { type: 'text', label: '文本', icon: IconTypography },
+  { type: 'image', label: '图片', icon: IconPhoto },
+  { type: 'imageConfigV2', label: '生图 V2', icon: IconPhotoPlus },
+  { type: 'video', label: '视频', icon: IconVideo },
+  { type: 'videoConfigV2', label: '生视频 V2', icon: IconMovie },
 ]
 
 /* ─── Extra node types（展开菜单中分类列表） ─── */
@@ -273,14 +272,14 @@ const QUICK_TOOLS: { type: NodeType; label: string; icon: LucideIcon }[] = [
 const EXTRA_NODE_TYPES: {
   type: NodeType
   label: string
-  icon: LucideIcon
+  icon: TablerIcon
   category: string
 }[] = [
-  { type: 'text', label: '文本节点', icon: Type, category: '基础' },
-  { type: 'image', label: '图片节点', icon: ImageIcon, category: '基础' },
-  { type: 'video', label: '视频节点', icon: Video, category: '基础' },
-  { type: 'imageConfigV2', label: '生图 V2', icon: ImagePlus, category: 'AI 生成' },
-  { type: 'videoConfigV2', label: '生视频 V2', icon: Film, category: 'AI 生成' },
+  { type: 'text', label: '文本节点', icon: IconTypography, category: '基础' },
+  { type: 'image', label: '图片节点', icon: IconPhoto, category: '基础' },
+  { type: 'video', label: '视频节点', icon: IconVideo, category: '基础' },
+  { type: 'imageConfigV2', label: '生图 V2', icon: IconPhotoPlus, category: 'AI 生成' },
+  { type: 'videoConfigV2', label: '生视频 V2', icon: IconMovie, category: 'AI 生成' },
 ]
 
 /* ─── Default workflow ID ─── */
@@ -873,14 +872,14 @@ function CanvasPageInner(): JSX.Element {
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
             aria-label="返回项目列表"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <IconArrowLeft className="h-4 w-4" />
           </Link>
           <button
             onClick={() => setShowProjectManager(true)}
             className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[15px] font-semibold text-text-base transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
           >
             {workflowName}
-            <ChevronDown className="h-3.5 w-3.5 text-text-muted" />
+            <IconChevronDown className="h-3.5 w-3.5 text-text-muted" />
           </button>
         </div>
 
@@ -892,7 +891,7 @@ function CanvasPageInner(): JSX.Element {
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="撤销"
           >
-            <Undo2 className="h-3.5 w-3.5" />
+            <IconArrowBackUp className="h-3.5 w-3.5" />
             撤销
           </button>
           <button
@@ -902,7 +901,7 @@ function CanvasPageInner(): JSX.Element {
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="重做"
           >
-            <Redo2 className="h-3.5 w-3.5" />
+            <IconArrowForwardUp className="h-3.5 w-3.5" />
             重做
           </button>
           <button
@@ -913,22 +912,22 @@ function CanvasPageInner(): JSX.Element {
           >
             {saveStatus === 'saving' ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
                 保存中...
               </>
             ) : saveStatus === 'saved' ? (
               <>
-                <Check className="h-3.5 w-3.5 text-green-400" />
+                <IconCheck className="h-3.5 w-3.5 text-green-400" />
                 <span className="text-green-400">已保存</span>
               </>
             ) : saveStatus === 'error' ? (
               <>
-                <Save className="h-3.5 w-3.5 text-red-400" />
+                <IconDeviceFloppy className="h-3.5 w-3.5 text-red-400" />
                 <span className="text-red-400">保存失败</span>
               </>
             ) : (
               <>
-                <Save className="h-3.5 w-3.5" />
+                <IconDeviceFloppy className="h-3.5 w-3.5" />
                 保存
               </>
             )}
@@ -939,7 +938,7 @@ function CanvasPageInner(): JSX.Element {
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
             aria-label="运行全部"
           >
-            <Play className="h-3.5 w-3.5" />
+            <IconPlayerPlay className="h-3.5 w-3.5" />
             运行全部
           </button>
         </div>
@@ -1020,7 +1019,7 @@ function CanvasPageInner(): JSX.Element {
                     onClick={() => handleCopyNode(contextMenu.nodeId!)}
                     className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                   >
-                    <Copy className="h-4 w-4 text-text-secondary group-hover:text-brand" />
+                    <IconCopy className="h-4 w-4 text-text-secondary group-hover:text-brand" />
                     <span className="text-[13px] font-medium text-text-base">
                       复制节点
                     </span>
@@ -1029,7 +1028,7 @@ function CanvasPageInner(): JSX.Element {
                     onClick={() => handleDeleteNode(contextMenu.nodeId!)}
                     className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                   >
-                    <Trash2 className="h-4 w-4 text-text-secondary group-hover:text-red-400" />
+                    <IconTrash className="h-4 w-4 text-text-secondary group-hover:text-red-400" />
                     <span className="text-[13px] font-medium text-text-base">
                       删除节点
                     </span>
@@ -1049,7 +1048,7 @@ function CanvasPageInner(): JSX.Element {
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury active:scale-90 ${isAddMenuOpen ? 'bg-brand text-bg-base' : 'text-text-secondary hover:border-brand/30 hover:bg-bg-hover hover:text-text-base'}`}
             title={isAddMenuOpen ? '收起' : '添加节点'}
           >
-            {isAddMenuOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {isAddMenuOpen ? <IconX className="h-4 w-4" /> : <IconPlus className="h-4 w-4" />}
           </button>
 
           {/* 分隔线 */}
@@ -1078,7 +1077,7 @@ function CanvasPageInner(): JSX.Element {
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${saveStatus === 'saving' ? 'text-brand' : saveStatus === 'saved' ? 'text-green-400' : 'text-text-secondary hover:text-text-base'}`}
             title={saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '已保存' : '保存 (Ctrl+S)'}
           >
-            {saveStatus === 'saving' ? <Loader2 className="h-4 w-4 animate-spin" /> : saveStatus === 'saved' ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
+            {saveStatus === 'saving' ? <IconLoader2 className="h-4 w-4 animate-spin" /> : saveStatus === 'saved' ? <IconCheck className="h-4 w-4" /> : <IconDeviceFloppy className="h-4 w-4" />}
           </button>
 
           {/* 资产库 */}
@@ -1088,7 +1087,7 @@ function CanvasPageInner(): JSX.Element {
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
             title="资产库"
           >
-            <Folder className="h-4 w-4" />
+            <IconFolder className="h-4 w-4" />
           </button>
 
           {/* 对话 */}
@@ -1098,7 +1097,7 @@ function CanvasPageInner(): JSX.Element {
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showChatBox ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
             title="对话"
           >
-            <MessageSquare className="h-4 w-4" />
+            <IconMessage className="h-4 w-4" />
           </button>
 
           {/* 主题切换 */}
@@ -1108,7 +1107,7 @@ function CanvasPageInner(): JSX.Element {
             className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
             title={themePreference === 'dark' ? '切换亮色' : '切换暗色'}
           >
-            {themePreference === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {themePreference === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
           </button>
         </aside>
 

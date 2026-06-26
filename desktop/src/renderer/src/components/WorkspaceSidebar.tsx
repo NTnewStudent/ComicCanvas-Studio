@@ -1,14 +1,14 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutGrid,
-  Settings,
-  FolderOpen,
-  Sun,
-  Moon,
-  Monitor,
-  Activity,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+  IconLayoutGrid,
+  IconSettings,
+  IconFolderOpen,
+  IconSun,
+  IconMoon,
+  IconDeviceDesktop,
+  IconActivity,
+} from '@tabler/icons-react'
+import type { TablerIcon } from '@tabler/icons-react'
 import { cn } from '../lib/cn'
 import { useThemeStore, type ThemePreference } from '../stores/useThemeStore'
 
@@ -27,7 +27,7 @@ function ThemeCycleButton() {
   }
 
   const Icon =
-    preference === 'light' ? Sun : preference === 'dark' ? Moon : Monitor
+    preference === 'light' ? IconSun : preference === 'dark' ? IconMoon : IconDeviceDesktop
 
   return (
     <button
@@ -49,14 +49,14 @@ function ThemeCycleButton() {
 interface NavItem {
   key: string
   label: string
-  icon: LucideIcon
+  icon: TablerIcon
   to: string
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'projects', label: '项目', icon: LayoutGrid, to: '/projects' },
-  { key: 'assets', label: '资产', icon: FolderOpen, to: '/assets' },
-  { key: 'settings', label: '设置', icon: Settings, to: '/settings' },
+  { key: 'projects', label: '项目', icon: IconLayoutGrid, to: '/projects' },
+  { key: 'assets', label: '资产', icon: IconFolderOpen, to: '/assets' },
+  { key: 'settings', label: '设置', icon: IconSettings, to: '/settings' },
 ]
 
 function isActivePath(currentPath: string, targetPath: string): boolean {
@@ -110,7 +110,7 @@ function SidebarNavItem({
 function HealthDot() {
   return (
     <div className="flex items-center gap-1.5 text-[11px] font-semibold text-text-muted">
-      <Activity className="h-3.5 w-3.5" />
+      <IconActivity className="h-3.5 w-3.5" />
       <span>运行时</span>
     </div>
   )

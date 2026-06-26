@@ -1,3 +1,11 @@
+/* 导入可变字体包 — @fontsource-variable 由 Vite 在构建时内联处理 */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* 导入可变字体包 — @fontsource-variable 由 Vite 在构建时内联处理 */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -67,9 +75,9 @@
     --cc-radius-3xl: 24px;
     --cc-radius-pill: 9999px;
 
-    /* Typography */
-    --cc-font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-    --cc-font-mono: 'Berkeley Mono', 'SF Mono', ui-monospace, Menlo, monospace;
+    /* Typography — 高清可变字体栈（Inter Variable + HarmonyOS Sans SC + JetBrains Mono Variable） */
+    --cc-font-sans: 'Inter Variable', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+    --cc-font-mono: 'JetBrains Mono Variable', 'SF Mono', ui-monospace, Menlo, monospace;
 
     /* Motion */
     --cc-ease-luxury: cubic-bezier(0.16, 1, 0.3, 1);
@@ -201,6 +209,11 @@
     background: var(--cc-bg-canvas);
     color: var(--cc-text-primary);
     font-family: var(--cc-font-sans);
+    /* 字体渲染修复 — 消除 Electron Chromium 字体模糊 */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    -webkit-text-size-adjust: 100%;
   }
 }
 

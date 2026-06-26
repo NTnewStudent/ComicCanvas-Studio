@@ -62,8 +62,8 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['Inter', 'PingFang SC', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
-        mono: ['Berkeley Mono', 'SF Mono', 'ui-monospace', 'Menlo', 'monospace']
+        sans: ['Inter Variable', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono Variable', 'SF Mono', 'ui-monospace', 'Menlo', 'monospace']
       },
       borderRadius: {
         sm: 'var(--cc-radius-sm)',

@@ -5,6 +5,9 @@ import { RouterProvider } from 'react-router-dom'
 
 import { ThemeSync } from './components/ThemeSync'
 import { router } from './router'
+import '@fontsource-variable/inter'
+import '@fontsource-variable/jetbrains-mono'
+import 'harmonyos-sans-sc-webfont-splitted'
 import './styles.css'
 
 const rootElement = document.getElementById('root')

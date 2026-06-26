@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Box, Clock, FolderOpen, X, Check, Trash2, Pencil } from 'lucide-react'
+import { IconPlus, IconBox, IconClock, IconFolderOpen, IconX, IconCheck, IconTrash, IconPencil } from '@tabler/icons-react'
 import { cn } from '../lib/cn'
 
 interface WorkflowSummary {
@@ -110,7 +110,7 @@ export default function ProjectsListPage(): JSX.Element {
       {/* Header */}
       <div className="flex items-center justify-between px-6 pt-6 pb-4">
         <div className="flex items-center gap-3">
-          <FolderOpen className="h-5 w-5 text-brand" />
+          <IconFolderOpen className="h-5 w-5 text-brand" />
           <h1 className="text-xl font-bold text-text-base">我的项目</h1>
           <span className="text-[13px] text-text-muted">
             {workflows.length} 个项目
@@ -120,7 +120,7 @@ export default function ProjectsListPage(): JSX.Element {
           onClick={openCreateDialog}
           className="cc-anim-breathe cc-btn-primary inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-[13px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
         >
-          <Plus className="h-4 w-4" />
+          <IconPlus className="h-4 w-4" />
           新建项目
         </button>
       </div>
@@ -146,7 +146,7 @@ export default function ProjectsListPage(): JSX.Element {
             onClick={handleCreate}
             className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-bg-base transition hover:bg-brand-hover"
           >
-            <Check className="h-4 w-4" />
+            <IconCheck className="h-4 w-4" />
           </button>
           <button
             onClick={() => {
@@ -155,7 +155,7 @@ export default function ProjectsListPage(): JSX.Element {
             }}
             className="flex h-9 w-9 items-center justify-center rounded-xl text-text-secondary transition hover:bg-bg-hover"
           >
-            <X className="h-4 w-4" />
+            <IconX className="h-4 w-4" />
           </button>
         </div>
       )}
@@ -175,7 +175,7 @@ export default function ProjectsListPage(): JSX.Element {
         ) : workflows.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 py-24 cc-anim-fade-in">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-bg-hover transition-transform duration-300 ease-luxury hover:scale-110">
-              <FolderOpen className="h-8 w-8 text-text-muted" />
+              <IconFolderOpen className="h-8 w-8 text-text-muted" />
             </div>
             <div className="flex flex-col items-center gap-2">
               <span className="text-[15px] font-semibold text-text-base">还没有项目</span>
@@ -185,7 +185,7 @@ export default function ProjectsListPage(): JSX.Element {
               onClick={openCreateDialog}
               className="mt-2 cc-anim-breathe inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-5 text-[14px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
             >
-              <Plus className="h-4 w-4" />
+              <IconPlus className="h-4 w-4" />
               新建项目
             </button>
           </div>
@@ -238,7 +238,7 @@ export default function ProjectsListPage(): JSX.Element {
 
                   {/* Cover placeholder */}
                   <div className="mb-3 flex h-24 w-full items-center justify-center overflow-hidden rounded-xl bg-bg-input">
-                    <Box className="h-8 w-8 text-text-muted" />
+                    <IconBox className="h-8 w-8 text-text-muted" />
                   </div>
 
                   {/* Name */}
@@ -261,13 +261,13 @@ export default function ProjectsListPage(): JSX.Element {
                         onClick={() => handleRename(wf.id)}
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-green-500 transition hover:bg-bg-hover"
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        <IconCheck className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={() => setRenamingId(null)}
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-hover"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <IconX className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   ) : (
@@ -279,11 +279,11 @@ export default function ProjectsListPage(): JSX.Element {
                   {/* Meta */}
                   <div className="flex items-center gap-3 text-[12px] text-text-muted">
                     <span className="inline-flex items-center gap-1">
-                      <Box className="h-3 w-3" />
+                      <IconBox className="h-3 w-3" />
                       {wf.nodeCount} 节点
                     </span>
                     <span className="inline-flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
+                      <IconClock className="h-3 w-3" />
                       {formatRelativeTime(wf.updatedAt)}
                     </span>
                   </div>
@@ -300,7 +300,7 @@ export default function ProjectsListPage(): JSX.Element {
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-card hover:text-text-base"
                         title="重命名"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <IconPencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -310,7 +310,7 @@ export default function ProjectsListPage(): JSX.Element {
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition hover:bg-bg-card hover:text-red-400"
                         title="删除"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <IconTrash className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   )}
