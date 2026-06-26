@@ -2,7 +2,6 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutGrid,
   Settings,
-  MessageSquare,
   FolderOpen,
   Sun,
   Moon,
@@ -58,7 +57,6 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'projects', label: '项目', icon: LayoutGrid, to: '/projects' },
   { key: 'assets', label: '资产', icon: FolderOpen, to: '/assets' },
   { key: 'settings', label: '设置', icon: Settings, to: '/settings' },
-  { key: 'chat', label: '对话', icon: MessageSquare, to: '/chat' },
 ]
 
 function isActivePath(currentPath: string, targetPath: string): boolean {
