@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest'
 
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { VideoNodeData } from '../shared/nodes'
@@ -31,25 +32,27 @@ function renderVideoNode(overrides: VideoNodeRenderOverrides = {}) {
   const data = { ...defaultData, ...overrides.data }
 
   render(
-    <VideoNode
-      {...overrides}
-      id={overrides.id ?? 'video-1'}
-      data={data}
-      modelOptions={
-        overrides.modelOptions ?? [
-          { id: 'stub-video', label: 'Stub video' },
-          { id: 'cinematic-video', label: 'Cinematic video' }
-        ]
-      }
-      frameOptions={
-        overrides.frameOptions ?? [
-          { assetId: 'first-asset', label: 'Opening panel', safeUrl: 'cc-asset://asset/first-asset' },
-          { assetId: 'last-asset', label: 'Closing panel', safeUrl: 'cc-asset://asset/last-asset' }
-        ]
-      }
-      onChange={overrides.onChange ?? onChange}
-      onRun={overrides.onRun ?? onRun}
-    />
+    <ReactFlowProvider>
+      <VideoNode
+        {...overrides}
+        id={overrides.id ?? 'video-1'}
+        data={data}
+        modelOptions={
+          overrides.modelOptions ?? [
+            { id: 'stub-video', label: 'Stub video' },
+            { id: 'cinematic-video', label: 'Cinematic video' }
+          ]
+        }
+        frameOptions={
+          overrides.frameOptions ?? [
+            { assetId: 'first-asset', label: 'Opening panel', safeUrl: 'cc-asset://asset/first-asset' },
+            { assetId: 'last-asset', label: 'Closing panel', safeUrl: 'cc-asset://asset/last-asset' }
+          ]
+        }
+        onChange={overrides.onChange ?? onChange}
+        onRun={overrides.onRun ?? onRun}
+      />
+    </ReactFlowProvider>
   )
 
   return { onChange, onRun }

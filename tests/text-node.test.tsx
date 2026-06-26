@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest'
 
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { TextNodeData } from '../shared/nodes'
@@ -17,7 +18,7 @@ function renderTextNode(overrides: Partial<TextNodeProps> = {}) {
   const onChange = vi.fn()
   const onRename = vi.fn()
 
-  render(<TextNode id="text-1" data={data} onChange={onChange} onRename={onRename} {...overrides} />)
+  render(<ReactFlowProvider><TextNode id="text-1" data={data} onChange={onChange} onRename={onRename} {...overrides} /></ReactFlowProvider>)
 
   return { onChange, onRename }
 }

@@ -5,7 +5,7 @@
  */
 
 import { Clapperboard, Film, Image as ImageIcon, Loader2, Sparkles, XCircle } from 'lucide-react'
-import { NodeResizer } from '@xyflow/react'
+import { Handle, NodeResizer, Position } from '@xyflow/react'
 import React, { useState } from 'react'
 
 import type { Orientation, VideoNodeData } from '../../../../../../shared/nodes'
@@ -312,6 +312,10 @@ function VideoNodeComponent({
           </div>
         )}
       </section>
+
+      {/* 输入/输出连接点 */}
+      <Handle type="target" position={Position.Left} className="cc-handle" />
+      <Handle type="source" position={Position.Right} className="cc-handle" />
     </article>
   )
 }

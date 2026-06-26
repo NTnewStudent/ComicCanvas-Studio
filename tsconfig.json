@@ -13,7 +13,10 @@
     "lib": ["ES2022", "DOM"],
     "jsx": "react-jsx",
     "types": ["node", "vitest/globals"],
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@xyflow/react": ["./desktop/node_modules/@xyflow/react"]
+    }
   },
   "include": [
     "shared/**/*.ts",

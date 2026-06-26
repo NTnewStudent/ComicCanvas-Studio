@@ -3,7 +3,7 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
-import { NodeResizer } from '@xyflow/react'
+import { Handle, NodeResizer, Position } from '@xyflow/react'
 import React, { useEffect, useRef, useState } from 'react'
 
 import type { TextNodeData } from '../../../../../../shared/nodes'
@@ -132,6 +132,10 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename }: T
           {content || '写一段节拍、提示词或场景备注'}
         </button>
       )}
+
+      {/* 输入/输出连接点 */}
+      <Handle type="target" position={Position.Left} className="cc-handle" />
+      <Handle type="source" position={Position.Right} className="cc-handle" />
     </article>
   )
 }

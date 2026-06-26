@@ -4,6 +4,7 @@ import '@testing-library/jest-dom/vitest'
 
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImageNodeData } from '../shared/nodes'
@@ -28,19 +29,21 @@ function renderImageNode(overrides: ImageNodeRenderOverrides = {}) {
   const data = { ...defaultData, ...overrides.data }
 
   render(
-    <ImageNode
-      {...overrides}
-      id={overrides.id ?? 'image-1'}
-      data={data}
-      modelOptions={
-        overrides.modelOptions ?? [
-          { id: 'stub-image', label: 'Stub image' },
-          { id: 'cinematic', label: 'Cinematic' }
-        ]
-      }
-      onChange={overrides.onChange ?? onChange}
-      onRun={overrides.onRun ?? onRun}
-    />
+    <ReactFlowProvider>
+      <ImageNode
+        {...overrides}
+        id={overrides.id ?? 'image-1'}
+        data={data}
+        modelOptions={
+          overrides.modelOptions ?? [
+            { id: 'stub-image', label: 'Stub image' },
+            { id: 'cinematic', label: 'Cinematic' }
+          ]
+        }
+        onChange={overrides.onChange ?? onChange}
+        onRun={overrides.onRun ?? onRun}
+      />
+    </ReactFlowProvider>
   )
 
   return { onChange, onRun }

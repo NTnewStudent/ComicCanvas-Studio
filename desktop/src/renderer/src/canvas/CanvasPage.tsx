@@ -82,6 +82,7 @@ import type {
   ImageNodeData,
   VideoNodeData,
   CanvasNodeData,
+  CanvasEdgeData,
 } from '../../../../../shared/nodes'
 import type { CanvasPlan } from '../../../../../shared/plan'
 import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
@@ -231,6 +232,7 @@ function mapStoreEdges(storeEdges: CanvasStoreEdge[]): Edge[] {
     source: e.source,
     target: e.target,
     type: 'default',
+    data: e.data as unknown as Record<string, unknown>,
   }))
 }
 
@@ -361,7 +363,8 @@ function CanvasPageInner(): JSX.Element {
           id: e.id,
           source: e.source,
           target: e.target,
-          data: { edgeType: 'default' as const, createdAt: Date.now() },
+          // 保留已有边数据（含 edgeType），避免覆盖为 default
+          data: (e.data as unknown as CanvasEdgeData) ?? { edgeType: 'default' as const, createdAt: Date.now() },
         })),
       )
     }, 300),
@@ -614,6 +617,8 @@ function CanvasPageInner(): JSX.Element {
       .getState()
       .addEdge(connection.source!, connection.target!)
     if (result.ok) {
+      // 从 store 获取边数据（含正确的 edgeType）
+      const storeEdge = canvasStore.getState().edges.find((e) => e.id === result.edgeId)
       setRfEdges((eds) => [
         ...eds,
         {
@@ -621,6 +626,7 @@ function CanvasPageInner(): JSX.Element {
           source: connection.source!,
           target: connection.target!,
           type: 'default',
+          data: storeEdge?.data as unknown as Record<string, unknown>,
         },
       ])
     }
