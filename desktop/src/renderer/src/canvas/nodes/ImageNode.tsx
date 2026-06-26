@@ -87,7 +87,7 @@ function ImageNodeComponent({
     <article
       className={cn(
         'relative flex w-[340px] flex-col gap-2 select-none text-text-base',
-        selected && 'drop-shadow-[0_0_18px_var(--cc-active-glow)]'
+        selected && 'shadow-[0_0_18px_var(--cc-active-glow)]'
       )}
       data-node-id={id}
     >

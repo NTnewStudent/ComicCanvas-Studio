@@ -226,23 +226,16 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
   animation: cc-media-reveal 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* ── 节点 hover 微抬升（DESIGN.md 第八节 wf-neo drop-shadow） ── */
+/* ── 节点 hover 微抬升（DESIGN.md 第八节 wf-neo，box-shadow 避免 filter 模糊） ── */
 .cc-flow .react-flow__node {
-  transition: filter 0.25s var(--cc-ease-luxury);
+  box-shadow: 0 0 14px rgba(70, 217, 230, 0.10), 0 14px 30px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.25s var(--cc-ease-luxury);
 }
 .cc-flow .react-flow__node:hover {
-  filter: drop-shadow(0 0 18px rgba(70, 217, 230, 0.22)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
+  box-shadow: 0 0 18px rgba(70, 217, 230, 0.22), 0 14px 30px rgba(0, 0, 0, 0.50);
 }
 
-/* 夜间默认节点 drop-shadow */
-.cc-flow .react-flow__node {
-  filter: drop-shadow(0 0 14px rgba(70, 217, 230, 0.10)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.45));
-}
-
-/* 夜间选中节点 drop-shadow */
-.cc-flow .react-flow__node.selected {
-  filter: drop-shadow(0 0 22px rgba(70, 217, 230, 0.32)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
-}
+/* 夜间选中节点阴影与选中光环合并，见下方 .selected 规则 */
 
 /* ── 连线流动动画 ── */
 .cc-flow .cc-edge-flowing .react-flow__edge-path {
@@ -320,11 +313,13 @@ html.light .react-flow__handle:hover {
   animation: cc-handle-pulse 1.2s ease-in-out infinite !important;
 }
 
-/* ── 选中态：品牌色边框 + 外发光光环 ── */
+/* ── 选中态：品牌色边框 + 外发光光环 + 投影 ── */
 .cc-flow .react-flow__node.selected {
   box-shadow:
     0 0 0 2px var(--cc-accent),
-    0 0 0 6px color-mix(in srgb, var(--cc-accent) 18%, transparent);
+    0 0 0 6px color-mix(in srgb, var(--cc-accent) 18%, transparent),
+    0 0 22px rgba(70, 217, 230, 0.32),
+    0 14px 30px rgba(0, 0, 0, 0.50);
 }
 
 /* ── 节点卡片基础样式（DESIGN.md 第八节/第九节） ── */
@@ -333,17 +328,17 @@ html.light .react-flow__handle:hover {
   border-radius: 20px;
   border: 1px solid var(--cc-border-primary);
   overflow: hidden;
-  /* 夜间 wf-neo drop-shadow */
-  filter: drop-shadow(0 0 14px rgba(70, 217, 230, 0.10)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.45));
-  transition: filter 0.25s var(--cc-ease-luxury);
+  /* 夜间 wf-neo box-shadow（避免 filter 模糊） */
+  box-shadow: 0 0 14px rgba(70, 217, 230, 0.10), 0 14px 30px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.25s var(--cc-ease-luxury);
 }
 .cc-node-card:hover {
-  filter: drop-shadow(0 0 18px rgba(70, 217, 230, 0.22)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
+  box-shadow: 0 0 18px rgba(70, 217, 230, 0.22), 0 14px 30px rgba(0, 0, 0, 0.50);
 }
 
 /* 节点选中态 */
 .cc-node-selected {
-  filter: drop-shadow(0 0 22px rgba(70, 217, 230, 0.32)) drop-shadow(0 14px 30px rgba(0, 0, 0, 0.50));
+  box-shadow: 0 0 22px rgba(70, 217, 230, 0.32), 0 14px 30px rgba(0, 0, 0, 0.50);
 }
 
 /* 日间节点（柔光玻璃，DESIGN.md 第九节） */
@@ -354,11 +349,9 @@ html.light .cc-node-card {
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
     0 0 0 1px rgba(255, 255, 255, 0.55),
     0 8px 26px rgba(17, 24, 39, 0.09);
-  filter: none;
 }
 html.light .cc-node-card:hover {
   border-color: rgba(255, 255, 255, 0.80);
-  filter: none;
 }
 html.light .cc-node-selected {
   border-color: #07af49;
@@ -367,7 +360,6 @@ html.light .cc-node-selected {
     0 0 0 2px #07af49,
     0 0 0 6px rgba(7, 175, 73, 0.18),
     0 10px 32px rgba(7, 175, 73, 0.16);
-  filter: none;
 }
 
 /* ── 预览区卡片 ── */
@@ -443,15 +435,14 @@ html.light .cc-glass {
   -webkit-backdrop-filter: none;
 }
 
-/* ── 日间节点 drop-shadow 清除（react-flow__node 级别） ── */
+/* ── 日间节点 box-shadow（react-flow__node 级别，覆盖夜间阴影） ── */
 html.light .cc-flow .react-flow__node {
-  filter: none;
+  box-shadow: none;
 }
 html.light .cc-flow .react-flow__node:hover {
-  filter: drop-shadow(0 6px 16px rgba(17, 24, 39, 0.10));
+  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.10);
 }
 html.light .cc-flow .react-flow__node.selected {
-  filter: none;
   box-shadow: none !important;
 }
 
