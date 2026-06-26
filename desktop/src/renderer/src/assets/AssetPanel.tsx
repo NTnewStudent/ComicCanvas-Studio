@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Archive,
+  FileText,
   Folder,
   FolderPlus,
   Grid3X3,
@@ -9,6 +10,8 @@ import {
   Loader2,
   Search,
   Trash2,
+  Video,
+  X,
 } from 'lucide-react'
 
 import type {
@@ -16,6 +19,7 @@ import type {
   AssetFolderCreateRequest,
   AssetFolderDeleteRequest,
   AssetFolderDeleteResponse,
+  AssetMediaType,
   AssetMoveRequest,
   AssetRecord,
   AssetTrashRequest,
@@ -42,6 +46,7 @@ export interface AssetPanelProps {
 
 type LoadState = 'loading' | 'ready' | 'error'
 type ViewMode = 'grid' | 'list'
+type MediaFilter = 'all' | AssetMediaType
 
 interface FolderNode {
   folder: AssetFolder
@@ -64,7 +69,6 @@ function flattenFolders(folders: AssetFolder[], parentId: string | null = null, 
 function collectDescendantIds(folders: AssetFolder[], folderId: string): Set<string> {
   const ids = new Set<string>([folderId])
   let changed = true
-
   while (changed) {
     changed = false
     for (const folder of folders) {
@@ -74,7 +78,6 @@ function collectDescendantIds(folders: AssetFolder[], folderId: string): Set<str
       }
     }
   }
-
   return ids
 }
 
@@ -92,15 +95,13 @@ function titleize(value: string): string {
 }
 
 function assetLabel(asset: AssetRecord): string {
-  const dimensions = asset.metadata.width && asset.metadata.height ? ` ${asset.metadata.width}x${asset.metadata.height}` : ''
+  const dimensions =
+    asset.metadata.width && asset.metadata.height ? ` ${asset.metadata.width}x${asset.metadata.height}` : ''
   return `${titleize(basename(asset.relativePath))}${dimensions}`
 }
 
 function folderName(folders: AssetFolder[], folderId: string | null): string {
-  if (!folderId) {
-    return '全部资产'
-  }
-
+  if (!folderId) return '全部资产'
   return folders.find((folder) => folder.id === folderId)?.name ?? '未知文件夹'
 }
 
@@ -113,11 +114,42 @@ function formatDate(ts: number): string {
   })
 }
 
+/** Formats byte count into human-readable size. */
+function formatFileSize(bytes?: number): string {
+  if (!bytes) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let size = bytes
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex++
+  }
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+/** Filter tab definitions */
+const MEDIA_FILTER_TABS: { key: MediaFilter; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'image', label: '图片' },
+  { key: 'video', label: '视频' },
+  { key: 'text', label: '文本' },
+  { key: 'document', label: '文档' },
+]
+
+/** Media type icon mapping for non-image assets */
+const MEDIA_TYPE_ICONS: Record<AssetMediaType, string> = {
+  image: '🖼️',
+  video: '🎬',
+  text: '📄',
+  document: '📋',
+  other: '📦',
+}
+
 /**
- * Renders the local asset library with folder tree and hjwall-inspired card grid.
+ * Renders the local asset library with hjwall-inspired layout:
+ * top capsule filter bar + left folder tree + right asset grid.
  * @param props - Optional API override for component tests.
  * @returns Asset library management panel.
- * @throws Error never intentionally; request failures are presented as local panel state.
  * @see docs/api-contracts/assets-files.md
  */
 export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element {
@@ -130,19 +162,34 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
   const [message, setMessage] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
+  const [sortDesc, setSortDesc] = useState(true)
+  const [previewAsset, setPreviewAsset] = useState<AssetRecord | null>(null)
+
   const orderedFolders = useMemo(() => flattenFolders(folders), [folders])
-  const selectedFolder = selectedFolderId ? folders.find((folder) => folder.id === selectedFolderId) ?? null : null
+  const selectedFolder = selectedFolderId
+    ? folders.find((folder) => folder.id === selectedFolderId) ?? null
+    : null
 
   const filteredAssets = useMemo(() => {
-    if (!searchKeyword.trim()) return assets
-    const kw = searchKeyword.toLowerCase()
-    return assets.filter((a) => a.id.toLowerCase().includes(kw) || a.relativePath.toLowerCase().includes(kw))
-  }, [assets, searchKeyword])
+    let result = assets
+    if (mediaFilter !== 'all') {
+      result = result.filter((a) => a.mediaType === mediaFilter)
+    }
+    if (searchKeyword.trim()) {
+      const kw = searchKeyword.toLowerCase()
+      result = result.filter(
+        (a) => a.id.toLowerCase().includes(kw) || a.relativePath.toLowerCase().includes(kw),
+      )
+    }
+    return [...result].sort((a, b) =>
+      sortDesc ? b.createdAt - a.createdAt : a.createdAt - b.createdAt,
+    )
+  }, [assets, mediaFilter, searchKeyword, sortDesc])
 
   useEffect(() => {
     async function loadFolders(): Promise<void> {
       setLoadState('loading')
-
       try {
         const items = await api.getAssetFolders()
         setFolders(items)
@@ -153,14 +200,12 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
         setMessage('资产文件夹加载失败。')
       }
     }
-
     void loadFolders()
   }, [api])
 
   useEffect(() => {
     async function loadAssets(): Promise<void> {
       setAssetState('loading')
-
       try {
         const request = selectedFolderId ? { folderId: selectedFolderId } : {}
         const items = await api.listAssets(request)
@@ -172,7 +217,6 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
         setMessage('资产加载失败。')
       }
     }
-
     void loadAssets()
   }, [api, selectedFolderId])
 
@@ -182,7 +226,6 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
       setMessage('文件夹名称为必填项。')
       return
     }
-
     try {
       const created = await api.createAssetFolder({ name, parentId: selectedFolderId, type: 'mixed' })
       setFolders((current) => [...current, created])
@@ -212,7 +255,6 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
         setMessage(`${asset.id} 仍被引用中。`)
         return
       }
-
       setAssets((current) => current.filter((item) => item.id !== asset.id))
       setMessage(`已回收 ${asset.id}`)
     } catch {
@@ -222,17 +264,13 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
   }
 
   async function deleteSelectedFolder(): Promise<void> {
-    if (!selectedFolder) {
-      return
-    }
-
+    if (!selectedFolder) return
     try {
       const deleted = await api.deleteAssetFolder({ folderId: selectedFolder.id, mode: 'force-tombstone' })
       if (deleted.status === 'rejected') {
         setMessage(`${selectedFolder.name} 存在阻塞引用。`)
         return
       }
-
       const deletedIds = collectDescendantIds(folders, selectedFolder.id)
       setFolders((current) => current.filter((folder) => !deletedIds.has(folder.id)))
       setSelectedFolderId(selectedFolder.parentId)
@@ -245,15 +283,31 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
 
   return (
     <section className="flex h-full flex-col">
-      {/* ── 顶部工具栏：搜索 + 视图切换 ── */}
-      <div className="flex items-center justify-between gap-3 border-b border-border-secondary px-5 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-[16px] font-bold text-text-base">资产库</h1>
-          <div className="inline-flex items-center gap-1.5 rounded-pill border border-border-secondary bg-bg-card px-2.5 py-0.5 text-[12px] text-text-muted">
-            <Archive className="h-3.5 w-3.5" />
-            {assets.length}
-          </div>
+      {/* ── 顶部筛选栏：胶囊类型标签 + 搜索 + 排序（对齐 hjwall AssetFilterBar） ── */}
+      <div className="flex items-center justify-between px-4 py-3">
+        {/* 左侧：胶囊类型标签 */}
+        <div className="flex items-center gap-1 rounded-pill border border-border-secondary bg-bg-card p-1.5">
+          {MEDIA_FILTER_TABS.map((tab) => {
+            const active = mediaFilter === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setMediaFilter(tab.key)}
+                className={cn(
+                  'rounded-pill px-4 py-1.5 text-[13px] font-bold transition',
+                  active
+                    ? 'bg-brand text-bg-base shadow-md'
+                    : 'text-text-secondary hover:bg-bg-hover hover:text-text-base',
+                )}
+              >
+                {tab.label}
+              </button>
+            )
+          })}
         </div>
+
+        {/* 右侧：搜索 + 视图切换 + 排序 */}
         <div className="flex items-center gap-2">
           {/* 搜索栏 */}
           <div className="relative">
@@ -263,9 +317,10 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
               placeholder="搜索资产…"
-              className="h-8 w-52 rounded-lg border border-border-secondary bg-bg-input pl-8 pr-3 text-[13px] text-text-base placeholder:text-text-muted focus:border-border-primary focus:outline-none"
+              className="h-8 w-48 rounded-lg border border-border-secondary bg-bg-input pl-8 pr-3 text-[13px] text-text-base placeholder:text-text-muted focus:border-border-primary focus:outline-none"
             />
           </div>
+
           {/* 视图切换 */}
           <div className="flex items-center rounded-lg border border-border-secondary bg-bg-card p-0.5">
             <button
@@ -274,7 +329,9 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
               aria-label="网格视图"
               className={cn(
                 'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-                viewMode === 'grid' ? 'bg-bg-hover text-text-base' : 'text-text-muted hover:text-text-secondary',
+                viewMode === 'grid'
+                  ? 'bg-bg-hover text-text-base'
+                  : 'text-text-muted hover:text-text-secondary',
               )}
             >
               <Grid3X3 className="h-3.5 w-3.5" />
@@ -285,16 +342,28 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
               aria-label="列表视图"
               className={cn(
                 'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
-                viewMode === 'list' ? 'bg-bg-hover text-text-base' : 'text-text-muted hover:text-text-secondary',
+                viewMode === 'list'
+                  ? 'bg-bg-hover text-text-base'
+                  : 'text-text-muted hover:text-text-secondary',
               )}
             >
               <LayoutList className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* 排序 */}
+          <button
+            type="button"
+            onClick={() => setSortDesc((prev) => !prev)}
+            className="inline-flex items-center gap-1 rounded-pill border border-border-secondary bg-bg-card px-3.5 py-1.5 text-[13px] font-bold text-text-secondary transition hover:bg-bg-hover hover:text-text-base"
+          >
+            <span>{sortDesc ? '最新优先' : '最早优先'}</span>
+            <span className="text-xs">⇅</span>
+          </button>
         </div>
       </div>
 
-      {/* 状态消息 */}
+      {/* 状态消息条 */}
       {message && (
         <div className="border-b border-border-secondary px-5 py-2">
           <span className="inline-flex max-w-max rounded-pill border border-border-secondary bg-bg-card px-3 py-1 text-[12px] text-text-secondary">
@@ -303,13 +372,17 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
         </div>
       )}
 
-      {/* ── 主体：左侧文件夹树 + 右侧资产网格 ── */}
+      {/* ── 主体：左侧文件夹树 + 右侧资产网格（对齐 hjwall 布局） ── */}
       <div className="flex min-h-0 flex-1">
         {/* 左侧文件夹树 */}
         <aside className="flex w-56 shrink-0 flex-col border-r border-border-secondary bg-bg-surface">
           <div className="flex items-center justify-between px-4 py-2.5">
-            <span className="text-[12px] font-bold uppercase tracking-wider text-text-muted">文件夹</span>
-            <span className="rounded-pill bg-bg-hover px-1.5 py-0.5 text-[11px] text-text-muted">{folders.length}</span>
+            <span className="text-[12px] font-bold uppercase tracking-wider text-text-muted">
+              文件夹
+            </span>
+            <span className="rounded-pill bg-bg-hover px-1.5 py-0.5 text-[11px] text-text-muted">
+              {folders.length}
+            </span>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
@@ -389,17 +462,19 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
         </aside>
 
         {/* 右侧资产展示区 */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto p-4">
-          {/* 当前文件夹标题 */}
-          <div className="mb-3 flex items-center justify-between">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+          {/* 当前文件夹标题 + 资产计数 */}
+          <div className="flex items-center justify-between px-4 py-3">
             <h2 className="text-[14px] font-semibold text-text-base">
               {folderName(folders, selectedFolderId)}
             </h2>
-            <span className="text-[12px] text-text-muted">
+            <div className="inline-flex items-center gap-1.5 rounded-pill border border-border-secondary bg-bg-card px-2.5 py-0.5 text-[12px] text-text-muted">
+              <Archive className="h-3.5 w-3.5" />
               {filteredAssets.length} 个资产
-            </span>
+            </div>
           </div>
 
+          {/* 加载态 */}
           {assetState === 'loading' && (
             <div className="flex flex-1 items-center justify-center">
               <p className="flex items-center gap-2 text-[13px] text-text-muted">
@@ -408,33 +483,40 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
               </p>
             </div>
           )}
+
+          {/* 错误态 */}
           {assetState === 'error' && (
             <div className="flex flex-1 items-center justify-center">
               <p className="text-[13px] text-semantic-negative">资产加载失败。</p>
             </div>
           )}
+
+          {/* 空状态（对齐 hjwall AssetGrid 空状态） */}
           {assetState === 'ready' && filteredAssets.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3">
-              <Image className="h-10 w-10 text-text-muted" />
-              <p className="text-[13px] text-text-secondary">
-                {searchKeyword ? '未找到匹配的资产。' : '此文件夹中暂无资产。'}
+            <div className="flex flex-1 flex-col items-center justify-center py-20 text-text-muted">
+              <span className="mb-2 text-4xl">📁</span>
+              <p className="text-sm">
+                {searchKeyword ? '未找到匹配的资产' : '暂无资产'}
+              </p>
+              <p className="text-xs">
+                {searchKeyword ? '请尝试其他搜索关键词' : '在左侧创建文件夹后导入资产'}
               </p>
             </div>
           )}
 
-          {/* 网格视图 */}
+          {/* ── 网格视图（对齐 hjwall AssetGrid 样式） ── */}
           {assetState === 'ready' && filteredAssets.length > 0 && viewMode === 'grid' && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid grid-cols-2 gap-4 px-4 pb-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {filteredAssets.map((asset) => {
                 const label = assetLabel(asset)
-
                 return (
                   <article
                     key={asset.id}
-                    className="group relative aspect-square w-full overflow-hidden rounded-xl border border-border-secondary bg-bg-card transition hover:border-border-primary hover:shadow-card"
+                    onClick={() => setPreviewAsset(asset)}
+                    className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-xl transition hover:ring-1 hover:ring-white/20"
                   >
                     {/* 缩略图 */}
-                    <div className="flex h-full w-full items-center justify-center overflow-hidden">
+                    <div className="relative z-0 h-full w-full">
                       {asset.mediaType === 'image' ? (
                         <img
                           src={asset.safeUrl}
@@ -442,42 +524,55 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                           className="h-full w-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-input">
-                          <Image className="h-8 w-8 text-text-muted" />
-                          <span className="mt-2 text-[11px] text-text-muted">
-                            {asset.mediaType === 'video' ? '视频' : '文本'}
+                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-elevated">
+                          <span className="text-4xl">
+                            {MEDIA_TYPE_ICONS[asset.mediaType] ?? MEDIA_TYPE_ICONS.other}
                           </span>
+                          {asset.mediaType === 'video' && (
+                            <span className="mt-2 text-xs text-text-muted">视频</span>
+                          )}
                         </div>
                       )}
                     </div>
 
-                    {/* Hover 遮罩 — 文件名 + 时间 */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/80 to-transparent p-3 transition group-hover:translate-y-0">
-                      <p className="truncate text-[12px] font-medium text-white">{asset.id}</p>
-                      <p className="mt-0.5 text-[11px] text-white/70">{formatDate(asset.createdAt)}</p>
+                    {/* Hover 遮罩 — 文件名 + 大小（对齐 hjwall AssetCard 底部滑入） */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-full bg-gradient-to-t from-black/80 to-transparent p-3 transition group-hover:translate-y-0">
+                      <p className="truncate text-xs font-normal text-white">{asset.id}</p>
+                      <p className="text-[12px] text-white/70">
+                        {formatFileSize(asset.metadata.sizeBytes)}
+                      </p>
                     </div>
 
-                    {/* Hover 操作按钮 */}
-                    <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition group-hover:opacity-100">
+                    {/* Hover 操作按钮（对齐 hjwall AssetCard 右上操作区） */}
+                    <div className="absolute right-2 top-2 z-20 flex gap-1 opacity-0 transition group-hover:opacity-100">
                       <button
                         type="button"
                         aria-label={`回收 ${label}`}
-                        onClick={() => void trashAsset(asset)}
-                        className="rounded-md bg-black/60 p-1.5 text-white transition hover:bg-black/80"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (window.confirm(`确定回收「${asset.id}」？`)) {
+                            void trashAsset(asset)
+                          }
+                        }}
+                        className="rounded-md bg-black/60 p-1.5 text-semantic-negative transition hover:bg-black/80"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
 
-                    {/* 移动下拉（始终显示在底部，hover 时可见） */}
+                    {/* 移动下拉（底部，hover 时可见） */}
                     <div className="absolute inset-x-0 bottom-0 z-20 hidden group-hover:block">
                       <div className="translate-y-full bg-black/70 p-2 transition group-hover:translate-y-0">
                         <select
                           aria-label={`移动 ${label}`}
                           value={asset.folderId ?? '__root__'}
                           onChange={(event) =>
-                            void moveAsset(asset, event.target.value === '__root__' ? null : event.target.value)
+                            void moveAsset(
+                              asset,
+                              event.target.value === '__root__' ? null : event.target.value,
+                            )
                           }
+                          onClick={(e) => e.stopPropagation()}
                           className="h-7 w-full rounded-md border border-border-secondary bg-bg-card px-2 text-[11px] text-text-base outline-none"
                         >
                           <option value="__root__">全部资产</option>
@@ -495,23 +590,25 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
             </div>
           )}
 
-          {/* 列表视图 */}
+          {/* ── 列表视图 ── */}
           {assetState === 'ready' && filteredAssets.length > 0 && viewMode === 'list' && (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1 px-4 pb-4">
               {filteredAssets.map((asset) => {
                 const label = assetLabel(asset)
-
                 return (
                   <div
                     key={asset.id}
-                    className="group flex items-center gap-3 rounded-lg border border-transparent px-3 py-2 transition hover:border-border-secondary hover:bg-bg-card"
+                    onClick={() => setPreviewAsset(asset)}
+                    className="group flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-2 transition hover:border-border-secondary hover:bg-bg-card"
                   >
                     {/* 缩略图 */}
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-secondary bg-bg-input">
                       {asset.mediaType === 'image' ? (
                         <img src={asset.safeUrl} alt={label} className="h-full w-full object-cover" />
                       ) : (
-                        <Image className="h-4 w-4 text-text-muted" />
+                        <span className="text-lg">
+                          {MEDIA_TYPE_ICONS[asset.mediaType] ?? MEDIA_TYPE_ICONS.other}
+                        </span>
                       )}
                     </div>
 
@@ -520,6 +617,11 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                       <p className="truncate text-[13px] font-medium text-text-base">{asset.id}</p>
                       <p className="truncate text-[11px] text-text-muted">{label}</p>
                     </div>
+
+                    {/* 大小 */}
+                    <span className="shrink-0 text-[12px] text-text-muted">
+                      {formatFileSize(asset.metadata.sizeBytes)}
+                    </span>
 
                     {/* 时间 */}
                     <span className="shrink-0 text-[12px] text-text-muted">
@@ -530,9 +632,14 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                     <select
                       aria-label={`移动 ${label}`}
                       value={asset.folderId ?? '__root__'}
-                      onChange={(event) =>
-                        void moveAsset(asset, event.target.value === '__root__' ? null : event.target.value)
-                      }
+                      onChange={(event) => {
+                        event.stopPropagation()
+                        void moveAsset(
+                          asset,
+                          event.target.value === '__root__' ? null : event.target.value,
+                        )
+                      }}
+                      onClick={(e) => e.stopPropagation()}
                       className="h-7 w-28 shrink-0 rounded-md border border-border-secondary bg-bg-input px-2 text-[11px] text-text-base outline-none"
                     >
                       <option value="__root__">全部资产</option>
@@ -547,7 +654,10 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                     <button
                       type="button"
                       aria-label={`回收 ${label}`}
-                      onClick={() => void trashAsset(asset)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void trashAsset(asset)
+                      }}
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted transition hover:text-semantic-negative"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -559,6 +669,69 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
           )}
         </div>
       </div>
+
+      {/* ── 资产预览弹窗（对齐 hjwall AssetPreviewModal） ── */}
+      {previewAsset && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="asset-preview-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPreviewAsset(null)}
+        >
+          <div
+            className="relative max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl border border-border-secondary bg-bg-elevated shadow-pop"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 预览头部 */}
+            <div className="flex items-center justify-between border-b border-border-secondary px-4 py-3">
+              <h2 id="asset-preview-title" className="truncate text-sm font-normal text-text-base">
+                {assetLabel(previewAsset)}
+              </h2>
+              <button
+                type="button"
+                aria-label="关闭预览"
+                onClick={() => setPreviewAsset(null)}
+                className="rounded-md p-2 text-text-secondary transition hover:bg-bg-card hover:text-text-base"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* 预览内容 */}
+            <div className="flex max-h-[calc(90vh-3.5rem)] items-center justify-center bg-black/50 p-4">
+              {previewAsset.mediaType === 'image' ? (
+                <img
+                  src={previewAsset.safeUrl}
+                  alt={assetLabel(previewAsset)}
+                  className="max-h-[calc(90vh-5rem)] max-w-full object-contain"
+                />
+              ) : previewAsset.mediaType === 'video' ? (
+                <video
+                  key={previewAsset.id}
+                  src={previewAsset.safeUrl}
+                  controls
+                  playsInline
+                  className="max-h-[calc(90vh-5rem)] w-full max-w-full rounded-md"
+                >
+                  您的浏览器不支持视频播放
+                </video>
+              ) : (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <span className="text-5xl">
+                    {MEDIA_TYPE_ICONS[previewAsset.mediaType] ?? MEDIA_TYPE_ICONS.other}
+                  </span>
+                  <p className="text-sm text-text-muted">
+                    {previewAsset.mediaType === 'text'
+                      ? '文本文件暂不支持预览'
+                      : '此类型暂不支持预览'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
