@@ -43,6 +43,7 @@ function customAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition 
       maxContextTokens: 4000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
     maxTurns: 6,
     effort: 'medium',
     enabled: true,
@@ -99,18 +100,52 @@ describe('M5 custom Agent settings IPC', () => {
     })
   })
 
-  it('protects built-in agents from edit and delete operations', async () => {
+  it('rejects malformed agent policy fields before persistence', async () => {
+    await withAgents(async ({ handlers, repo }) => {
+      const invalidTrigger = await handlers.get('agent.save')?.({}, customAgent({
+        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'workflowEvent', autoRun: false }
+      }))
+      expect(invalidTrigger).toMatchObject({
+        errorClass: 'agent_policy_invalid',
+        message: 'Agent configuration violates policy schema.'
+      })
+
+      const invalidPermission = await handlers.get('agent.save')?.({}, {
+        ...customAgent(),
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'root' as never], requireAskForDestructive: true }
+      })
+      expect(invalidPermission).toMatchObject({ errorClass: 'agent_policy_invalid' })
+
+      const invalidContext = await handlers.get('agent.save')?.({}, customAgent({
+        contextPolicy: {
+          includeCanvasGraph: true,
+          includeSelectedAssets: false,
+          includeRecentMessages: true,
+          includeKnowledge: false,
+          maxContextTokens: 0
+        }
+      }))
+      expect(invalidContext).toMatchObject({ errorClass: 'agent_policy_invalid' })
+      expect(repo.list({ includeDisabled: true })).toEqual([])
+    })
+  })
+
+  it('persists built-in agent edits as overrides while still blocking delete', async () => {
     await withAgents(async ({ handlers }) => {
       const editResult = await handlers.get('agent.save')?.({}, customAgent({ id: 'orchestrator', source: 'builtin', name: 'Mutated orchestrator' }))
       expect(editResult).toMatchObject({
-        errorClass: 'agent_builtin_readonly',
-        message: 'Built-in agents are read-only.'
+        id: 'orchestrator',
+        source: 'builtin',
+        name: 'Mutated orchestrator'
       })
+
+      const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: true })) as AgentDefinition[]
+      expect(listed.find((agent) => agent.id === 'orchestrator')).toMatchObject({ name: 'Mutated orchestrator' })
 
       const deleteResult = await handlers.get('agent.delete')?.({}, { agentId: 'orchestrator' })
       expect(deleteResult).toMatchObject({
         errorClass: 'agent_builtin_readonly',
-        message: 'Built-in agents are read-only.'
+        message: 'Built-in agents cannot be deleted.'
       })
     })
   })

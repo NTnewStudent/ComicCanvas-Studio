@@ -25,7 +25,6 @@ type ImageNodeRenderOverrides = Omit<Partial<ImageNodeProps>, 'data'> & {
 
 function renderImageNode(overrides: ImageNodeRenderOverrides = {}) {
   const onChange = vi.fn()
-  const onRun = vi.fn()
   const data = { ...defaultData, ...overrides.data }
 
   render(
@@ -34,12 +33,6 @@ function renderImageNode(overrides: ImageNodeRenderOverrides = {}) {
         {...overrides}
         id={overrides.id ?? 'image-1'}
         data={data}
-        modelOptions={
-          overrides.modelOptions ?? [
-            { id: 'stub-image', label: 'Stub image' },
-            { id: 'cinematic', label: 'Cinematic' }
-          ]
-        }
         assetOptions={
           overrides.assetOptions ?? [
             { assetId: 'asset-image-a', label: 'Hero still', safeUrl: 'cc-asset://asset/asset-image-a' },
@@ -47,90 +40,34 @@ function renderImageNode(overrides: ImageNodeRenderOverrides = {}) {
           ]
         }
         onChange={overrides.onChange ?? onChange}
-        onRun={overrides.onRun ?? onRun}
       />
     </ReactFlowProvider>
   )
 
-  return { onChange, onRun }
+  return { onChange }
 }
 
 afterEach(() => {
   cleanup()
 })
 
-describe('M2 ImageNode', () => {
-  it('renders idle preview and expands prompt, model, and orientation controls', () => {
+describe('M2 ImageNode media reference surface', () => {
+  it('renders as an image asset node without generation controls', () => {
+    renderImageNode()
+
+    expect(screen.getByText('未绑定图片')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择图片素材' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '清除图片素材' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '生成图片' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '配置图片节点' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Prompt 覆盖' })).not.toBeInTheDocument()
+    expect(screen.queryByText('模型')).not.toBeInTheDocument()
+  })
+
+  it('binds safe image assets directly from the media card', () => {
     const { onChange } = renderImageNode()
 
-    expect(screen.getByRole('button', { name: '配置图片节点' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByText('暂无图片')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '配置图片节点' }))
-
-    expect(screen.getByRole('button', { name: '配置图片节点' })).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.change(screen.getByRole('textbox', { name: 'Prompt 覆盖' }), {
-      target: { value: 'wide panel city at dusk' }
-    })
-    expect(onChange).toHaveBeenLastCalledWith('image-1', { promptOverride: 'wide panel city at dusk' })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Use model Cinematic' }))
-    expect(onChange).toHaveBeenLastCalledWith('image-1', { modelId: 'cinematic' })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Use portrait orientation' }))
-    expect(onChange).toHaveBeenLastCalledWith('image-1', { orientation: 'portrait' })
-  })
-
-  it('renders pending and running states without enabling duplicate generation', () => {
-    renderImageNode({ data: { status: 'pending' } })
-
-    expect(screen.getByRole('status', { name: 'Image generation pending' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '生成图片' })).toBeDisabled()
-
-    cleanup()
-    renderImageNode({ data: { status: 'running' } })
-
-    expect(screen.getByRole('status', { name: 'Image generation running' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '生成图片' })).toBeDisabled()
-  })
-
-  it('renders completed safe asset preview and error recovery state', () => {
-    renderImageNode({
-      data: { status: 'done', assetId: 'asset-1', orientation: 'square' },
-      assetSafeUrl: 'cc-asset://asset/asset-1'
-    })
-
-    const image = screen.getByRole('img', { name: 'Image 1 preview' })
-    expect(image).toHaveAttribute('src', 'cc-asset://asset/asset-1')
-    expect(image).toHaveStyle({ objectFit: 'contain' })
-    expect(screen.getByTestId('image-preview-frame')).toHaveStyle({ aspectRatio: '1 / 1' })
-
-    cleanup()
-    renderImageNode({ data: { status: 'error' } })
-
-    expect(screen.getByRole('alert')).toHaveTextContent('生成失败')
-  })
-
-  it('invokes runNode through the run callback', () => {
-    const { onRun } = renderImageNode()
-
-    fireEvent.click(screen.getByRole('button', { name: '生成图片' }))
-
-    expect(onRun).toHaveBeenCalledWith('image-1')
-  })
-
-  it('binds safe image assets, exposes edit entry, and writes generated output back', () => {
-    const onEditAsset = vi.fn()
-    const onWriteOutputAsset = vi.fn()
-    const { onChange } = renderImageNode({
-      data: { status: 'done', assetId: 'asset-generated', url: 'cc-asset://asset/asset-generated' },
-      assetSafeUrl: 'cc-asset://asset/asset-generated',
-      onEditAsset,
-      onWriteOutputAsset
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: '配置图片节点' }))
-    fireEvent.click(screen.getByRole('button', { name: '从资产库选择图片' }))
+    fireEvent.click(screen.getByRole('button', { name: '选择图片素材' }))
 
     expect(screen.getByRole('dialog', { name: '选择图片资产' })).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Hero still thumbnail' })).toHaveAttribute('src', 'cc-asset://asset/asset-image-a')
@@ -141,11 +78,28 @@ describe('M2 ImageNode', () => {
       url: 'cc-asset://asset/asset-image-a',
       status: 'done'
     })
+  })
 
-    fireEvent.click(screen.getByRole('button', { name: '编辑图片资产' }))
-    expect(onEditAsset).toHaveBeenCalledWith('asset-generated')
+  it('renders completed safe asset preview with stable contain layout', () => {
+    renderImageNode({
+      data: { status: 'done', assetId: 'asset-1', orientation: 'square' },
+      assetSafeUrl: 'cc-asset://asset/asset-1'
+    })
 
-    fireEvent.click(screen.getByRole('button', { name: '写回图片输出资产' }))
-    expect(onWriteOutputAsset).toHaveBeenCalledWith('image-1', 'asset-generated')
+    const image = screen.getByRole('img', { name: 'Image 1 preview' })
+    expect(image).toHaveAttribute('src', 'cc-asset://asset/asset-1')
+    expect(image).toHaveClass('object-contain')
+    expect(screen.getByTestId('image-preview-frame')).toHaveStyle({ aspectRatio: '1 / 1' })
+  })
+
+  it('keeps image edit and inpaint entries on the media node instead of generation config', () => {
+    renderImageNode({
+      data: { status: 'done', assetId: 'asset-generated', url: 'cc-asset://asset/asset-generated' },
+      assetSafeUrl: 'cc-asset://asset/asset-generated'
+    })
+
+    expect(screen.getByRole('button', { name: '编辑图片资产' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '局部重绘图片资产' })).toHaveAttribute('aria-disabled', 'false')
+    expect(screen.queryByRole('button', { name: '写回图片输出资产' })).not.toBeInTheDocument()
   })
 })

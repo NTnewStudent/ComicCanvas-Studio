@@ -33,7 +33,7 @@ import type {
 import type { GatewayConfigInput, GatewayConfigView } from './gateway'
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
 import type { CanvasPlan, PlanRunStep } from './plan'
-import type { AgentDefinition, AgentRunRequest, AgentRunTicket, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
+import type { AgentDefinition, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
 import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillListRequest } from './skills'
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
 import type { ToolDescriptor, ToolInvocationRecord } from './tools'
@@ -75,6 +75,7 @@ export type JobIpcChannel =
 
 export type AssetIpcChannel =
   | 'asset.import'
+  | 'asset.pickImportFiles'
   | 'asset.get'
   | 'asset.list'
   | 'asset.move'
@@ -129,6 +130,7 @@ export type AgentIpcChannel =
   | 'agent.delete'
   | 'agent.run'
   | 'agent.getRun'
+  | 'agent.approveTool'
   | 'agent.spawn'
   | 'agent.progress'
   | 'agent.completed'
@@ -351,6 +353,7 @@ export interface IpcRequestMap {
   'job.list': JobListFilter
   'job.recover': Record<string, never>
   'asset.import': AssetImportRequest
+  'asset.pickImportFiles': Record<string, never>
   'asset.get': { assetId: string }
   'asset.list': AssetListRequest
   'asset.move': AssetMoveRequest
@@ -388,6 +391,7 @@ export interface IpcRequestMap {
   'agent.delete': { agentId: string }
   'agent.run': AgentRunRequest
   'agent.getRun': { runId: string }
+  'agent.approveTool': AgentToolApprovalInput
   'agent.spawn': SpawnSubAgentInput
   'skill.list': SkillListRequest
   'skill.reload': { skillId?: string }
@@ -430,6 +434,7 @@ export interface IpcResponseMap {
   'job.list': JobRecord[]
   'job.recover': JobRecoveryReport
   'asset.import': AssetRecord
+  'asset.pickImportFiles': { paths: string[] }
   'asset.get': AssetRecord
   'asset.list': AssetRecord[]
   'asset.move': AssetRecord
@@ -467,6 +472,7 @@ export interface IpcResponseMap {
   'agent.delete': { agentId: string; deleted: true }
   'agent.run': AgentRunTicket
   'agent.getRun': { runId: string; status: string; trace?: Record<string, unknown> }
+  'agent.approveTool': AgentRunTicket | { errorClass: string; message: string; retryable: false }
   'agent.spawn': SpawnSubAgentResult
   'skill.list': SkillDefinition[]
   'skill.reload': { reloadedSkillIds: string[] }

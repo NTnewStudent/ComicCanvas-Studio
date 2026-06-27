@@ -3,7 +3,8 @@
  * @see docs/api-contracts/agents.md
  */
 
-import type { AgentDefinition } from '../../../../shared/agents'
+import type { AgentDefinition, AgentEffort, AgentTriggerKind } from '../../../../shared/agents'
+import type { ToolPermissionKind } from '../../../../shared/tools'
 import type { AgentRepository } from '../db/repositories/agent.repo'
 
 export interface AgentRegistryOptions {
@@ -13,6 +14,7 @@ export interface AgentRegistryOptions {
 
 export interface AgentRegistry {
   list(options?: { includeDisabled?: boolean }): AgentDefinition[]
+  get(agentId: string): AgentDefinition | null
   save(agent: AgentDefinition): AgentDefinition | AgentRegistryError
   delete(agentId: string): { agentId: string; deleted: true } | AgentRegistryError
   isBuiltin(agentId: string): boolean
@@ -42,6 +44,7 @@ const builtinAgents: AgentDefinition[] = [
       maxContextTokens: 8000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'provider.spend'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
     maxTurns: 8,
     effort: 'high',
     enabled: true
@@ -63,6 +66,7 @@ const builtinAgents: AgentDefinition[] = [
       maxContextTokens: 6000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'mention', autoRun: false },
     maxTurns: 6,
     effort: 'high',
     enabled: true
@@ -84,6 +88,7 @@ const builtinAgents: AgentDefinition[] = [
       maxContextTokens: 6000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'provider.spend', 'diagnostics'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'workflowEvent'], defaultTrigger: 'manual', autoRun: false },
     maxTurns: 6,
     effort: 'high',
     enabled: true
@@ -105,18 +110,114 @@ const builtinAgents: AgentDefinition[] = [
       maxContextTokens: 6000
     },
     permissionPolicy: { allowedPermissionKinds: ['diagnostics'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
     maxTurns: 6,
     effort: 'high',
     enabled: true
   }
 ]
 
+const agentEfforts = new Set<AgentEffort>(['low', 'medium', 'high'])
+const agentTriggers = new Set<AgentTriggerKind>(['manual', 'mention', 'canvasChat', 'workflowEvent'])
+const gatewayChannels = new Set<AgentDefinition['gatewayPolicy']['allowedChannels'][number]>(['text', 'image', 'video'])
+const toolPermissionKinds = new Set<ToolPermissionKind>(['canvas.read', 'canvas.write', 'file.read', 'file.write', 'network', 'provider.spend', 'destructive', 'diagnostics'])
+
 function registryError(errorClass: AgentRegistryError['errorClass'], message: string): AgentRegistryError {
   return { errorClass, message, retryable: false }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString)
+}
+
+function isWildcardOrStringArray(value: unknown): value is string[] | '*' {
+  return value === '*' || isStringArray(value)
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === 'boolean'
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+}
+
+function isValidGatewayPolicy(value: unknown): boolean {
+  if (!isRecord(value) || !Array.isArray(value.allowedChannels) || value.allowedChannels.length === 0) {
+    return false
+  }
+
+  return value.allowedChannels.every((channel) => typeof channel === 'string' && gatewayChannels.has(channel as AgentDefinition['gatewayPolicy']['allowedChannels'][number]))
+    && (!('gatewayId' in value) || typeof value.gatewayId === 'string')
+    && (!('modelId' in value) || typeof value.modelId === 'string')
+}
+
+function isValidContextPolicy(value: unknown): boolean {
+  return isRecord(value)
+    && isBoolean(value.includeCanvasGraph)
+    && isBoolean(value.includeSelectedAssets)
+    && isBoolean(value.includeRecentMessages)
+    && isBoolean(value.includeKnowledge)
+    && isPositiveInteger(value.maxContextTokens)
+}
+
+function isValidPermissionPolicy(value: unknown): boolean {
+  if (!isRecord(value) || !Array.isArray(value.allowedPermissionKinds) || !isBoolean(value.requireAskForDestructive)) {
+    return false
+  }
+
+  return value.allowedPermissionKinds.every((kind) => typeof kind === 'string' && toolPermissionKinds.has(kind as ToolPermissionKind))
+}
+
+function isValidTriggerPolicy(value: unknown): boolean {
+  if (!isRecord(value) || !Array.isArray(value.allowedTriggers) || value.allowedTriggers.length === 0 || typeof value.defaultTrigger !== 'string' || !isBoolean(value.autoRun)) {
+    return false
+  }
+
+  return value.allowedTriggers.every((trigger) => typeof trigger === 'string' && agentTriggers.has(trigger as AgentTriggerKind))
+    && value.allowedTriggers.includes(value.defaultTrigger)
+}
+
 function isValidUserAgent(agent: AgentDefinition): boolean {
-  return agent.source === 'user' && agent.name.trim().length > 0 && agent.instructions.trim().length > 0 && agent.maxTurns > 0
+  const value = agent as unknown
+
+  return isRecord(value)
+    && isNonEmptyString(value.id)
+    && isNonEmptyString(value.name)
+    && typeof value.description === 'string'
+    && isNonEmptyString(value.instructions)
+    && (value.source === 'builtin' || value.source === 'user')
+    && isWildcardOrStringArray(value.allowedTools)
+    && isWildcardOrStringArray(value.allowedSkills)
+    && isValidGatewayPolicy(value.gatewayPolicy)
+    && isValidContextPolicy(value.contextPolicy)
+    && isValidPermissionPolicy(value.permissionPolicy)
+    && isValidTriggerPolicy(value.triggerPolicy)
+    && isPositiveInteger(value.maxTurns)
+    && typeof value.effort === 'string'
+    && agentEfforts.has(value.effort as AgentEffort)
+    && isBoolean(value.enabled)
+}
+
+function mergeBuiltinOverride(base: AgentDefinition, override?: AgentDefinition): AgentDefinition {
+  if (!override) {
+    return base
+  }
+
+  return {
+    ...base,
+    ...override,
+    id: base.id,
+    source: 'builtin'
+  }
 }
 
 /**
@@ -130,26 +231,36 @@ export function createAgentRegistry(options: AgentRegistryOptions): AgentRegistr
   const clock = options.clock ?? Date.now
   const builtinsById = new Map(builtinAgents.map((agent) => [agent.id, agent]))
 
+  function listAgents(listOptions: { includeDisabled?: boolean } = {}): AgentDefinition[] {
+    const persistedAgents = options.agents.list({ includeDisabled: true })
+    const persistedById = new Map(persistedAgents.map((agent) => [agent.id, agent]))
+    const builtins = builtinAgents
+      .map((agent) => mergeBuiltinOverride(agent, persistedById.get(agent.id)))
+      .filter((agent) => listOptions.includeDisabled || agent.enabled)
+    const customAgents = persistedAgents
+      .filter((agent) => !builtinsById.has(agent.id))
+      .filter((agent) => listOptions.includeDisabled || agent.enabled)
+    return [...builtins, ...customAgents]
+  }
+
   return {
     list(listOptions = {}) {
-      const customAgents = options.agents.list(listOptions)
-      const enabledBuiltins = builtinAgents.filter((agent) => listOptions.includeDisabled || agent.enabled)
-      return [...enabledBuiltins, ...customAgents]
+      return listAgents(listOptions)
+    },
+    get(agentId) {
+      return listAgents({ includeDisabled: true }).find((agent) => agent.id === agentId) ?? null
     },
     save(agent) {
-      if (builtinsById.has(agent.id) || agent.source === 'builtin') {
-        return registryError('agent_builtin_readonly', 'Built-in agents are read-only.')
-      }
-
       if (!isValidUserAgent(agent)) {
         return registryError('agent_policy_invalid', 'Agent configuration violates policy schema.')
       }
 
-      return options.agents.upsert({ ...agent, source: 'user' }, clock())
+      const source = builtinsById.has(agent.id) ? 'builtin' : 'user'
+      return options.agents.upsert({ ...agent, source }, clock())
     },
     delete(agentId) {
       if (builtinsById.has(agentId)) {
-        return registryError('agent_builtin_readonly', 'Built-in agents are read-only.')
+        return registryError('agent_builtin_readonly', 'Built-in agents cannot be deleted.')
       }
 
       if (!options.agents.delete(agentId)) {

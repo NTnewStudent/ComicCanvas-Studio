@@ -5,6 +5,7 @@
 
 import { canConnect } from './connection-matrix'
 import type { CanvasGraphEdge, CanvasGraphNode, CanvasGraphPosition, CanvasGraphSnapshot } from './graph'
+import { defaultCanvasNodeSize } from './node-layout'
 import type { CanvasEdgeData, CanvasNodeData, EdgeType, ImageRole, NodeType } from './nodes'
 
 export type CanvasActionFailureReason = 'node_not_found' | 'connection_not_allowed' | 'duplicate_edge'
@@ -106,9 +107,17 @@ export function defaultCanvasNodeData(type: NodeType, sequence: number): CanvasN
 
 /** Returns the canonical edge type for a new edge from a source node type. */
 export function defaultCanvasEdgeType(sourceType: NodeType): EdgeType {
-  if (sourceType === 'text') return 'promptOrder'
-  if (sourceType === 'image' || sourceType === 'imageConfigV2') return 'imageRole'
+  if (sourceType === 'text' || sourceType === 'character' || sourceType === 'scene') return 'promptOrder'
+  if (sourceType === 'image' || sourceType === 'imageConfigV2' || sourceType === 'mjImage') return 'imageRole'
+  if (sourceType === 'video' || sourceType === 'videoConfigV2' || sourceType === 'audio') return 'reference'
   return 'default'
+}
+
+/** Returns the canonical image role for asset-reference image edges. */
+export function defaultCanvasImageRole(edgeType: EdgeType, sourceType: NodeType): ImageRole | null {
+  if (edgeType !== 'imageRole') return null
+  if (sourceType === 'image' || sourceType === 'imageConfigV2' || sourceType === 'mjImage') return 'reference'
+  return null
 }
 
 function cloneGraph(graph: CanvasGraphSnapshot): CanvasGraphSnapshot {
@@ -147,6 +156,7 @@ export function createCanvasNode(graph: CanvasGraphSnapshot, input: CreateCanvas
     id: input.nodeId,
     type: input.type,
     position: input.position,
+    ...defaultCanvasNodeSize(input.type),
     data: { ...defaultCanvasNodeData(input.type, sequence), ...input.data } as CanvasNodeData
   })
 
@@ -183,10 +193,12 @@ export function connectCanvasNodes(graph: CanvasGraphSnapshot, input: ConnectCan
     return { ok: false, reason: 'connection_not_allowed' }
   }
 
+  const edgeType = input.edgeType ?? defaultCanvasEdgeType(source.type)
+  const imageRole = input.imageRole ?? defaultCanvasImageRole(edgeType, source.type)
   const data: CanvasEdgeData = {
-    edgeType: input.edgeType ?? defaultCanvasEdgeType(source.type),
+    edgeType,
     createdAt: input.createdAt,
-    ...(input.imageRole ? { imageRole: input.imageRole } : {}),
+    ...(imageRole ? { imageRole } : {}),
     ...(input.createdByMention ? { createdByMention: true } : {})
   }
   const draft = cloneGraph(graph)
@@ -212,6 +224,8 @@ export function duplicateCanvasNode(graph: CanvasGraphSnapshot, input: Duplicate
     id: input.newNodeId,
     type: node.type,
     position: { x: node.position.x + input.offset.x, y: node.position.y + input.offset.y },
+    ...(node.width ? { width: node.width } : {}),
+    ...(node.height ? { height: node.height } : {}),
     data: withLabel(structuredClone(node.data), duplicateLabel(node.data))
   })
 

@@ -25,8 +25,11 @@ import {
   type Node,
   type Edge,
   type EdgeTypes,
+  type NodeChange,
   type NodeTypes,
   type OnConnect,
+  type OnConnectEnd,
+  type OnConnectStart,
   type OnNodeDrag,
   type Viewport,
 } from '@xyflow/react'
@@ -95,10 +98,10 @@ import { useCanvasRealtime } from './hooks/use-canvas-realtime'
 import { ProjectManager } from './components/ProjectManager'
 import CanvasChatBox from './components/CanvasChatBox'
 import { CanvasAssetPanel, type CanvasAssetInsertMode } from './components/CanvasAssetPanel'
+import { assetDisplayUrl } from '../assets/asset-url'
 import { WorkflowPanel } from './components/WorkflowPanel'
 import { CharacterLibraryPanel } from './components/CharacterLibraryPanel'
 import { StyleLibraryPanel } from './components/StyleLibraryPanel'
-import { BottomInputPanel } from './components/BottomInputPanel'
 import { ProjectStyleSelector } from './components/ProjectStyleSelector'
 import { CanvasJobPanel } from './components/CanvasJobPanel'
 import { CanvasCommandPalette, type CanvasCommand } from './components/CanvasCommandPalette'
@@ -131,6 +134,7 @@ import type { CanvasPlan } from '../../../../../shared/plan'
 import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
 import type { CanvasSnippetView } from '../../../../../shared/snippets'
 import type { JobType } from '../../../../../shared/jobs'
+import { defaultCanvasNodeSize } from '../../../../../shared/node-layout'
 import { getAddableNodeDefinitions, getConnectCreateNodeDefinitions } from '../../../../../shared/workflow-node-definitions'
 import { planLocalMediaDrops } from './lib/local-media-drop'
 import { buildAssetNodeInsertion, buildReferenceAssetPatch } from './lib/asset-node-insertion'
@@ -159,13 +163,13 @@ function downloadWorkflowJson(payload: unknown, filename: string): void {
 /* Default node data factories */
 
 function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
-  if (type === 'text') return { label: `Text ${sequence}`, content: '' }
-  if (type === 'character') return { label: `Character ${sequence}`, description: '', assetId: null, tags: [] }
-  if (type === 'scene') return { label: `Scene ${sequence}`, description: '', assetId: null, category: '' }
-  if (type === 'audio') return { label: `Audio ${sequence}`, assetId: null, durationSeconds: 0, status: 'idle' }
+  if (type === 'text') return { label: `文本 ${sequence}`, content: '' }
+  if (type === 'character') return { label: `角色 ${sequence}`, description: '', assetId: null, tags: [] }
+  if (type === 'scene') return { label: `场景 ${sequence}`, description: '', assetId: null, category: '' }
+  if (type === 'audio') return { label: `音频 ${sequence}`, assetId: null, durationSeconds: 0, status: 'idle' }
   if (type === 'videoCompose')
     return {
-      label: `Video Compose ${sequence}`,
+      label: `视频合成 ${sequence}`,
       inputOrder: [],
       transitionName: null,
       modelId: 'stub-compose',
@@ -174,7 +178,7 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
     }
   if (type === 'superResolution')
     return {
-      label: `Super Resolution ${sequence}`,
+      label: `视频超分 ${sequence}`,
       inputVideoId: '',
       scene: 'aigc',
       resolution: '1080p',
@@ -183,10 +187,10 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
       status: 'idle',
     }
   if (type === 'muxAudioVideo')
-    return { label: `Mux Audio Video ${sequence}`, modelId: 'stub-mux', assetId: null, status: 'idle' }
+    return { label: `音视频合成 ${sequence}`, modelId: 'stub-mux', assetId: null, status: 'idle' }
   if (type === 'mjImage')
     return {
-      label: `MJ Image ${sequence}`,
+      label: `MJ 图片 ${sequence}`,
       prompt: '',
       modelId: 'stub-mj',
       ratio: '16:9',
@@ -197,7 +201,7 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
     }
   if (type === 'image' || type === 'imageConfigV2')
     return {
-      label: type === 'imageConfigV2' ? `Image Generation ${sequence}` : `Image ${sequence}`,
+      label: type === 'imageConfigV2' ? `图片生成 ${sequence}` : `图片 ${sequence}`,
       promptOverride: '',
       modelId: 'stub-image',
       orientation: 'landscape',
@@ -205,7 +209,7 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
       status: 'idle',
     }
   return {
-    label: type === 'videoConfigV2' ? `Video Generation ${sequence}` : `Video ${sequence}`,
+    label: type === 'videoConfigV2' ? `视频生成 ${sequence}` : `视频 ${sequence}`,
     promptOverride: '',
     modelId: 'stub-video',
     orientation: 'landscape',
@@ -272,7 +276,6 @@ function ImageNodeWrapper({
   selected?: boolean
 }): JSX.Element {
   const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
-  const runContext = useCanvasRunContext()
   const handleChange = useCallback(
     (nodeId: string, patch: Partial<ImageNodeData>) =>
       updateNodeData(nodeId, patch),
@@ -291,7 +294,6 @@ function ImageNodeWrapper({
       {...(data.url ? { assetSafeUrl: data.url } : {})}
       selected={selected ?? false}
       onChange={handleChange}
-      onRun={(nodeId) => runContext?.runNode(nodeId)}
       onApplyImageEdit={handleApplyImageEdit}
     />
   )
@@ -307,7 +309,6 @@ function VideoNodeWrapper({
   selected?: boolean
 }): JSX.Element {
   const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
-  const runContext = useCanvasRunContext()
   const handleChange = useCallback(
     (nodeId: string, patch: Partial<VideoNodeData>) =>
       updateNodeData(nodeId, patch),
@@ -320,7 +321,6 @@ function VideoNodeWrapper({
       {...(data.url ? { assetSafeUrl: data.url } : {})}
       selected={selected ?? false}
       onChange={handleChange}
-      onRun={(nodeId) => runContext?.runNode(nodeId)}
     />
   )
 }
@@ -362,6 +362,11 @@ function mapStoreNodes(storeNodes: CanvasStoreNode[], relatedNodeIds: ReadonlySe
     id: n.id,
     type: n.type,
     position: n.position,
+    ...(n.width ? { width: n.width } : {}),
+    ...(n.height ? { height: n.height } : {}),
+    ...(n.width || n.height
+      ? { style: { ...(n.width ? { width: n.width } : {}), ...(n.height ? { height: n.height } : {}) } }
+      : {}),
     data: n.data as unknown as Record<string, unknown>,
     ...(relatedNodeIds.has(n.id) ? { className: 'cc-flow-node-related' } : {}),
   }))
@@ -399,6 +404,15 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
+function clientPointFromConnectEvent(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
+  if ('changedTouches' in event) {
+    const touch = event.changedTouches.item(0)
+    return touch ? { x: touch.clientX, y: touch.clientY } : null
+  }
+
+  return { x: event.clientX, y: event.clientY }
+}
+
 const NODE_OPTION_ICONS: Record<NodeType, TablerIcon> = {
   text: IconTypography,
   image: IconPhoto,
@@ -425,17 +439,24 @@ const QUICK_TOOLS = ADDABLE_NODE_OPTIONS
   .filter((option) => ['text', 'image', 'imageConfigV2', 'video', 'videoConfigV2'].includes(option.type))
   .map((option) => ({
     ...option,
-    label: option.label.replace(' Node', '').replace('Image V2', 'Image V2').replace('Video V2', 'Video V2'),
+    label: option.label,
   }))
 
 /* Default workflow metadata */
 
 const DEFAULT_WORKFLOW_ID = 'default'
-const DEFAULT_WORKFLOW_NAME = 'Untitled workflow'
+const DEFAULT_WORKFLOW_NAME = '未命名工作流'
 
 /* Save status type */
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
+type ConnectCreateMenuState = {
+  type: 'connect-create'
+  x: number
+  y: number
+  sourceNodeId: string
+}
 
 interface CanvasRunContextValue {
   runNode(nodeId: string): void
@@ -451,7 +472,7 @@ function useCanvasRunContext(): CanvasRunContextValue | null {
 
 function CanvasPageInner(): JSX.Element {
   /* React Flow hooks */
-  const { screenToFlowPosition, fitView, zoomIn, zoomOut } = useReactFlow()
+  const { screenToFlowPosition, fitView, zoomIn, zoomOut, getNodes } = useReactFlow()
 
   /* Toolbar and panel state */
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
@@ -474,6 +495,7 @@ function CanvasPageInner(): JSX.Element {
     y: number
     nodeId?: string
   } | null>(null)
+  const [connectCreateMenu, setConnectCreateMenu] = useState<ConnectCreateMenuState | null>(null)
 
   /* Save, load, and feedback state */
   const [innerSearchParams, setInnerSearchParams] = useSearchParams()
@@ -511,8 +533,19 @@ function CanvasPageInner(): JSX.Element {
     () => mapStoreEdges(canvasStore.getState().edges),
     [],
   )
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>(initialNodes)
+  const [rfNodes, setRfNodes, reactFlowOnNodesChange] = useNodesState<Node>(initialNodes)
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges)
+  const isDraggingNodeRef = useRef(false)
+  const connectStartNodeIdRef = useRef<string | null>(null)
+  const [graphRevision, setGraphRevision] = useState(0)
+  const markGraphDirty = useCallback(() => {
+    isDirtyRef.current = true
+    setGraphRevision((revision) => revision + 1)
+  }, [])
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    isDraggingNodeRef.current = changes.some((change) => change.type === 'position' && change.dragging)
+    reactFlowOnNodesChange(changes)
+  }, [reactFlowOnNodesChange])
   const selectedNodeIds = useMemo(
     () => rfNodes.filter((node) => node.selected).map((node) => node.id),
     [rfNodes],
@@ -522,13 +555,13 @@ function CanvasPageInner(): JSX.Element {
     () => (focusedNodeId ? computeRelatedNodeIds(focusedNodeId, rfEdges) : new Set<string>()),
     [focusedNodeId, rfEdges],
   )
-  const displayNodes = useMemo(
-    () => rfNodes.map((node) => ({
+  const displayNodes = useMemo(() => {
+    if (relatedNodeIds.size === 0) return rfNodes
+    return rfNodes.map((node) => ({
       ...node,
       ...(relatedNodeIds.has(node.id) ? { className: 'cc-flow-node-related' } : {}),
-    })),
-    [relatedNodeIds, rfNodes],
-  )
+    }))
+  }, [relatedNodeIds, rfNodes])
   const selectedSnippet = useMemo(
     () => snippets.find((snippet) => snippet.id === selectedSnippetId) ?? snippets[0] ?? null,
     [selectedSnippetId, snippets],
@@ -553,7 +586,7 @@ function CanvasPageInner(): JSX.Element {
           : nextSnippets[0]?.id ?? ''
       ))
     } catch {
-      setSnippetFeedback('Failed to load snippets')
+      setSnippetFeedback('加载片段失败')
     }
   }, [])
 
@@ -562,6 +595,8 @@ function CanvasPageInner(): JSX.Element {
       id: n.id,
       type: n.type,
       position: n.position,
+      ...(n.width ? { width: n.width } : {}),
+      ...(n.height ? { height: n.height } : {}),
       data: n.data,
     }))
 
@@ -574,7 +609,7 @@ function CanvasPageInner(): JSX.Element {
           const completed = recoveredTasks.filter((task) => task.status === 'completed').length
           const active = recoveredTasks.filter((task) => task.phase === 'active').length
           const failed = recoveredTasks.filter((task) => task.status === 'failed').length
-          setGenerationRecoveryFeedback(`Recovered ${recoveredTasks.length} generation task(s): ${completed} completed, ${active} active, ${failed} failed`)
+          setGenerationRecoveryFeedback(`已恢复 ${recoveredTasks.length} 个生成任务：${completed} 个已完成，${active} 个进行中，${failed} 个失败`)
         } else {
           setGenerationRecoveryFeedback(null)
         }
@@ -645,7 +680,7 @@ function CanvasPageInner(): JSX.Element {
       // The preload/main boundary can fail before a durable ticket exists; surface it on the node.
       canvasStore.getState().updateNodeData(nodeId, terminalFailureToNodePatch(jobType, {
         errorClass: 'run_node_enqueue_failed',
-        message: 'Run request failed',
+        message: '运行请求失败',
         retryable: false,
       }))
       syncReactFlowFromStore()
@@ -663,11 +698,14 @@ function CanvasPageInner(): JSX.Element {
         skipNextPersistRef.current = false
         return
       }
+      if (isDraggingNodeRef.current) return
       canvasStore.getState().setNodes(
         nodes.map((n) => ({
           id: n.id,
           type: n.type as NodeType,
           position: n.position,
+          ...(n.width ? { width: n.width } : {}),
+          ...(n.height ? { height: n.height } : {}),
           data: n.data as unknown as CanvasNodeData,
         })),
       )
@@ -679,14 +717,13 @@ function CanvasPageInner(): JSX.Element {
           data: (e.data as unknown as CanvasEdgeData) ?? { edgeType: 'default' as const, createdAt: Date.now() },
         })),
       )
+      markGraphDirty()
     }, 300),
-    [],
+    [markGraphDirty],
   )
 
   useEffect(() => {
     persistToStore(rfNodes, rfEdges)
-    // Mark dirty for auto-save
-    isDirtyRef.current = true
   }, [rfNodes, rfEdges, persistToStore])
 
   useEffect(() => {
@@ -753,6 +790,8 @@ function CanvasPageInner(): JSX.Element {
           id: n.id,
           type: n.type,
           position: n.position,
+          ...(n.width ? { width: n.width } : {}),
+          ...(n.height ? { height: n.height } : {}),
           data: n.data,
         })),
         edges: state.edges.map((e) => ({
@@ -785,11 +824,11 @@ function CanvasPageInner(): JSX.Element {
       await handleSave()
       const exported = await window.comicCanvas.exportWorkflow({ workflowId: currentWorkflowId })
       downloadWorkflowJson(exported, `${exported.name || currentWorkflowId}.json`)
-      setSnippetFeedback(`Exported ${exported.name}`)
+      setSnippetFeedback(`已导出 ${exported.name}`)
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
       saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 2400)
     } catch {
-      setSnippetFeedback('Export failed')
+      setSnippetFeedback('导出失败')
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
       saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3000)
     }
@@ -811,7 +850,7 @@ function CanvasPageInner(): JSX.Element {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     }
-  }, [rfNodes, rfEdges, handleSave])
+  }, [graphRevision, handleSave])
 
   /* Load graph helper reused by initial load and workflow switch. */
   const loadGraphForWorkflow = useCallback(async (workflowId: string) => {
@@ -847,7 +886,7 @@ function CanvasPageInner(): JSX.Element {
         name: file.name.replace(/\.json$/iu, ''),
       })
       if ('errorClass' in result) {
-        setSnippetFeedback(`Import failed: ${result.message}`)
+        setSnippetFeedback(`导入失败：${result.message}`)
         if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
         saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3600)
         return
@@ -857,11 +896,11 @@ function CanvasPageInner(): JSX.Element {
       setWorkflowName(file.name.replace(/\.json$/iu, '') || DEFAULT_WORKFLOW_NAME)
       setInnerSearchParams({ id: result.workflowId })
       await loadGraphForWorkflow(result.workflowId)
-      setSnippetFeedback(`Imported workflow, dropped ${result.dropped.length} incompatible item(s)`)
+      setSnippetFeedback(`已导入工作流，跳过 ${result.dropped.length} 个不兼容项目`)
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
       saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3600)
     } catch {
-      setSnippetFeedback('Import failed')
+      setSnippetFeedback('导入失败')
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
       saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3000)
     }
@@ -956,12 +995,15 @@ function CanvasPageInner(): JSX.Element {
         },
       ])
       setConnectionFeedback(null)
+      markGraphDirty()
     }
-  }, [setRfEdges])
+  }, [markGraphDirty, setRfEdges])
 
   /* Commit final drag positions into the durable store. */
   const handleNodeDragStop = useCallback<OnNodeDrag>((_event, node) => {
+    isDraggingNodeRef.current = false
     setFocusedRelatedNodeId(node.id)
+    const finalNodes = new Map(getNodes().map((currentNode) => [currentNode.id, currentNode]))
     canvasStore.setState((prev) => {
       const snapshot = {
         nodes: prev.nodes,
@@ -971,14 +1013,21 @@ function CanvasPageInner(): JSX.Element {
       return {
         past: [...prev.past, structuredClone(snapshot)].slice(-50),
         future: [],
-        nodes: prev.nodes.map((n) =>
-          n.id === node.id
-            ? { ...n, position: { x: node.position.x, y: node.position.y } }
-            : n,
-        ),
+        nodes: prev.nodes.map((n) => {
+          const nextNode = finalNodes.get(n.id)
+          return nextNode
+            ? {
+                ...n,
+                position: { x: nextNode.position.x, y: nextNode.position.y },
+                ...(nextNode.width ? { width: nextNode.width } : {}),
+                ...(nextNode.height ? { height: nextNode.height } : {}),
+              }
+            : n
+        }),
       }
     })
-  }, [])
+    markGraphDirty()
+  }, [getNodes, markGraphDirty])
 
   const handleNodeMouseEnter = useCallback((_event: React.MouseEvent, node: Node) => {
     setFocusedRelatedNodeId(node.id)
@@ -1008,10 +1057,14 @@ function CanvasPageInner(): JSX.Element {
             return { x: offset.x + count * 40, y: offset.y + count * 60 }
           })()
       const id = `node-${crypto.randomUUID()}`
+      const size = defaultCanvasNodeSize(type)
       const newNode: Node = {
         id,
         type,
         position,
+        width: size.width,
+        height: size.height,
+        style: { width: size.width, height: size.height },
         data: defaultNodeData(type, count + 1) as unknown as Record<
           string,
           unknown
@@ -1035,23 +1088,17 @@ function CanvasPageInner(): JSX.Element {
               id,
               type,
               position,
+              width: size.width,
+              height: size.height,
               data: defaultNodeData(type, count + 1),
             },
           ],
         }
       })
+      markGraphDirty()
       return id
     },
-    [setRfNodes],
-  )
-
-  const handleCreateTextFromBottomInput = useCallback(
-    (content: string) => {
-      const id = handleAddNode('text')
-      canvasStore.getState().updateNodeData(id, { content, label: content.slice(0, 32) || 'Text' })
-      syncReactFlowFromStore()
-    },
-    [handleAddNode, syncReactFlowFromStore],
+    [markGraphDirty, setRfNodes],
   )
 
   const handleCreateCharacterFromCategory = useCallback(
@@ -1059,7 +1106,7 @@ function CanvasPageInner(): JSX.Element {
       const nodeType: NodeType = category?.slug === 'scene' || category?.name.includes('场景') ? 'scene' : 'character'
       const id = handleAddNode(nodeType)
       canvasStore.getState().updateNodeData(id, {
-        label: category?.name ?? (nodeType === 'scene' ? 'Scene' : 'Character'),
+        label: category?.name ?? (nodeType === 'scene' ? '场景' : '角色'),
         ...(category?.description ? { description: category.description } : {}),
         ...(nodeType === 'scene' && category?.slug ? { category: category.slug } : {}),
       })
@@ -1130,6 +1177,48 @@ function CanvasPageInner(): JSX.Element {
     [contextMenu, handleAddNode, screenToFlowPosition, syncReactFlowFromStore],
   )
 
+  const handleCreateConnectedNodeFromDragMenu = useCallback(
+    (type: NodeType) => {
+      if (!connectCreateMenu) return
+      const pos = screenToFlowPosition({ x: connectCreateMenu.x, y: connectCreateMenu.y })
+      const createdNodeId = handleAddNode(type, pos)
+      const result = connectCreatedCanvasNode({
+        store: canvasStore,
+        sourceNodeId: connectCreateMenu.sourceNodeId,
+        createdNodeId,
+        notify: setConnectionFeedback,
+      })
+      if (result.ok) {
+        syncReactFlowFromStore()
+        setConnectionFeedback(null)
+      }
+      setConnectCreateMenu(null)
+    },
+    [connectCreateMenu, handleAddNode, screenToFlowPosition, syncReactFlowFromStore],
+  )
+
+  const handleConnectStart = useCallback<OnConnectStart>((_event, params) => {
+    connectStartNodeIdRef.current = params.nodeId
+    setConnectCreateMenu(null)
+  }, [])
+
+  const handleConnectEnd = useCallback<OnConnectEnd>((event, connectionState) => {
+    const sourceNodeId = connectStartNodeIdRef.current
+    connectStartNodeIdRef.current = null
+    if (!sourceNodeId || connectionState.toNode !== null) return
+
+    const point = clientPointFromConnectEvent(event)
+    if (!point) return
+
+    setContextMenu(null)
+    setConnectCreateMenu({
+      type: 'connect-create',
+      sourceNodeId,
+      x: point.x,
+      y: point.y,
+    })
+  }, [])
+
   const getAllowedConnectCreateOptions = useCallback((sourceNodeId: string | undefined) => {
     const sourceNode = canvasStore.getState().nodes.find((node) => node.id === sourceNodeId)
     if (!sourceNode) return []
@@ -1170,39 +1259,39 @@ function CanvasPageInner(): JSX.Element {
   const canvasCommands = useMemo<CanvasCommand[]>(() => [
     ...ADDABLE_NODE_OPTIONS.map((option) => ({
       id: `add-node-${option.type}`,
-      label: `Add ${option.label}`,
-      keywords: ['add', 'node', option.type, option.label],
+      label: `添加${option.label}`,
+      keywords: ['add', 'node', '添加', '节点', option.type, option.label],
       run: () => handleAddNode(option.type),
     })),
     {
       id: 'fit-view',
-      label: 'Fit view',
-      keywords: ['fit', 'zoom', 'view'],
+      label: '适配视图',
+      keywords: ['fit', 'zoom', 'view', '适配', '缩放', '视图'],
       run: () => { void fitView({ padding: 0.18, duration: 240 }) },
     },
     {
       id: 'select-mode',
-      label: 'Select mode',
-      keywords: ['select', 'pointer'],
+      label: '选择模式',
+      keywords: ['select', 'pointer', '选择', '指针'],
       run: () => setInteractionMode('select'),
     },
     {
       id: 'pan-mode',
-      label: 'Pan mode',
-      keywords: ['pan', 'hand'],
+      label: '拖拽画布模式',
+      keywords: ['pan', 'hand', '拖拽', '画布'],
       run: () => setInteractionMode('pan'),
     },
     {
       id: 'duplicate-selection',
-      label: 'Duplicate selected nodes',
-      keywords: ['duplicate', 'copy'],
+      label: '复制选中节点',
+      keywords: ['duplicate', 'copy', '复制', '节点'],
       disabled: selectedNodeIds.length === 0,
       run: () => handleDuplicateSelection(selectedNodeIds),
     },
     {
       id: 'delete-selection',
-      label: 'Delete selected nodes',
-      keywords: ['delete', 'remove'],
+      label: '删除选中节点',
+      keywords: ['delete', 'remove', '删除', '移除'],
       disabled: selectedNodeIds.length === 0,
       run: () => handleDeleteSelection(selectedNodeIds),
     },
@@ -1291,7 +1380,7 @@ function CanvasPageInner(): JSX.Element {
   const handleSaveSnippet = useCallback(async () => {
     try {
       const snippet = extractCanvasSnippet({
-        name: `Snippet ${new Date().toLocaleString('zh-CN')}`,
+        name: `片段 ${new Date().toLocaleString('zh-CN')}`,
         graph: canvasStore.getState(),
         selectedNodeIds,
         createdAt: Date.now(),
@@ -1309,15 +1398,15 @@ function CanvasPageInner(): JSX.Element {
 
       await loadSnippets()
       setSelectedSnippetId(saved.id)
-      setSnippetFeedback(`Saved snippet with ${saved.nodes.length} nodes`)
+      setSnippetFeedback(`已保存片段，包含 ${saved.nodes.length} 个节点`)
     } catch {
-      setSnippetFeedback('Select at least two nodes before saving a snippet')
+      setSnippetFeedback('请至少选择两个节点再保存片段')
     }
   }, [loadSnippets, selectedNodeIds])
 
   const handleInsertSnippet = useCallback(async () => {
     if (!selectedSnippet) {
-      setSnippetFeedback('No snippet selected')
+      setSnippetFeedback('未选择片段')
       return
     }
 
@@ -1342,25 +1431,25 @@ function CanvasPageInner(): JSX.Element {
       },
     })
     syncReactFlowFromStore()
-    setSnippetFeedback(`Inserted snippet with ${detail.nodes.length} nodes`)
+    setSnippetFeedback(`已插入片段，包含 ${detail.nodes.length} 个节点`)
   }, [selectedSnippet, syncReactFlowFromStore])
 
   const handleDeleteSnippet = useCallback(async (snippetId: string) => {
     const result = await window.comicCanvas.deleteCanvasSnippet({ snippetId })
     if (!result.deleted) {
-      setSnippetFeedback(result.message ?? 'Delete snippet failed')
+      setSnippetFeedback(result.message ?? '删除片段失败')
       return
     }
 
     await loadSnippets()
-    setSnippetFeedback('Deleted snippet')
+    setSnippetFeedback('已删除片段')
   }, [loadSnippets])
 
   /* Local media drop and asset insertion handlers */
   const showDropFeedback = useCallback((kind: 'success' | 'error', message: string) => {
     const normalizedMessage =
       kind === 'success' && !message.startsWith('\u5df2\u5bfc\u5165')
-        ? `Imported ${message.replace(/^.*?\?/u, '')}`
+        ? `已导入${message.replace(/^.*?\?/u, '')}`
         : kind === 'error' && message.includes('{plan.label}')
           ? '\u5bfc\u5165\u5931\u8d25'
           : message
@@ -1383,6 +1472,7 @@ function CanvasPageInner(): JSX.Element {
             return { x: offset.x + count * 40, y: offset.y + count * 60 }
           })()
       const id = `node-${crypto.randomUUID()}`
+      const size = defaultCanvasNodeSize(nodeType)
       const data =
         nodeType === 'image' || nodeType === 'character' || nodeType === 'scene'
           ? buildAssetNodeInsertion({
@@ -1411,6 +1501,9 @@ function CanvasPageInner(): JSX.Element {
         id,
         type: nodeType,
         position,
+        width: size.width,
+        height: size.height,
+        style: { width: size.width, height: size.height },
         data: data as unknown as Record<string, unknown>,
       }
       setRfNodes((nds) => [...nds, newNode])
@@ -1419,11 +1512,12 @@ function CanvasPageInner(): JSX.Element {
         return {
           past: [...prev.past, structuredClone(snapshot)].slice(-50),
           future: [],
-          nodes: [...prev.nodes, { id, type: nodeType, position, data }],
+          nodes: [...prev.nodes, { id, type: nodeType, position, width: size.width, height: size.height, data }],
         }
       })
+      markGraphDirty()
     },
-    [setRfNodes],
+    [markGraphDirty, setRfNodes],
   )
 
   const handleInsertAsset = useCallback(
@@ -1499,7 +1593,7 @@ function CanvasPageInner(): JSX.Element {
             appendAssetNode(
               {
                 id: imported.id,
-                safeUrl: imported.safeUrl,
+                safeUrl: assetDisplayUrl(imported),
                 mediaType: plan.mediaType,
                 name: plan.label,
               },
@@ -1545,23 +1639,23 @@ function CanvasPageInner(): JSX.Element {
           <Link
             to="/projects"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-card text-text-secondary shadow-sm transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="Back to projects"
-            title="Back to projects"
+            aria-label="返回项目"
+            title="返回项目"
           >
             <IconArrowLeft className="h-4 w-4" />
           </Link>
           <button
             onClick={() => setShowProjectManager(true)}
             className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[15px] font-semibold text-text-base transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
-            aria-label="Open workflow switcher"
-            title="Open workflow switcher"
+            aria-label="打开工作流切换器"
+            title="打开工作流切换器"
           >
             {workflowName}
             <IconChevronDown className="h-3.5 w-3.5 text-text-muted" />
           </button>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-2.5 py-1 text-[11px] font-semibold text-brand">
             <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-            Canvas project
+            画布项目
           </span>
           <ProjectStyleSelector workflowId={currentWorkflowId} />
         </div>
@@ -1573,77 +1667,77 @@ function CanvasPageInner(): JSX.Element {
             accept="application/json,.json"
             className="hidden"
             onChange={(event) => void handleImportWorkflowFile(event)}
-            aria-label="Workflow JSON file"
+            aria-label="工作流 JSON 文件"
           />
           <button
             type="button"
             onClick={handleUndo}
             disabled={pastLen === 0}
             className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Undo"
-            title="Undo"
+            aria-label="撤销"
+            title="撤销"
           >
             <IconArrowBackUp className="h-3.5 w-3.5" />
-            Undo
+            撤销
           </button>
           <button
             type="button"
             onClick={handleRedo}
             disabled={futureLen === 0}
             className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Redo"
-            title="Redo"
+            aria-label="重做"
+            title="重做"
           >
             <IconArrowForwardUp className="h-3.5 w-3.5" />
-            Redo
+            重做
           </button>
           <span className="h-5 w-px bg-border-secondary" />
           <button
             type="button"
             onClick={() => importWorkflowInputRef.current?.click()}
             className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="Import workflow JSON"
-            title="Import workflow JSON"
+            aria-label="导入工作流 JSON"
+            title="导入工作流 JSON"
           >
             <IconUpload className="h-3.5 w-3.5" />
-            Import
+            导入
           </button>
           <button
             type="button"
             onClick={() => void handleExportWorkflow()}
             className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="Export workflow JSON"
-            title="Export workflow JSON"
+            aria-label="导出工作流 JSON"
+            title="导出工作流 JSON"
           >
             <IconDownload className="h-3.5 w-3.5" />
-            Export
+            导出
           </button>
           <button
             type="button"
             onClick={() => void handleSave().catch(() => undefined)}
             className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="Save workflow"
-            title="Save workflow"
+            aria-label="保存工作流"
+            title="保存工作流"
           >
             {saveStatus === 'saving' ? (
               <>
                 <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
-                Saving...
+                保存中...
               </>
             ) : saveStatus === 'saved' ? (
               <>
                 <IconCheck className="h-3.5 w-3.5 text-green-400" />
-                <span className="text-green-400">Saved</span>
+                <span className="text-green-400">已保存</span>
               </>
             ) : saveStatus === 'error' ? (
               <>
                 <IconDeviceFloppy className="h-3.5 w-3.5 text-red-400" />
-                <span className="text-red-400">Save failed</span>
+                <span className="text-red-400">保存失败</span>
               </>
             ) : (
               <>
                 <IconDeviceFloppy className="h-3.5 w-3.5" />
-                Save
+                保存
               </>
             )}
           </button>
@@ -1684,27 +1778,27 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={handleRunAll}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
-            aria-label="Run all"
+            aria-label="运行全部"
           >
             <IconPlayerPlay className="h-3.5 w-3.5" />
-            Run all
+            运行全部
           </button>
           <button
             type="button"
             onClick={() => setShowJobPanel((v) => !v)}
             className={`inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary px-3 text-[13px] font-medium transition-all duration-200 ease-luxury active:scale-95 ${showJobPanel ? 'bg-brand/10 text-brand' : 'bg-bg-card text-text-secondary hover:bg-bg-hover hover:text-text-base'}`}
-            aria-label="Toggle job status"
-            title="Toggle job status"
+            aria-label="切换任务状态"
+            title="切换任务状态"
           >
             <IconListDetails className="h-3.5 w-3.5" />
-            Jobs
+            任务
           </button>
           <button
             type="button"
             onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
             className="inline-flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="Toggle theme"
-            title={themePreference === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            aria-label="切换主题"
+            title={themePreference === 'dark' ? '切换到亮色' : '切换到暗色'}
           >
             {themePreference === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
           </button>
@@ -1717,6 +1811,8 @@ function CanvasPageInner(): JSX.Element {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={handleConnect}
+          onConnectStart={handleConnectStart}
+          onConnectEnd={handleConnectEnd}
           onNodeDragStop={handleNodeDragStop}
           onNodeMouseEnter={handleNodeMouseEnter}
           onNodeMouseLeave={handleNodeMouseLeave}
@@ -1799,7 +1895,7 @@ function CanvasPageInner(): JSX.Element {
               {contextMenu.type === 'pane' ? (
                 <>
                   <p className="px-3 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">
-                    Add node
+                    添加节点
                   </p>
                   {ADDABLE_NODE_OPTIONS.map((opt) => (
                     <button
@@ -1817,7 +1913,7 @@ function CanvasPageInner(): JSX.Element {
               ) : (
                 <>
                   <p className="px-3 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">
-                    Node actions
+                    节点操作
                   </p>
                   <button
                     onClick={() => handleDuplicateSelection([contextMenu.nodeId!])}
@@ -1825,7 +1921,7 @@ function CanvasPageInner(): JSX.Element {
                   >
                     <IconCopy className="h-4 w-4 text-text-secondary group-hover:text-brand" />
                     <span className="text-[13px] font-medium text-text-base">
-                      Duplicate node
+                      复制节点
                     </span>
                   </button>
                   <button
@@ -1834,7 +1930,7 @@ function CanvasPageInner(): JSX.Element {
                   >
                     <IconTrash className="h-4 w-4 text-text-secondary group-hover:text-red-400" />
                     <span className="text-[13px] font-medium text-text-base">
-                      Delete node
+                      删除节点
                     </span>
                   </button>
                   <span className="my-1 block h-px bg-border-secondary" />
@@ -1846,12 +1942,45 @@ function CanvasPageInner(): JSX.Element {
                     >
                       <opt.icon className="h-4 w-4 text-text-secondary group-hover:text-brand" />
                       <span className="text-[13px] font-medium text-text-base">
-                        Link {opt.label}
+                        连接到{opt.label}
                       </span>
                     </button>
                   ))}
                 </>
               )}
+            </div>
+          </>
+        )}
+        {connectCreateMenu && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setConnectCreateMenu(null)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setConnectCreateMenu(null)
+              }}
+            />
+            <div
+              className="cc-anim-fade-in fixed z-50 w-[180px] rounded-xl border border-border-secondary bg-bg-panel p-1.5 shadow-[0_15px_45px_rgba(0,0,0,0.12)]"
+              style={{ left: connectCreateMenu.x, top: connectCreateMenu.y }}
+            >
+              <p className="px-3 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">
+                生成引用节点
+              </p>
+              {getAllowedConnectCreateOptions(connectCreateMenu.sourceNodeId).map((opt) => (
+                <button
+                  key={opt.type}
+                  type="button"
+                  onClick={() => handleCreateConnectedNodeFromDragMenu(opt.type)}
+                  className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
+                >
+                  <opt.icon className="h-4 w-4 text-text-secondary group-hover:text-brand" />
+                  <span className="text-[13px] font-medium text-text-base">
+                    连接到{opt.label}
+                  </span>
+                </button>
+              ))}
             </div>
           </>
         )}
@@ -1863,8 +1992,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setIsAddMenuOpen((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury active:scale-90 ${isAddMenuOpen ? 'bg-brand text-bg-base' : 'text-text-secondary hover:border-brand/30 hover:bg-bg-hover hover:text-text-base'}`}
-            title={isAddMenuOpen ? 'Collapse' : 'Add node'}
-            aria-label={isAddMenuOpen ? 'Close add menu' : 'Add node'}
+            title={isAddMenuOpen ? '收起' : '添加节点'}
+            aria-label={isAddMenuOpen ? '关闭添加菜单' : '添加节点'}
           >
             {isAddMenuOpen ? <IconX className="h-4 w-4" /> : <IconPlus className="h-4 w-4" />}
           </button>
@@ -1874,8 +2003,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setInteractionMode('select')}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${interactionMode === 'select' ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Select mode"
-            aria-label="Select mode"
+            title="选择模式"
+            aria-label="选择模式"
           >
             <IconPointer className="h-4 w-4" />
           </button>
@@ -1884,8 +2013,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setInteractionMode('pan')}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${interactionMode === 'pan' ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Pan mode"
-            aria-label="Pan mode"
+            title="拖拽画布模式"
+            aria-label="拖拽画布模式"
           >
             <IconHandGrab className="h-4 w-4" />
           </button>
@@ -1894,8 +2023,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowCommandPalette(true)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showCommandPalette ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Command palette"
-            aria-label="Command palette"
+            title="命令面板"
+            aria-label="命令面板"
           >
             <IconSearch className="h-4 w-4" />
           </button>
@@ -1907,7 +2036,7 @@ function CanvasPageInner(): JSX.Element {
               type="button"
               onClick={() => { handleAddNode(tool.type); setIsAddMenuOpen(false) }}
               className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:border-brand/30 hover:bg-bg-hover hover:text-text-base active:scale-90"
-              title={`Add ${tool.label}`}
+              title={`添加${tool.label}`}
             >
               <tool.icon className="h-4 w-4" />
             </button>
@@ -1917,8 +2046,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => void handleSave().catch(() => undefined)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${saveStatus === 'saving' ? 'text-brand' : saveStatus === 'saved' ? 'text-green-400' : 'text-text-secondary hover:text-text-base'}`}
-            title={saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save (Ctrl+S)'}
-            aria-label="Save workflow"
+            title={saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '已保存' : '保存 (Ctrl+S)'}
+            aria-label="保存工作流"
           >
             {saveStatus === 'saving' ? <IconLoader2 className="h-4 w-4 animate-spin" /> : saveStatus === 'saved' ? <IconCheck className="h-4 w-4" /> : <IconDeviceFloppy className="h-4 w-4" />}
           </button>
@@ -1926,8 +2055,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowAssetPanel((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-base'}`}
-            title="Asset library"
-            aria-label="Toggle asset library"
+            title="资产库"
+            aria-label="切换资产库"
           >
             <IconFolder className="h-4 w-4" />
           </button>
@@ -1935,8 +2064,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowWorkflowPanel((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showWorkflowPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Workflow snippets"
-            aria-label="Toggle workflow panel"
+            title="工作流片段"
+            aria-label="切换工作流面板"
           >
             <IconTemplate className="h-4 w-4" />
           </button>
@@ -1944,8 +2073,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowCharacterPanel((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showCharacterPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Character categories"
-            aria-label="Toggle character category panel"
+            title="角色分类"
+            aria-label="切换角色分类面板"
           >
             <IconUsers className="h-4 w-4" />
           </button>
@@ -1953,8 +2082,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowStylePanel((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showStylePanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Style library"
-            aria-label="Toggle style panel"
+            title="风格库"
+            aria-label="切换风格面板"
           >
             <IconPalette className="h-4 w-4" />
           </button>
@@ -1962,8 +2091,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowChatBox((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showChatBox ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Chat"
-            aria-label="Toggle chat panel"
+            title="对话"
+            aria-label="切换对话面板"
           >
             <IconMessage className="h-4 w-4" />
           </button>
@@ -1971,8 +2100,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowJobPanel((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showJobPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Jobs"
-            aria-label="Toggle job status"
+            title="任务"
+            aria-label="切换任务状态"
           >
             <IconListDetails className="h-4 w-4" />
           </button>
@@ -1980,8 +2109,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            title={themePreference === 'dark' ? 'Switch to light' : 'Switch to dark'}
-            aria-label="Toggle theme"
+            title={themePreference === 'dark' ? '切换到亮色' : '切换到暗色'}
+            aria-label="切换主题"
           >
             {themePreference === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
           </button>
@@ -1989,8 +2118,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => setShowShortcutHelp((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showShortcutHelp ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="Canvas shortcuts"
-            aria-label="Toggle shortcut help"
+            title="画布快捷键"
+            aria-label="切换快捷键帮助"
           >
             <IconHelp className="h-4 w-4" />
           </button>
@@ -2024,30 +2153,30 @@ function CanvasPageInner(): JSX.Element {
             <section
               className="w-full max-w-[420px] rounded-2xl border border-border-secondary bg-bg-panel p-4 shadow-pop"
               onClick={(event) => event.stopPropagation()}
-              aria-label="Canvas shortcuts"
+              aria-label="画布快捷键"
             >
               <div className="flex items-center justify-between border-b border-border-secondary pb-3">
-                <h2 className="text-[15px] font-semibold text-text-base">Canvas shortcuts</h2>
+                <h2 className="text-[15px] font-semibold text-text-base">画布快捷键</h2>
                 <button
                   type="button"
                   onClick={() => setShowShortcutHelp(false)}
                   className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base"
-                  aria-label="Close shortcut help"
+                  aria-label="关闭快捷键帮助"
                 >
                   <IconX className="h-4 w-4" />
                 </button>
               </div>
               <div className="mt-3 grid gap-2 text-[13px] text-text-secondary">
                 {[
-                  ['Ctrl/Cmd+S', 'Save workflow'],
-                  ['Ctrl/Cmd+Z', 'Undo'],
-                  ['Ctrl/Cmd+Shift+Z / Ctrl+Y', 'Redo'],
-                  ['Ctrl/Cmd+K', 'Command palette'],
-                  ['Ctrl/Cmd+D', 'Duplicate selected nodes'],
-                  ['Ctrl/Cmd+1', 'Fit view'],
-                  ['Ctrl/Cmd+2', 'Select mode'],
-                  ['Ctrl/Cmd+3', 'Pan mode'],
-                  [deleteShortcutLabel, 'Delete selected nodes'],
+                  ['Ctrl/Cmd+S', '保存工作流'],
+                  ['Ctrl/Cmd+Z', '撤销'],
+                  ['Ctrl/Cmd+Shift+Z / Ctrl+Y', '重做'],
+                  ['Ctrl/Cmd+K', '命令面板'],
+                  ['Ctrl/Cmd+D', '复制选中节点'],
+                  ['Ctrl/Cmd+1', '适配视图'],
+                  ['Ctrl/Cmd+2', '选择模式'],
+                  ['Ctrl/Cmd+3', '拖拽画布模式'],
+                  [deleteShortcutLabel, '删除选中节点'],
                 ].map(([keys, description]) => (
                   <div key={keys} className="flex items-center justify-between rounded-lg bg-bg-card px-3 py-2">
                     <span>{description}</span>
@@ -2068,8 +2197,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => { void fitView({ padding: 0.18, duration: 240 }) }}
             className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="Fit view"
-            title="Fit view"
+            aria-label="适配视图"
+            title="适配视图"
           >
             <IconMaximize className="h-4 w-4" />
           </button>
@@ -2077,8 +2206,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => { void zoomOut() }}
             className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="Zoom out"
-            title="Zoom out"
+            aria-label="缩小"
+            title="缩小"
           >
             <IconZoomOut className="h-4 w-4" />
           </button>
@@ -2086,8 +2215,8 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={() => { void zoomIn() }}
             className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="Zoom in"
-            title="Zoom in"
+            aria-label="放大"
+            title="放大"
           >
             <IconZoomIn className="h-4 w-4" />
           </button>
@@ -2131,11 +2260,6 @@ function CanvasPageInner(): JSX.Element {
         {showJobPanel && (
           <CanvasJobPanel onClose={() => setShowJobPanel(false)} />
         )}
-        <BottomInputPanel
-          agentEnabled={false}
-          onCreateTextNode={handleCreateTextFromBottomInput}
-        />
-
         <CanvasCommandPalette
           open={showCommandPalette}
           onClose={() => setShowCommandPalette(false)}

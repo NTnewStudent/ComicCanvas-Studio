@@ -50,6 +50,7 @@ const orchestratorAgent: AgentDefinition = {
     maxContextTokens: 8000
   },
   permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'provider.spend'], requireAskForDestructive: true },
+  triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
   maxTurns: 8,
   effort: 'high',
   enabled: true
@@ -101,7 +102,7 @@ describe('M4 Chat UI', () => {
     expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: false })
   })
 
-  it('renders migrated comic-drama node and run-action summaries in PlanCard', () => {
+  it('renders migrated comic-drama nodes while only summarizing Agent generation run actions', () => {
     const migratedPlan: CanvasPlan = {
       kind: 'plan',
       summary: 'Create a comic-drama workflow.',
@@ -109,17 +110,16 @@ describe('M4 Chat UI', () => {
         { ref: 'story', type: 'text', title: 'Story', data: { content: 'rainy detective' } },
         { ref: 'character', type: 'character', title: 'Character', data: { description: 'detective' } },
         { ref: 'scene', type: 'scene', title: 'Scene', data: { description: 'alley' } },
-        { ref: 'key-image', type: 'mjImage', title: 'Key image', data: { prompt: 'rainy alley', status: 'idle' } },
+        { ref: 'key-image', type: 'imageConfigV2', title: 'Key image', data: { promptOverride: 'rainy alley', status: 'idle' } },
+        { ref: 'video', type: 'videoConfigV2', title: 'Video', data: { promptOverride: 'rainy alley', status: 'idle' } },
         { ref: 'voice', type: 'audio', title: 'Voice', data: { assetId: null, status: 'idle' } },
         { ref: 'compose', type: 'videoCompose', title: 'Compose', data: { status: 'idle' } },
         { ref: 'mux', type: 'muxAudioVideo', title: 'Mux', data: { status: 'idle' } },
       ],
       edges: [],
       runSteps: [
-        { ref: 'key-image', action: 'mjImageRun' },
-        { ref: 'voice', action: 'audioRun' },
-        { ref: 'compose', action: 'videoComposeRun' },
-        { ref: 'mux', action: 'muxAudioVideoRun' },
+        { ref: 'key-image', action: 'imageRun' },
+        { ref: 'video', action: 'videoRun' },
       ],
       question: null,
       dropped: [],
@@ -129,10 +129,13 @@ describe('M4 Chat UI', () => {
 
     expect(screen.getByText('角色')).toBeInTheDocument()
     expect(screen.getByText('场景')).toBeInTheDocument()
-    expect(screen.getByText('MJ 出图')).toBeInTheDocument()
-    expect(screen.getByText('音频生成')).toBeInTheDocument()
+    expect(screen.getByText('生图配置')).toBeInTheDocument()
+    expect(screen.getByText('视频配置')).toBeInTheDocument()
+    expect(screen.getByText('图片生成')).toBeInTheDocument()
+    expect(screen.getByText('视频生成')).toBeInTheDocument()
     expect(screen.getByText('视频合成')).toBeInTheDocument()
     expect(screen.getByText('音视频合成')).toBeInTheDocument()
+    expect(screen.queryByText('MJ 出图')).not.toBeInTheDocument()
   })
 
   it('sends chat on Enter, keeps Shift+Enter as multiline, then fetches plan after planReady', async () => {
@@ -205,7 +208,6 @@ describe('M4 Chat UI', () => {
     expect(source).toContain('bg-bg-card')
     expect(source).toContain('text-text-secondary')
     expect(tasks).toContain('CanvasChatBox.tsx')
-    expect(tasks).toContain('BottomInputPanel.tsx')
     expect(tasks).toContain('MentionTextarea.tsx')
     expect(tasks).toContain('CommandPalette.tsx')
   })

@@ -18,20 +18,14 @@ const NODE_TYPES = new Set<NodeType>([
   'videoConfigV2',
   'videoCompose',
   'superResolution',
-  'muxAudioVideo',
-  'mjImage'
+  'muxAudioVideo'
 ])
 const EDGE_TYPES = new Set<EdgeType>(['promptOrder', 'imageOrder', 'imageRole', 'outputLink', 'reference', 'default'])
 const IMAGE_ROLES = new Set<ImageRole>(['first_frame', 'last_frame', 'reference'])
 const RUN_ACTIONS = new Set<RunAction>([
   'imageRun',
   'videoRun',
-  'textPolish',
-  'audioRun',
-  'mjImageRun',
-  'videoComposeRun',
-  'superResolutionRun',
-  'muxAudioVideoRun'
+  'textPolish'
 ])
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const DROP = Symbol('drop')

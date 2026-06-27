@@ -3,6 +3,7 @@ import { Folder, Image, Loader2, Music, Search, Video, X } from 'lucide-react'
 
 import type { AssetCategory, AssetFolder, AssetListRequest, AssetRecord } from '../../../../../../shared/assets'
 import type { AssetLibraryApi } from '../../assets/AssetPanel'
+import { assetDisplayUrl } from '../../assets/asset-url'
 import { cn } from '../../lib/cn'
 
 export type CanvasAssetInsertMode = 'image' | 'video' | 'audio' | 'character' | 'scene' | 'reference'
@@ -180,7 +181,7 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
     const mode = asset.mediaType === 'image' ? insertMode : toInsertType(asset.mediaType)
     onInsertAsset({
       id: asset.id,
-      url: asset.safeUrl,
+      url: assetDisplayUrl(asset),
       type: toInsertType(asset.mediaType),
       name: assetDisplayName(asset),
       mode
@@ -408,7 +409,7 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
                   <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md border border-border-input bg-bg-surface">
                     {asset.mediaType === 'image' ? (
                       <img
-                        src={asset.safeUrl}
+                        src={assetDisplayUrl(asset)}
                         alt={label}
                         className="h-full w-full object-contain"
                         loading="lazy"

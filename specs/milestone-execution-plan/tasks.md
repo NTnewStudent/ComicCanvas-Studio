@@ -223,10 +223,10 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: child write does not change persisted graph before merge.
   - Covers: R6.
 
-- [x] 37. Implement custom Agent settings.
+- [x] 37. Implement built-in and custom Agent settings.
   - Files: `AgentList.tsx`, `AgentForm.tsx`; IPC/domain APIs from `docs/api-contracts/agents.md`.
   - Reference: `hjwall/pc-client/src/components/layout/`, `src/components/common/`, and project form components for dense settings UI patterns.
-  - Include: create/edit/delete user agents, built-in read-only protection, allowed tool/skill selection.
+  - Include: create/edit/delete user agents, editable built-in overrides with delete protection, allowed tool/skill selection, trigger policy.
   - Verify: form validation and IPC tests.
   - Covers: R6.
 

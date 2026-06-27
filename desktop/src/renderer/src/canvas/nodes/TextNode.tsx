@@ -10,7 +10,7 @@ import type { TextNodeData } from '../../../../../../shared/nodes'
 import { RichTextToolbar, type RichTextCommand } from '../components/RichTextToolbar'
 import { TextFocusModal, textToParagraphHtml } from '../components/TextFocusModal'
 import { useInlineRename } from '../hooks/use-inline-rename'
-import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
+import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES, NODE_UI_CLASS_NAMES } from '../lib/node-sizing'
 import { cn } from '../../lib/cn'
 
 export interface TextNodeProps {
@@ -125,7 +125,8 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
     <article
       ref={nodeRef}
       className={cn(
-        'relative flex min-h-[168px] w-[320px] flex-col gap-2.5 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'h-full w-full',
+        NODE_UI_CLASS_NAMES.textShell,
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
@@ -149,12 +150,12 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="flex min-h-7 items-center gap-2">
+      <header className={NODE_UI_CLASS_NAMES.header}>
         {rename.isRenaming ? (
           <input
             ref={renameRef}
             aria-label="重命名文本节点"
-            className="w-full min-w-0 rounded-sm border border-border-input bg-bg-input px-2 py-1.5 text-[16px] font-semibold leading-[1.35] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
+            className={cn('w-full min-w-0', NODE_UI_CLASS_NAMES.field, NODE_UI_CLASS_NAMES.title)}
             value={rename.draft}
             onChange={(event) => rename.setDraft(event.target.value)}
             onBlur={rename.cancel}
@@ -163,7 +164,7 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
         ) : (
           <button
             type="button"
-            className="cursor-text bg-transparent p-0 text-left text-[16px] font-semibold leading-[1.35] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
+            className={cn('cursor-text bg-transparent p-0 text-left outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand', NODE_UI_CLASS_NAMES.title)}
             onClick={() => setIsExpanded(true)}
             onDoubleClick={rename.start}
           >
@@ -186,7 +187,7 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
         <textarea
           ref={textareaRef}
           aria-label="文本内容"
-          className="min-h-28 flex-1 resize-none rounded-sm border border-border-input bg-bg-input p-2.5 text-[14px] leading-relaxed text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
+          className={cn('min-h-[116px] flex-1 resize-none', NODE_UI_CLASS_NAMES.field)}
           value={content}
           onChange={(event) => updateContent(event.target.value)}
           onBlur={() => setIsExpanded(false)}
@@ -194,7 +195,7 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
       ) : (
         <button
           type="button"
-          className="min-h-[102px] flex-1 cursor-text overflow-auto whitespace-pre-wrap break-words rounded-sm border border-border-input bg-bg-input p-2.5 text-left text-[14px] leading-relaxed text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
+          className={cn('min-h-[116px] flex-1 cursor-text overflow-auto whitespace-pre-wrap break-words text-left', NODE_UI_CLASS_NAMES.field)}
           onClick={() => setIsExpanded(true)}
         >
           {content || '写一段节拍、提示词或场景备注'}
@@ -217,7 +218,7 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
       {selected || isExpanded ? (
         <div
           aria-label="Prompt 贡献预览"
-          className="max-h-16 overflow-auto rounded-sm border border-border-secondary bg-bg-input/60 px-2 py-1.5 text-[11px] leading-relaxed text-text-muted"
+          className="max-h-16 overflow-auto rounded-md border border-border-secondary bg-bg-input/60 px-2.5 py-2 text-[11px] leading-[1.5] text-text-muted"
         >
           {content || '该文本节点尚无 prompt 贡献'}
         </div>

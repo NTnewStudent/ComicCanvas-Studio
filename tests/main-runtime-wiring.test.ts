@@ -10,6 +10,7 @@ import type { AssetRecord } from '../shared/assets'
 import type { CanvasGraphSnapshot } from '../shared/graph'
 import type { GatewayRequest } from '../shared/gateway'
 import type { GatewayResult } from '../shared/gateway'
+import type { CanvasPlan } from '../shared/plan'
 import { createMainProcessRuntime } from '../desktop/src/main/runtime'
 import type { MainProcessRuntime } from '../desktop/src/main/runtime'
 import { createStubProvider } from '../desktop/src/main/providers/stub.provider'
@@ -139,12 +140,12 @@ describe('main process runtime wiring', () => {
       await runtime.waitForIdleForTests()
       expect(window.webContents.send).toHaveBeenCalledWith('canvas.planReady', { messageId: 'message-1', planId: 'plan-1' })
 
-      const plan = await handlers.get('canvas.chatGetPlan')?.({}, { messageId: 'message-1' })
+      const plan = (await handlers.get('canvas.chatGetPlan')?.({}, { messageId: 'message-1' })) as CanvasPlan
       expect(plan).toMatchObject({
         kind: 'plan',
-        nodes: [{ ref: 'image-1', type: 'image' }],
         runSteps: [{ ref: 'image-1', action: 'imageRun' }]
       })
+      expect(plan?.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ ref: 'image-1', type: 'imageConfigV2' })]))
 
       const runTicket = await handlers.get('canvas.runNode')?.({}, { nodeId: 'image-runtime-1' })
       expect(runTicket).toMatchObject({ jobId: 'job-2', status: 'pending' })
@@ -203,16 +204,15 @@ describe('main process runtime wiring', () => {
         'text',
         'character',
         'scene',
-        'mjImage',
+        'imageConfigV2',
+        'videoConfigV2',
         'audio',
         'videoCompose',
         'muxAudioVideo',
       ])
       expect(plan.runSteps).toEqual([
-        { ref: 'key-image', action: 'mjImageRun' },
-        { ref: 'voice', action: 'audioRun' },
-        { ref: 'compose', action: 'videoComposeRun' },
-        { ref: 'mux', action: 'muxAudioVideoRun' },
+        { ref: 'key-image', action: 'imageRun' },
+        { ref: 'video-gen', action: 'videoRun' },
       ])
       expect(window.webContents.send).toHaveBeenCalledWith('canvas.planReady', { messageId: 'message-comic', planId: 'plan-comic' })
     } finally {

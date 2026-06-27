@@ -128,7 +128,67 @@ describe('M4 ToolRuntime', () => {
     expect(result.error).toEqual({
       errorClass: 'tool_permission_denied',
       message: 'Canvas writes are disabled for this agent.',
-      retryable: false
+      retryable: false,
+      details: {
+        decision: 'deny',
+        requiredPermissions: [canvasWritePermission]
+      }
+    })
+  })
+
+  it('returns ask permission decisions as safe audit details without executing the tool', async () => {
+    let calls = 0
+    const canvasWritePermission: ToolPermission = { kind: 'canvas.write', reason: 'Mutates the canvas graph.' }
+    const runtime = createToolRuntime({
+      idFactory: () => 'invoke-ask',
+      clock: () => 1_782_800_000_150,
+      permissionPolicy: () => ({
+        decision: 'ask',
+        decisionReason: 'Creating nodes requires confirmation.',
+        requiredPermissions: [canvasWritePermission]
+      }),
+      tools: [
+        defineTool({
+          descriptor: {
+            id: 'test.askWrite',
+            name: 'Ask Write',
+            description: 'Writes after confirmation.',
+            category: 'canvas',
+            owner: { kind: 'builtin', id: 'core' },
+            inputSchemaRef: 'test.askWrite.input',
+            outputSchemaRef: 'test.askWrite.output',
+            permissions: [canvasWritePermission],
+            concurrency: 'serial-write',
+            enabled: true
+          },
+          inputSchema: z.object({ value: z.string() }),
+          outputSchema: z.object({ ok: z.boolean() }),
+          renderToolUseMessage: () => 'Ask write',
+          call() {
+            calls += 1
+            return { ok: true }
+          }
+        })
+      ]
+    })
+
+    const result = await runtime.invoke({
+      toolId: 'test.askWrite',
+      input: { value: 'needs approval' },
+      actor,
+      traceId: 'trace-ask'
+    })
+
+    expect(calls).toBe(0)
+    expect(result.record.status).toBe('denied')
+    expect(result.error).toEqual({
+      errorClass: 'tool_permission_denied',
+      message: 'Creating nodes requires confirmation.',
+      retryable: false,
+      details: {
+        decision: 'ask',
+        requiredPermissions: [canvasWritePermission]
+      }
     })
   })
 

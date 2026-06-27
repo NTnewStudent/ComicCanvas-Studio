@@ -33,7 +33,7 @@ function PromptOrderEdge(props: EdgeProps): JSX.Element {
       <EdgeLabelControls labelX={labelX} labelY={labelY}>
         <span
           className="flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-bg-card bg-text-base px-1.5 text-[11px] font-bold text-bg-base shadow-card"
-          title={`Prompt order ${order}`}
+          title={`提示词顺序 ${order}`}
         >
           {order}
         </span>

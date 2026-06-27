@@ -71,4 +71,18 @@ describe('REQ-092 connect-to-create edge validation', () => {
     expect(source).toContain("sourceNodeId: contextMenu.nodeId")
     expect(source).toContain("createdNodeId")
   })
+
+  it('opens the connect-to-create menu when a node handle is released on blank canvas', () => {
+    const source = readFileSync('desktop/src/renderer/src/canvas/CanvasPage.tsx', 'utf8')
+
+    expect(source).toContain('type ConnectCreateMenuState')
+    expect(source).toContain('connectStartNodeIdRef')
+    expect(source).toContain('handleConnectStart')
+    expect(source).toContain('handleConnectEnd')
+    expect(source).toContain('onConnectStart={handleConnectStart}')
+    expect(source).toContain('onConnectEnd={handleConnectEnd}')
+    expect(source).toContain("type: 'connect-create'")
+    expect(source).toContain("sourceNodeId: connectCreateMenu.sourceNodeId")
+    expect(source).toContain('getAllowedConnectCreateOptions(connectCreateMenu.sourceNodeId).map')
+  })
 })

@@ -90,7 +90,7 @@ describe('Task 34 video compose and mux node parity', () => {
     expect(screen.getByText('audio-voice')).toBeInTheDocument()
     expect(screen.getByTestId('mux-output')).toHaveAttribute('src', 'cc-asset://asset/asset-mux-result')
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Mux 模型' }), { target: { value: 'mux-fast' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '音视频合成模型' }), { target: { value: 'mux-fast' } })
     fireEvent.change(screen.getByRole('textbox', { name: '视频输入节点' }), { target: { value: 'video-clean' } })
     fireEvent.change(screen.getByRole('textbox', { name: '音频输入节点' }), { target: { value: 'audio-clean' } })
 

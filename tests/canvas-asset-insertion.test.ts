@@ -54,4 +54,27 @@ describe('canvas asset node insertion', () => {
       ]
     })
   })
+
+  it('uses cloud URLs only for uploaded assets with S3 keys', () => {
+    const uploaded: AssetRecord = {
+      ...categorizedImage,
+      id: 'asset-cloud',
+      safeUrl: 'cc-asset://asset/asset-cloud',
+      url: 'https://assets.example.com/asset-cloud.png',
+      s3Key: 'assets/2026-06/asset-cloud.png'
+    }
+
+    const insertion = buildAssetNodeInsertion({ asset: uploaded, mode: 'image', sequence: 1 })
+    expect(insertion.safeUrl).toBe('https://assets.example.com/asset-cloud.png')
+    expect(insertion.node.data).toMatchObject({ url: 'https://assets.example.com/asset-cloud.png' })
+
+    const { url: _url, ...uploadedWithoutUrl } = uploaded
+    const missingCloudUrl = buildAssetNodeInsertion({
+      asset: uploadedWithoutUrl,
+      mode: 'image',
+      sequence: 1
+    })
+    expect(missingCloudUrl.safeUrl).toBe('')
+    expect(missingCloudUrl.node.data).toMatchObject({ url: '' })
+  })
 })

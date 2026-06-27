@@ -113,8 +113,8 @@ Generated from current `createCanvasTools` descriptors.
 
 ### Agent Plan Apply Examples
 
-Create a text prompt node, create an image node, connect them, then run the
-image node:
+Create a text prompt node, create an image generation config node, connect
+them, then run the generation config node:
 
 ```json
 [
@@ -129,7 +129,7 @@ image node:
   {
     "toolId": "canvas.createNode",
     "input": {
-      "type": "image",
+      "type": "imageConfigV2",
       "position": { "x": 320, "y": 0 }
     }
   },
@@ -137,25 +137,26 @@ image node:
     "toolId": "canvas.connectNodes",
     "input": {
       "source": "text-node-id",
-      "target": "image-node-id",
+      "target": "image-config-node-id",
       "edgeType": "promptOrder"
     }
   },
   {
     "toolId": "canvas.runNode",
-    "input": { "nodeId": "image-node-id" }
+    "input": { "nodeId": "image-config-node-id" }
   }
 ]
 ```
 
-Insert a connected video node from an image node:
+Insert a connected video generation config node from a bound image reference
+node. `image` remains a media reference node and is not runnable:
 
 ```json
 {
   "toolId": "canvas.connectToCreate",
   "input": {
     "source": "image-node-id",
-    "type": "video",
+    "type": "videoConfigV2",
     "position": { "x": 640, "y": 0 },
     "edgeType": "imageRole",
     "imageRole": "first_frame"

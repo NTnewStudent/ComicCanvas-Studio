@@ -57,9 +57,13 @@ describe('M1 IPC skeleton', () => {
     registerToolHandlers(ipcMain, { runtime: createToolRuntime(), currentUserId: 'user-local' })
 
     expect(Array.from(handlers.keys()).sort()).toEqual([
+      'agent.approveTool',
       'agent.delete',
+      'agent.getRun',
       'agent.list',
+      'agent.run',
       'agent.save',
+      'agent.spawn',
       'asset.assignCategory',
       'asset.createCategory',
       'asset.createFolder',
@@ -70,6 +74,7 @@ describe('M1 IPC skeleton', () => {
       'asset.import',
       'asset.list',
       'asset.move',
+      'asset.pickImportFiles',
       'asset.removeCategory',
       'asset.rename',
       'asset.trash',
@@ -117,6 +122,95 @@ describe('M1 IPC skeleton', () => {
       'tool.invoke',
       'tool.list'
     ] satisfies IpcInvokeChannel[])
+  })
+
+  it('routes agent.run and agent.getRun through the injected runtime', () => {
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const agentRegistry = createAgentRegistry({ agents: createAgentRepo() })
+
+    registerAgentHandlers(ipcMain, {
+      registry: agentRegistry,
+      runtime: {
+        agentRun(input) {
+          expect(input).toEqual({ agentId: 'orchestrator', message: '规划一组漫画节点' })
+          return { runId: 'run-agent-ipc', jobId: 'job-agent-ipc', status: 'pending' }
+        },
+        approveTool(input) {
+          expect(input).toEqual({ runId: 'run-agent-ipc', callId: 'call-1', approvedBy: 'user-local' })
+          return { runId: 'run-agent-ipc', jobId: 'job-agent-approval-ipc', status: 'pending' }
+        },
+        getRun(runId) {
+          expect(runId).toBe('run-agent-ipc')
+          return { runId, status: 'pending', trace: { agentId: 'orchestrator' } }
+        }
+      },
+      spawnSubAgent(input) {
+        expect(input).toEqual({
+          spec: {
+            task: 'Summarize graph',
+            systemPrompt: 'Read only.',
+            allowedTools: ['canvas.queryGraph'],
+            maxTurns: 2
+          },
+          depth: 0
+        })
+
+        return {
+          output: 'Graph summary',
+          status: 'completed',
+          turnsUsed: 1,
+          droppedTools: [],
+          droppedSkills: [],
+          trace: {
+            runId: 'run-child-ipc',
+            parentRunId: 'run-agent-ipc',
+            parentTraceId: 'trace-agent-ipc',
+            depth: 1,
+            startedAt: 1,
+            completedAt: 2,
+            requestedTools: ['canvas.queryGraph'],
+            effectiveTools: ['canvas.queryGraph'],
+            requestedSkills: [],
+            effectiveSkills: [],
+            droppedTools: [],
+            droppedSkills: [],
+            status: 'completed'
+          }
+        }
+      }
+    })
+
+    expect(handlers.get('agent.run')?.({}, { agentId: 'orchestrator', message: '规划一组漫画节点' })).toEqual({
+      runId: 'run-agent-ipc',
+      jobId: 'job-agent-ipc',
+      status: 'pending'
+    })
+    expect(handlers.get('agent.approveTool')?.({}, { runId: 'run-agent-ipc', callId: 'call-1', approvedBy: 'user-local' })).toEqual({
+      runId: 'run-agent-ipc',
+      jobId: 'job-agent-approval-ipc',
+      status: 'pending'
+    })
+    expect(handlers.get('agent.getRun')?.({}, { runId: 'run-agent-ipc' })).toEqual({
+      runId: 'run-agent-ipc',
+      status: 'pending',
+      trace: { agentId: 'orchestrator' }
+    })
+    expect(handlers.get('agent.spawn')?.({}, {
+      spec: {
+        task: 'Summarize graph',
+        systemPrompt: 'Read only.',
+        allowedTools: ['canvas.queryGraph'],
+        maxTurns: 2
+      },
+      depth: 0
+    })).toMatchObject({
+      output: 'Graph summary',
+      status: 'completed',
+      trace: {
+        runId: 'run-child-ipc',
+        parentRunId: 'run-agent-ipc'
+      }
+    })
   })
 
   it('returns safe error envelopes without stack traces or raw errors', () => {

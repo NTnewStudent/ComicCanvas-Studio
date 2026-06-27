@@ -22,13 +22,14 @@
 
 ### 节点连接矩阵（规范性引用）
 
-| 上游类型 | 允许下游 |
-| :--- | :--- |
-| text | image, video |
-| image | image, video |
-| video | video（仅参考视频） |
+连接矩阵以 `shared/connection-matrix.ts` 为唯一真源。Agent 编排不得复制矩阵；
+Plan 清洗与应用阶段都必须调用同一 `canConnect(upstream, downstream)`。
 
-未列出的组合 / 同类自连接（video→video 除外，作参考链）一律非法。
+当前 Agent 可创建的生产节点词汇为：text, image, video, imageConfigV2,
+videoConfigV2, character, scene, audio, videoCompose, superResolution,
+muxAudioVideo。`image` / `video` 是素材引用节点；生图/生视频 runSteps 只能指向
+`imageConfigV2` / `videoConfigV2`。`mjImage` 仅作为遗留图兼容类型，不允许 Agent
+创建或运行。
 
 ## Requirements
 

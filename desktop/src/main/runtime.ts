@@ -9,11 +9,13 @@
 
 import type { IpcRegistrar } from './ipc/types'
 import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
+import { createGatewayAgentPlanner } from './agent/gateway-loop-model'
 import { createAgentRegistry } from './agent/registry'
 import { createIpcCanvasPlanEventBus } from './ipc/canvas-plan-fanout'
 import { createAssetPipeline } from './assets/pipeline'
 import { applyMigrations, openDatabaseAtPath } from './db/migrate'
 import { createAgentRepository } from './db/repositories/agent.repo'
+import { createAgentRunRepository } from './db/repositories/agent-run.repo'
 import { createAssetRepository } from './db/repositories/asset.repo'
 import { createChatMessageRepository } from './db/repositories/chat-message.repo'
 import { createCanvasSnippetRepository } from './db/repositories/canvas-snippet.repo'
@@ -49,6 +51,7 @@ export interface MainProcessRuntimeOptions {
   getWindows: MainRuntimeWindowProvider
   currentUserId?: string
   planner?: OrchestratorPlanner
+  agentPlannerMode?: 'deterministic' | 'gateway'
   clock?: () => number
   idFactory?: () => string
   assetIdFactory?: () => string
@@ -86,6 +89,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const jobs = createJobRepository(db)
   const assets = createAssetRepository(db)
   const agents = createAgentRepository(db)
+  const agentRuns = createAgentRunRepository(db)
   const storageConfigs = createStorageConfigRepository(db)
   const styles = createStyleRepository(db)
   const snippets = createCanvasSnippetRepository(db)
@@ -156,23 +160,35 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       return ticket
     }
   }
-  const orchestrator = createOrchestratorRuntime({
-    queue: autoQueue,
-    events: jobEvents,
-    chatMessages: createChatMessageRepository(db),
-    planEvents,
-    workflowId: 'default',
-    planner: options.planner ?? createDefaultOrchestratorPlanner(),
-    idFactory: options.messageIdFactory ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`),
-    planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
-    clock
-  })
   const toolRuntime = createToolRuntime({
     tools: createCanvasTools({
       graphStore,
       queue: autoQueue,
       clock
     }),
+    clock
+  })
+  const planner = options.planner ?? (options.agentPlannerMode === 'gateway'
+    ? createGatewayAgentPlanner({
+      gateways,
+      tools: toolRuntime,
+      listTools: () => toolRuntime.list(),
+      defaultGatewayId: 'stub-main',
+      defaultModelId: 'stub-text'
+    })
+    : createDefaultOrchestratorPlanner())
+  const orchestrator = createOrchestratorRuntime({
+    queue: autoQueue,
+    events: jobEvents,
+    chatMessages: createChatMessageRepository(db),
+    planEvents,
+    workflowId: 'default',
+    planner,
+    registry: agentRegistry,
+    listTools: () => toolRuntime.list(),
+    agentRuns,
+    idFactory: options.messageIdFactory ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`),
+    planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
     clock
   })
   worker = createJobWorker({
@@ -246,7 +262,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     clock,
     idFactory: () => `snippet-${crypto.randomUUID()}`
   })
-  registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
+  registerAgentHandlers(options.ipcMain, { registry: agentRegistry, runtime: orchestrator })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
   registerStorageHandlers(options.ipcMain, {
     repository: storageConfigs,

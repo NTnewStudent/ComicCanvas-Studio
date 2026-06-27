@@ -15,9 +15,8 @@ import type {
   TextNodeData,
   VideoNodeData,
 } from './nodes'
-import type { RunAction } from './plan'
 import { composeStyledPrompt, resolveEffectiveStylePreset, type StylePresetView } from './styles'
-import { getNodeDefinition } from './workflow-node-definitions'
+import { getNodeDefinition, type WorkflowRunAction } from './workflow-node-definitions'
 
 export interface WorkflowPromptPart {
   /** Source node that contributed this prompt part. */
@@ -59,7 +58,7 @@ export interface WorkflowRuntimeSnapshot {
   /** Target node type. */
   nodeType: NodeType
   /** Definition run action, if available. */
-  runAction: RunAction | null
+  runAction: WorkflowRunAction | null
   /** Provider model key selected by the node. */
   modelKey: string | null
   /** Effective style preset ID after node override/project default resolution. */

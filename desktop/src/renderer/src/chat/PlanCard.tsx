@@ -43,11 +43,6 @@ const ACTION_LABELS: Partial<Record<RunAction, string>> = {
   imageRun: '图片生成',
   videoRun: '视频生成',
   textPolish: '文本润色',
-  audioRun: '音频生成',
-  mjImageRun: 'MJ 出图',
-  videoComposeRun: '视频合成',
-  superResolutionRun: '视频超分',
-  muxAudioVideoRun: '音视频合成',
 }
 
 function uniqueLabels(values: string[]): string[] {

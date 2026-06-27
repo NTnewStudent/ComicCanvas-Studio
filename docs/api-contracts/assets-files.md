@@ -19,6 +19,28 @@ Non-goals:
 
 ## Request/Response Contracts
 
+### `asset.pickImportFiles`
+
+Request:
+
+```ts
+type AssetPickImportFilesRequest = Record<string, never>
+```
+
+Response:
+
+```ts
+interface AssetPickImportFilesResponse {
+  paths: string[]
+}
+```
+
+`asset.pickImportFiles` opens the main-process system file picker and returns
+absolute local file paths selected by the user. It SHALL NOT upload files,
+persist records, expose storage credentials, or return file bytes. The renderer
+MAY call `asset.import` sequentially for each selected path to reuse the same
+local/R2 import pipeline and progress model.
+
 ### `asset.import`
 
 Request:

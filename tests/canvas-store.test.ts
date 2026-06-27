@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createCanvasStore, type CanvasStoreState } from '../desktop/src/renderer/src/canvas/store/canvas.store'
+import { defaultCanvasNodeSize } from '../shared/node-layout'
 import type { NodeType } from '../shared/nodes'
 
 function createStore(): ReturnType<typeof createCanvasStore> {
@@ -74,6 +75,23 @@ describe('M2 canvas store', () => {
     expect(store.getState().lastConnectError).toEqual({ reason: 'connection_not_allowed', at: 1_782_700_000_000 })
   })
 
+  it('assigns semantic edge data for manual reference connections', () => {
+    const character = store.getState().addNode('character', { x: 0, y: 0 }, { label: 'Hero', description: 'blue coat' })
+    const scene = store.getState().addNode('scene', { x: 0, y: 160 }, { label: 'Hangar', description: 'rain light' })
+    const image = store.getState().addNode('image', { x: 280, y: 0 }, { assetId: 'asset-image' })
+    const video = store.getState().addNode('video', { x: 560, y: 0 })
+
+    expect(store.getState().addEdge(character, image)).toEqual({ ok: true, edgeId: `edge-${character}-${image}` })
+    expect(store.getState().addEdge(scene, image)).toEqual({ ok: true, edgeId: `edge-${scene}-${image}` })
+    expect(store.getState().addEdge(image, video)).toEqual({ ok: true, edgeId: `edge-${image}-${video}` })
+
+    expect(store.getState().edges.map((edge) => edge.data)).toEqual([
+      { edgeType: 'promptOrder', createdAt: 1_782_700_000_000 },
+      { edgeType: 'promptOrder', createdAt: 1_782_700_000_000 },
+      { edgeType: 'imageRole', imageRole: 'reference', createdAt: 1_782_700_000_000 }
+    ])
+  })
+
   it('creates migrated hjwall nodes with type-specific default data instead of video fallbacks', () => {
     const expectedDefaults: ReadonlyArray<readonly [NodeType, Record<string, unknown>]> = [
       ['character', { label: 'Character 1', description: '', assetId: null, tags: [] }],
@@ -88,12 +106,40 @@ describe('M2 canvas store', () => {
     for (const [type, expectedData] of expectedDefaults) {
       const id = store.getState().addNode(type, { x: 0, y: 0 })
       const node = store.getState().nodes.find((candidate) => candidate.id === id)
+      const size = defaultCanvasNodeSize(type)
 
       expect(node?.data).toMatchObject(expectedData)
+      expect(node?.width).toBe(size.width)
+      expect(node?.height).toBe(size.height)
       expect(node?.data).not.toHaveProperty('promptOverride')
       expect(node?.data).not.toHaveProperty('durationSeconds', 3)
       expect(node?.data).not.toHaveProperty('firstFrameAssetId')
       expect(node?.data).not.toHaveProperty('lastFrameAssetId')
+    }
+  })
+
+  it('assigns type-specific default dimensions to every newly created node', () => {
+    const types: NodeType[] = [
+      'text',
+      'image',
+      'video',
+      'character',
+      'scene',
+      'audio',
+      'imageConfigV2',
+      'videoConfigV2',
+      'videoCompose',
+      'superResolution',
+      'muxAudioVideo',
+      'mjImage',
+    ]
+
+    for (const type of types) {
+      const id = store.getState().addNode(type, { x: 0, y: 0 })
+      const node = store.getState().nodes.find((candidate) => candidate.id === id)
+      const size = defaultCanvasNodeSize(type)
+
+      expect(node).toMatchObject({ width: size.width, height: size.height })
     }
   })
 

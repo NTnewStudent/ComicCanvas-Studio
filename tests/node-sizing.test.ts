@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  NODE_MIN_HEIGHT,
+  NODE_MIN_WIDTH,
   NODE_RESIZER_CLASS_NAMES,
   ORIENTATION_ASPECT_RATIO,
   PREVIEW_FRAME_WIDTH,
   getOrientationPreviewStyle
 } from '../desktop/src/renderer/src/canvas/lib/node-sizing'
+import { DEFAULT_CANVAS_NODE_SIZE, defaultCanvasNodeSize } from '../shared/node-layout'
+import type { NodeType } from '../shared/nodes'
 
 describe('M2 node sizing primitives', () => {
   it('maps every supported orientation to a stable preview aspect ratio', () => {
@@ -27,5 +31,30 @@ describe('M2 node sizing primitives', () => {
   it('centralizes NodeResizer class names for canvas node integration', () => {
     expect(NODE_RESIZER_CLASS_NAMES.line).toContain('!border-brand')
     expect(NODE_RESIZER_CLASS_NAMES.handle).toContain('!bg-bg-card')
+  })
+
+  it('keeps every node type on the shared default size contract', () => {
+    const expectedTypes: NodeType[] = [
+      'text',
+      'image',
+      'video',
+      'character',
+      'scene',
+      'audio',
+      'imageConfigV2',
+      'videoConfigV2',
+      'videoCompose',
+      'superResolution',
+      'muxAudioVideo',
+      'mjImage',
+    ]
+
+    expect(Object.keys(DEFAULT_CANVAS_NODE_SIZE).sort()).toEqual([...expectedTypes].sort())
+    for (const type of expectedTypes) {
+      expect(defaultCanvasNodeSize(type)).toBe(DEFAULT_CANVAS_NODE_SIZE[type])
+      expect(NODE_MIN_WIDTH[type]).toBe(DEFAULT_CANVAS_NODE_SIZE[type].width)
+      expect(NODE_MIN_HEIGHT[type]).toBe(DEFAULT_CANVAS_NODE_SIZE[type].height)
+    }
+    expect(DEFAULT_CANVAS_NODE_SIZE.scene).toEqual({ width: 420, height: 560 })
   })
 })

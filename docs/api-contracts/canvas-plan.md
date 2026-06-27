@@ -92,7 +92,9 @@ interface CanvasApplyPlanResponse {
 Rules:
 
 - The main or renderer plan applicator SHALL sanitize the plan before graph mutation.
-- Every node type SHALL be one of `text`, `image`, or `video`.
+- Every Agent-created node type SHALL be one of `text`, `image`, `video`, `imageConfigV2`, `videoConfigV2`, `character`, `scene`, `audio`, `videoCompose`, `superResolution`, or `muxAudioVideo`.
+- `image` and `video` are media reference nodes; generation run steps SHALL target `imageConfigV2` and `videoConfigV2`.
+- `mjImage` is legacy-known for graph compatibility but unavailable for Agent-created plans and run steps.
 - Every edge SHALL be revalidated through `shared/connection-matrix.ts`.
 - Every run step SHALL use the `RunAction` whitelist from `shared/plan.ts`.
 - Sub-agent draft graph merge SHALL sanitize child-produced graph JSON, strip executable strings from node data, revalidate edges through `shared/connection-matrix.ts`, and write a new immutable workflow version only after parent approval.

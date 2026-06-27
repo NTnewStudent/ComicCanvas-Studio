@@ -56,12 +56,10 @@ describe('Task 38 image inpaint gate parity', () => {
           data={imageData}
           selected
           assetSafeUrl="cc-asset://asset/asset-hero"
-          modelOptions={[{ id: 'stub-image', label: 'Stub image' }]}
         />
       </ReactFlowProvider>
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '配置图片节点' }))
     fireEvent.click(screen.getByRole('button', { name: '局部重绘图片资产' }))
 
     expect(screen.getByRole('dialog', { name: '局部重绘暂不可用 Hero Image' })).toBeInTheDocument()

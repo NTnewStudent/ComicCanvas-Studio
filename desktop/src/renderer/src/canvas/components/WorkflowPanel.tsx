@@ -6,6 +6,7 @@
 import { Package, Trash2, Workflow, X } from 'lucide-react'
 
 import type { CanvasSnippetView } from '../../../../../../shared/snippets'
+import { CenteredCanvasPanel } from './CenteredCanvasPanel'
 
 export interface WorkflowPanelProps {
   open: boolean
@@ -38,10 +39,7 @@ export function WorkflowPanel({
   if (!open) return null
 
   return (
-    <section
-      aria-label="工作流片段面板"
-      className="nopan nodrag nowheel pointer-events-auto absolute left-[72px] top-4 z-30 flex max-h-[min(620px,calc(100vh-96px))] w-[380px] flex-col overflow-hidden rounded-xl border border-border-primary bg-bg-panel shadow-pop"
-    >
+    <CenteredCanvasPanel ariaLabel="工作流片段面板" onClose={onClose}>
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-secondary px-4">
         <div className="flex items-center gap-2">
           <Workflow className="h-4 w-4 text-brand" />
@@ -152,6 +150,6 @@ export function WorkflowPanel({
           插入片段
         </button>
       </footer>
-    </section>
+    </CenteredCanvasPanel>
   )
 }

@@ -23,13 +23,13 @@ const legalPlan: CanvasPlan = {
     { ref: 'text-a', type: 'text', title: 'Prompt', data: { content: 'gold spaceship', promptOverride: 'ignored fallback' } },
     {
       ref: 'image-a',
-      type: 'image',
+      type: 'imageConfigV2',
       title: 'Image',
       data: { promptOverride: 'cinematic panel', modelId: 'stub-image', orientation: 'landscape' }
     },
     {
       ref: 'video-a',
-      type: 'video',
+      type: 'videoConfigV2',
       title: 'Video',
       data: { promptOverride: 'slow push in', modelId: 'stub-video', orientation: 'landscape', durationSeconds: 5 }
     }
@@ -84,12 +84,12 @@ describe('M4 applyPlan and PlanRunner', () => {
       data: { label: 'Prompt', content: 'gold spaceship' }
     })
     expect(store.getState().nodes.find((node) => node.id === 'plan-node-image-a')).toMatchObject({
-      type: 'image',
+      type: 'imageConfigV2',
       position: { x: 440, y: 408 },
       data: { label: 'Image', promptOverride: 'cinematic panel', modelId: 'stub-image', orientation: 'landscape', status: 'idle' }
     })
     expect(store.getState().nodes.find((node) => node.id === 'plan-node-video-a')).toMatchObject({
-      type: 'video',
+      type: 'videoConfigV2',
       position: { x: 760, y: 408 },
       data: { label: 'Video', promptOverride: 'slow push in', modelId: 'stub-video', orientation: 'landscape', durationSeconds: 5, status: 'idle' }
     })
@@ -161,9 +161,9 @@ describe('M4 applyPlan and PlanRunner', () => {
     )
   })
 
-  it('maps migrated run actions for audio, mj image, composition, upscale, and mux nodes', () => {
+  it('drops MJ nodes and unavailable run actions from Agent-applied plans', () => {
     const store = createStore()
-    const migratedPlan: CanvasPlan = {
+    const migratedPlan = {
       kind: 'plan',
       summary: 'Build a migrated media chain.',
       nodes: [
@@ -183,7 +183,7 @@ describe('M4 applyPlan and PlanRunner', () => {
       ],
       question: null,
       dropped: []
-    }
+    } as unknown as CanvasPlan
 
     const result = applyCanvasPlan(migratedPlan, store, {
       idFactory: (ref) => `plan-node-${ref}`,
@@ -191,14 +191,23 @@ describe('M4 applyPlan and PlanRunner', () => {
       clock: () => 1_783_600_000_000
     })
 
-    expect(result.runSteps).toEqual([
-      { ref: 'audio-a', nodeId: 'plan-node-audio-a', action: 'audioRun' },
-      { ref: 'mj-a', nodeId: 'plan-node-mj-a', action: 'mjImageRun' },
-      { ref: 'compose-a', nodeId: 'plan-node-compose-a', action: 'videoComposeRun' },
-      { ref: 'upscale-a', nodeId: 'plan-node-upscale-a', action: 'superResolutionRun' },
-      { ref: 'mux-a', nodeId: 'plan-node-mux-a', action: 'muxAudioVideoRun' }
+    expect(store.getState().nodes.map((node) => node.type)).toEqual([
+      'audio',
+      'videoCompose',
+      'superResolution',
+      'muxAudioVideo'
     ])
-    expect(result.dropped).toEqual([])
+    expect(result.runSteps).toEqual([])
+    expect(result.dropped).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('node:mj-a:unsupported_type'),
+        expect.stringContaining('runStep:audio-a:unsupported_action'),
+        expect.stringContaining('runStep:mj-a:unsupported_action'),
+        expect.stringContaining('runStep:compose-a:unsupported_action'),
+        expect.stringContaining('runStep:upscale-a:unsupported_action'),
+        expect.stringContaining('runStep:mux-a:unsupported_action')
+      ])
+    )
   })
 
   it('runs plan steps serially and finishes only after the third terminal success', () => {

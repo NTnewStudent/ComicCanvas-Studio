@@ -12,6 +12,12 @@ import { createMainProcessRuntime, type MainProcessRuntime } from './runtime'
 const rendererDevServerUrl = process.env.ELECTRON_RENDERER_URL
 let mainRuntime: MainProcessRuntime | null = null
 
+function shouldOpenDevTools(): boolean {
+  if (process.env.COMIC_CANVAS_DEVTOOLS === '0') return false
+  if (process.env.COMIC_CANVAS_DEVTOOLS === '1') return true
+  return Boolean(rendererDevServerUrl)
+}
+
 /**
  * Creates the main application window with renderer isolation enabled.
  * @returns The created BrowserWindow instance.
@@ -39,6 +45,9 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 
   window.webContents.once('did-finish-load', () => {
     window.show()
+    if (shouldOpenDevTools()) {
+      window.webContents.openDevTools({ mode: 'detach' })
+    }
   })
 
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {

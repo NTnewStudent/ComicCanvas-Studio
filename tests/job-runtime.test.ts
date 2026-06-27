@@ -184,6 +184,59 @@ describe('M1 JobRuntime skeleton', () => {
       expect(events.getTerminalEvents()).toHaveLength(1)
     }))
 
+  it('preserves structured handler error classes for agent/runtime failures', async () =>
+    withRuntimeFixture(async ({ jobs }) => {
+      const events = createJobEventBus()
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-agent-structured-error',
+        clock: () => 1_782_400_000_014
+      })
+      queue.enqueue({
+        type: 'agent.run',
+        targetId: 'message-structured-error',
+        payload: { message: 'never finish' },
+        requestedBy: { type: 'user', id: 'user-1' }
+      })
+
+      const worker = createJobWorker({
+        jobs,
+        events,
+        leaseOwner: 'worker-agent-structured-error',
+        clock: () => 1_782_400_000_015,
+        handlers: {
+          'agent.run': () => {
+            throw {
+              errorClass: 'agent_max_turns_exceeded',
+              message: 'Agent loop exceeded max turns.',
+              retryable: false,
+              details: { turnsUsed: 3 }
+            }
+          }
+        }
+      })
+
+      expect(await worker.runNext()).toBe('job-agent-structured-error')
+      expect(jobs.getById('job-agent-structured-error')?.error).toEqual({
+        errorClass: 'agent_max_turns_exceeded',
+        message: 'Agent loop exceeded max turns.',
+        retryable: false
+      })
+      expect(events.getTerminalEvents()).toEqual([
+        {
+          channel: 'job.failed',
+          jobId: 'job-agent-structured-error',
+          error: {
+            errorClass: 'agent_max_turns_exceeded',
+            message: 'Agent loop exceeded max turns.',
+            retryable: false,
+            details: { turnsUsed: 3 }
+          },
+          emittedAt: 1_782_400_000_015
+        }
+      ])
+    }))
+
   it('requeues abandoned processing jobs during startup recovery', () =>
     withRuntimeFixture(({ jobs }) => {
       jobs.create({

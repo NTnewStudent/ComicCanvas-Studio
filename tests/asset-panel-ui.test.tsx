@@ -209,6 +209,27 @@ describe('M5 AssetPanel folder UI', () => {
     expect(screen.getByText('已导入 1 个资产')).toBeInTheDocument()
   })
 
+  it('imports paths selected from the desktop file picker', async () => {
+    const api = createApi({
+      pickAssetImportFiles: vi.fn().mockResolvedValue({ paths: ['/tmp/hero.png'] })
+    })
+    renderAssetPanel(api)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Shots' }))
+    fireEvent.click(await screen.findByRole('button', { name: '分类 角色' }))
+    fireEvent.click(screen.getByRole('button', { name: '上传' }))
+
+    await waitFor(() =>
+      expect(mockOf(api.importAsset)).toHaveBeenCalledWith({
+        sourcePath: '/tmp/hero.png',
+        mediaType: 'image',
+        folderId: 'folder-shots',
+        categoryIds: ['category-role']
+      })
+    )
+    expect(screen.getByText('已导入 1 个资产')).toBeInTheDocument()
+  })
+
   it('shows multi-file upload progress, busy state, success refresh, and readable failure feedback', async () => {
     let importCalls = 0
     const firstImport = {
@@ -290,19 +311,51 @@ describe('M5 AssetPanel folder UI', () => {
     const now = Date.now()
     const api = createApi({
       listAssets: vi.fn().mockResolvedValue([
-        makeAsset('asset-first.png', 'image', now),
+        {
+          ...makeAsset('asset-first.png', 'image', now),
+          url: 'https://assets.example.com/asset-first.png',
+          s3Key: 'assets/2026-06/asset-first.png'
+        },
         makeAsset('asset-second.mp4', 'video', now - 1)
       ])
     })
     renderAssetPanel(api)
 
-    expect(await screen.findByRole('img', { name: 'Asset First' })).toBeInTheDocument()
+    const cloudImage = await screen.findByRole('img', { name: 'Asset First' })
+    expect(cloudImage).toHaveAttribute('src', 'https://assets.example.com/asset-first.png')
+    expect(cloudImage).toHaveClass('object-contain')
     fireEvent.click(screen.getByRole('button', { name: '列表视图' }))
 
     expect(screen.getByText('asset-first.png')).toBeInTheDocument()
     expect(screen.getByText('Asset First')).toBeInTheDocument()
     expect(screen.getByText('asset-second.mp4')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '网格视图' })).toBeInTheDocument()
+  })
+
+  it('keeps asset image containers fixed while media adapts inside them', async () => {
+    const now = Date.now()
+    const api = createApi({
+      listAssets: vi.fn().mockResolvedValue([
+        {
+          ...makeAsset('asset-landscape.png', 'image', now),
+          metadata: { width: 1600, height: 900, orientation: 'landscape' }
+        },
+        {
+          ...makeAsset('asset-portrait.png', 'image', now - 1),
+          metadata: { width: 900, height: 1600, orientation: 'portrait' }
+        }
+      ])
+    })
+    renderAssetPanel(api)
+
+    const landscapeImage = await screen.findByRole('img', { name: 'Asset Landscape 1600x900' })
+    expect(landscapeImage.closest('article')).toHaveClass('aspect-square')
+    expect(landscapeImage).toHaveClass('object-contain')
+
+    fireEvent.click(screen.getByRole('img', { name: 'Asset Portrait 900x1600' }))
+    const dialog = screen.getByRole('dialog', { name: 'Asset Portrait 900x1600' })
+    expect(dialog.firstElementChild).toHaveClass('max-w-3xl')
+    expect(within(dialog).getByRole('img', { name: 'Asset Portrait 900x1600' })).toHaveClass('object-contain')
   })
 
   it('renders loading, error, and empty states for the asset page shell', async () => {

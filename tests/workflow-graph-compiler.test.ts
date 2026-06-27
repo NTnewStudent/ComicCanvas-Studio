@@ -81,7 +81,7 @@ describe('Task 43 workflow graph compiler', () => {
         },
         {
           id: 'target',
-          type: 'image',
+          type: 'imageConfigV2',
           position: { x: 360, y: 0 },
           data: {
             label: 'Target',
@@ -114,7 +114,7 @@ describe('Task 43 workflow graph compiler', () => {
 
     expect(snapshot).toMatchObject({
       nodeId: 'target',
-      nodeType: 'image',
+      nodeType: 'imageConfigV2',
       runAction: 'imageRun',
       modelKey: 'stub-image',
       stylePresetId: 'style-node',
@@ -160,7 +160,7 @@ describe('Task 43 workflow graph compiler', () => {
         { id: 'text-1', type: 'text', position: { x: 0, y: 0 }, data: { label: 'Prompt', content: 'city rain' } },
         {
           id: 'target',
-          type: 'video',
+          type: 'videoConfigV2',
           position: { x: 240, y: 0 },
           data: {
             label: 'Video',

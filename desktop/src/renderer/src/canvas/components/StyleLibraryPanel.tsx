@@ -9,6 +9,7 @@ import { Image as ImageIcon, Palette, X } from 'lucide-react'
 import type { IpcRequestMap, IpcResponseMap } from '../../../../../../shared/ipc'
 import type { StylePresetView } from '../../../../../../shared/styles'
 import { cn } from '../../lib/cn'
+import { CenteredCanvasPanel } from './CenteredCanvasPanel'
 
 export interface StyleLibraryPanelApi {
   listStyles(input?: IpcRequestMap['style.list']): Promise<IpcResponseMap['style.list']>
@@ -96,10 +97,7 @@ export function StyleLibraryPanel({ open, workflowId, onClose, api = styleApi() 
   if (!open) return null
 
   return (
-    <section
-      aria-label="画风库面板"
-      className="nopan nodrag nowheel pointer-events-auto absolute left-[72px] top-4 z-30 flex max-h-[min(620px,calc(100vh-96px))] w-[360px] flex-col overflow-hidden rounded-xl border border-border-primary bg-bg-panel shadow-pop"
-    >
+    <CenteredCanvasPanel ariaLabel="画风库面板" onClose={onClose}>
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-secondary px-4">
         <div className="flex items-center gap-2">
           <Palette className="h-4 w-4 text-brand" />
@@ -208,6 +206,6 @@ export function StyleLibraryPanel({ open, workflowId, onClose, api = styleApi() 
           </div>
         )}
       </div>
-    </section>
+    </CenteredCanvasPanel>
   )
 }

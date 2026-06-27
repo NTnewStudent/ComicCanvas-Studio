@@ -8,6 +8,13 @@ import type { GatewayCapability, GatewayChannel, GatewayConfigView } from './gat
 import type { NodeType } from './nodes'
 import type { RunAction } from './plan'
 
+/** Local workflow runtime actions, including manual post-production tools. */
+export type WorkflowRunAction =
+  | RunAction
+  | 'videoComposeRun'
+  | 'superResolutionRun'
+  | 'muxAudioVideoRun'
+
 export type WorkflowNodeCapability =
   | 'prompt'
   | 'image'
@@ -20,7 +27,7 @@ export type WorkflowNodeCapability =
   | 'mux'
   | 'legacy'
 
-export type WorkflowNodeCategory = 'Base' | 'Context' | 'AI Generation' | 'Post Tools' | 'Unavailable'
+export type WorkflowNodeCategory = '基础节点' | '上下文' | 'AI 生成' | '后期工具' | '暂不可用'
 
 export interface WorkflowNodeDefinition {
   /** Shared node type. */
@@ -41,8 +48,8 @@ export interface WorkflowNodeDefinition {
   connectCreate: boolean
   /** Whether this node has a local run action. */
   runnable: boolean
-  /** CanvasPlan run action, when runnable. */
-  runAction: RunAction | null
+  /** Local workflow run action, when runnable. */
+  runAction: WorkflowRunAction | null
   /** Clear product-facing unavailable reason. */
   unavailableReason?: string
 }
@@ -93,8 +100,8 @@ const PHASE_A_MJ_UNAVAILABLE_REASON = 'MJ node/component is out of scope for loc
 const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   {
     type: 'text',
-    label: 'Text Node',
-    category: 'Base',
+    label: '文本节点',
+    category: '基础节点',
     capabilities: ['prompt'],
     addable: true,
     connectCreate: true,
@@ -103,28 +110,28 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'image',
-    label: 'Image Node',
-    category: 'Base',
+    label: '图片节点',
+    category: '基础节点',
     capabilities: ['image', 'assetReference'],
     addable: true,
     connectCreate: true,
-    runnable: true,
-    runAction: 'imageRun',
+    runnable: false,
+    runAction: null,
   },
   {
     type: 'video',
-    label: 'Video Node',
-    category: 'Base',
+    label: '视频节点',
+    category: '基础节点',
     capabilities: ['video', 'assetReference'],
     addable: true,
     connectCreate: true,
-    runnable: true,
-    runAction: 'videoRun',
+    runnable: false,
+    runAction: null,
   },
   {
     type: 'character',
-    label: 'Character Node',
-    category: 'Context',
+    label: '角色节点',
+    category: '上下文',
     capabilities: ['prompt', 'image', 'assetReference'],
     addable: true,
     connectCreate: true,
@@ -133,8 +140,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'scene',
-    label: 'Scene Node',
-    category: 'Context',
+    label: '场景节点',
+    category: '上下文',
     capabilities: ['prompt', 'image', 'assetReference'],
     addable: true,
     connectCreate: true,
@@ -143,8 +150,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'audio',
-    label: 'Audio Node',
-    category: 'Base',
+    label: '音频节点',
+    category: '基础节点',
     capabilities: ['audio', 'assetReference'],
     addable: true,
     connectCreate: true,
@@ -153,8 +160,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'imageConfigV2',
-    label: 'Image V2',
-    category: 'AI Generation',
+    label: '图片生成 V2',
+    category: 'AI 生成',
     capabilities: ['prompt', 'image', 'style', 'assetReference'],
     addable: true,
     connectCreate: true,
@@ -163,8 +170,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'videoConfigV2',
-    label: 'Video V2',
-    category: 'AI Generation',
+    label: '视频生成 V2',
+    category: 'AI 生成',
     capabilities: ['prompt', 'video', 'style', 'assetReference'],
     addable: true,
     connectCreate: true,
@@ -173,8 +180,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'videoCompose',
-    label: 'Video Compose',
-    category: 'Post Tools',
+    label: '视频合成',
+    category: '后期工具',
     capabilities: ['video', 'compose'],
     addable: true,
     connectCreate: true,
@@ -183,8 +190,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'superResolution',
-    label: 'Super Resolution',
-    category: 'Post Tools',
+    label: '视频超分',
+    category: '后期工具',
     capabilities: ['video', 'enhance'],
     addable: true,
     connectCreate: true,
@@ -193,8 +200,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'muxAudioVideo',
-    label: 'Mux Audio Video',
-    category: 'Post Tools',
+    label: '音视频合成',
+    category: '后期工具',
     capabilities: ['video', 'audio', 'mux'],
     addable: true,
     connectCreate: true,
@@ -203,8 +210,8 @@ const DEFINITION_SEEDS: readonly DefinitionSeed[] = [
   },
   {
     type: 'mjImage',
-    label: 'MJ Image',
-    category: 'Unavailable',
+    label: 'MJ 图片',
+    category: '暂不可用',
     capabilities: ['image', 'legacy'],
     addable: false,
     connectCreate: false,
@@ -272,9 +279,9 @@ function uniqueModelIds(models: WorkflowModelCatalog['models']): string[] {
 
 function toolModelOptions(): WorkflowModelOption[] {
   return [
-    { id: 'videoComposeRun', label: 'Video Compose Tool', channel: 'tool', gatewayId: 'local-tools', gatewayName: 'Local Tools', enabled: true, capabilities: [] },
-    { id: 'muxAudioVideoRun', label: 'Mux Audio Video Tool', channel: 'tool', gatewayId: 'local-tools', gatewayName: 'Local Tools', enabled: true, capabilities: [] },
-    { id: 'superResolutionRun', label: 'Super Resolution Tool', channel: 'tool', gatewayId: 'local-tools', gatewayName: 'Local Tools', enabled: true, capabilities: [] },
+    { id: 'videoComposeRun', label: '视频合成工具', channel: 'tool', gatewayId: 'local-tools', gatewayName: '本地工具', enabled: true, capabilities: [] },
+    { id: 'muxAudioVideoRun', label: '音视频合成工具', channel: 'tool', gatewayId: 'local-tools', gatewayName: '本地工具', enabled: true, capabilities: [] },
+    { id: 'superResolutionRun', label: '视频超分工具', channel: 'tool', gatewayId: 'local-tools', gatewayName: '本地工具', enabled: true, capabilities: [] },
   ]
 }
 

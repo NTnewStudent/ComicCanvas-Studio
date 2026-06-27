@@ -9,8 +9,8 @@ describe('Task 21 canvas add-node paths', () => {
 
     expect(source).toContain('ADDABLE_NODE_OPTIONS')
     expect(source).toContain("id: `add-node-${option.type}`")
-    expect(source).toContain("label: `Add ${option.label}`")
-    expect(source).toContain("keywords: ['add', 'node', option.type, option.label]")
+    expect(source).toContain("label: `添加${option.label}`")
+    expect(source).toContain("keywords: ['add', 'node', '添加', '节点', option.type, option.label]")
     expect(source).toContain('run: () => handleAddNode(option.type)')
   })
 

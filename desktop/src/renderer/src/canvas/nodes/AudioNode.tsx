@@ -35,10 +35,10 @@ export interface AudioNodeProps {
 }
 
 const referenceRoleLabels: Record<NonNullable<AudioNodeData['referenceRole']>, string> = {
-  audio: 'audio',
-  voice: 'voice',
-  music: 'music',
-  sfx: 'sfx',
+  audio: '音频',
+  voice: '人声',
+  music: '音乐',
+  sfx: '音效',
 }
 
 /**
@@ -72,9 +72,9 @@ function AudioNodeComponent({
   return (
     <article
       role="group"
-      aria-label={`Audio node ${data.label}`}
+      aria-label={`音频节点 ${data.label}`}
       className={cn(
-        'relative flex w-[320px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'relative flex h-full min-h-[500px] w-full min-w-[360px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
@@ -82,8 +82,8 @@ function AudioNodeComponent({
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={NODE_MIN_WIDTH.text}
-        minHeight={NODE_MIN_HEIGHT.text}
+        minWidth={NODE_MIN_WIDTH.audio}
+        minHeight={NODE_MIN_HEIGHT.audio}
         lineClassName={NODE_RESIZER_CLASS_NAMES.line}
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
@@ -91,7 +91,7 @@ function AudioNodeComponent({
       <header className="flex items-center gap-2">
         <Music2 className="h-4 w-4 text-semantic-warning" />
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">Audio</div>
+          <div className="text-[11px] font-semibold uppercase text-text-muted">音频</div>
           {selected ? (
             <input
               aria-label="音频名称"
@@ -158,10 +158,10 @@ function AudioNodeComponent({
               value={data.referenceRole ?? 'audio'}
               onChange={(event) => update({ referenceRole: event.target.value as NonNullable<AudioNodeData['referenceRole']> })}
             >
-              <option value="audio">audio</option>
-              <option value="voice">voice</option>
-              <option value="music">music</option>
-              <option value="sfx">sfx</option>
+              <option value="audio">音频</option>
+              <option value="voice">人声</option>
+              <option value="music">音乐</option>
+              <option value="sfx">音效</option>
             </select>
           </label>
           <button

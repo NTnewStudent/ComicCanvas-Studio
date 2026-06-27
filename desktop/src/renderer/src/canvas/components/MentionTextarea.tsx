@@ -249,8 +249,8 @@ const MentionTextarea: FC<Props> = ({
           placeholder={placeholder ?? '输入提示词，使用 @ 引用节点...'}
           rows={rows}
           className={cn(
-            'w-full resize-none rounded-lg border border-border-secondary bg-bg-input px-3 py-2',
-            'text-[12px] leading-normal text-text-base',
+            'w-full resize-none rounded-lg border border-border-secondary bg-bg-input px-3 py-2.5',
+            'text-[13px] leading-[1.55] text-text-base',
             'outline-none transition-colors',
             'placeholder:text-text-muted',
             'focus:border-brand/40 focus:ring-1 focus:ring-brand/20',

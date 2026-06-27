@@ -16,9 +16,8 @@ import type { CanvasGraphNode, CanvasGraphSnapshot } from '../../../../../shared
 import { validateCanvasGraph } from '../../../../../shared/graph-validation'
 import type { JobTicket } from '../../../../../shared/jobs'
 import type { CanvasEdgeData, CanvasNodeData, NodeType } from '../../../../../shared/nodes'
-import type { RunAction } from '../../../../../shared/plan'
 import type { ToolActor, ToolDescriptor, ToolPermission } from '../../../../../shared/tools'
-import { getNodeDefinition } from '../../../../../shared/workflow-node-definitions'
+import { getNodeDefinition, type WorkflowRunAction } from '../../../../../shared/workflow-node-definitions'
 import type { JobQueue } from '../../jobs/queue'
 import { defineTool, ToolExecutionError, type ToolDefinition } from '../runtime'
 
@@ -211,11 +210,10 @@ function defaultQueueTicket(createdAt: number): JobTicket {
   return { jobId: 'job-queue-unavailable', status: 'pending', createdAt }
 }
 
-function jobTypeForRunAction(action: RunAction): CanvasRunJobType {
+function jobTypeForRunAction(action: WorkflowRunAction): CanvasRunJobType {
   if (action === 'imageRun') return 'canvas.generateImage'
   if (action === 'videoRun') return 'canvas.generateVideo'
   if (action === 'textPolish') return 'canvas.polishText'
-  if (action === 'audioRun') return 'canvas.generateAudio'
   if (action === 'videoComposeRun') return 'canvas.composeVideo'
   if (action === 'superResolutionRun') return 'canvas.upscaleVideo'
   if (action === 'muxAudioVideoRun') return 'canvas.muxAudioVideo'

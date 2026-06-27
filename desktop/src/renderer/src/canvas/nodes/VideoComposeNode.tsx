@@ -29,7 +29,11 @@ export interface VideoComposeNodeProps {
   onWriteOutputAsset?: (id: string, assetId: string) => void
 }
 
-const transitionOptions = ['cut', 'crossfade', 'dip-to-black']
+const transitionOptions: Array<{ value: NonNullable<VideoComposeNodeData['transitionName']>; label: string }> = [
+  { value: 'cut', label: '硬切' },
+  { value: 'crossfade', label: '交叉淡化' },
+  { value: 'dip-to-black', label: '淡入黑场' },
+]
 
 /**
  * Renders a video composition tool node with input order and transition controls.
@@ -69,9 +73,9 @@ function VideoComposeNodeComponent({
   return (
     <article
       role="group"
-      aria-label={`Video Compose node ${data.label}`}
+      aria-label={`视频合成节点 ${data.label}`}
       className={cn(
-        'relative flex w-[340px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'relative flex h-full min-h-[520px] w-full min-w-[380px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
@@ -79,8 +83,8 @@ function VideoComposeNodeComponent({
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={NODE_MIN_WIDTH.video}
-        minHeight={NODE_MIN_HEIGHT.video}
+        minWidth={NODE_MIN_WIDTH.videoCompose}
+        minHeight={NODE_MIN_HEIGHT.videoCompose}
         lineClassName={NODE_RESIZER_CLASS_NAMES.line}
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
@@ -88,7 +92,7 @@ function VideoComposeNodeComponent({
       <header className="flex items-center gap-2">
         <Combine className="h-4 w-4 text-brand" />
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">Video Compose</div>
+          <div className="text-[11px] font-semibold uppercase text-text-muted">视频合成</div>
           <div className="truncate text-[15px] font-semibold text-text-base">{data.label}</div>
         </div>
         <span className="rounded-sm bg-bg-input px-2 py-1 text-[11px] text-text-muted">{data.status}</span>
@@ -136,8 +140,8 @@ function VideoComposeNodeComponent({
           onChange={(event) => update({ transitionName: event.target.value })}
         >
           {transitionOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </select>

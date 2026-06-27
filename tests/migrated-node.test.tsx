@@ -47,11 +47,11 @@ describe('REQ-093 MigratedNode', () => {
   it('renders semantic character context and edits the description field', () => {
     const { onChange } = renderMigratedNode()
 
-    expect(screen.getByRole('group', { name: 'Character node Detective' })).toBeInTheDocument()
-    expect(screen.getByText('Character')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '角色节点 Detective' })).toBeInTheDocument()
+    expect(screen.getByText('角色')).toBeInTheDocument()
     expect(screen.getByText('calm lead character')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Description' }), {
+    fireEvent.change(screen.getByRole('textbox', { name: '描述' }), {
       target: { value: 'older detective with graphite coat' }
     })
 
@@ -74,8 +74,8 @@ describe('REQ-093 MigratedNode', () => {
       }
     })
 
-    expect(screen.getByRole('group', { name: 'MJ Image node MJ Sheet' })).toBeInTheDocument()
-    expect(screen.getByText('MJ Image')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'MJ 图片节点 MJ Sheet' })).toBeInTheDocument()
+    expect(screen.getByText('MJ 图片')).toBeInTheDocument()
     expect(screen.getByText('idle')).toBeInTheDocument()
     expect(screen.getByDisplayValue('stub-mj')).toBeInTheDocument()
 
