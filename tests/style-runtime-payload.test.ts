@@ -1,0 +1,218 @@
+import { describe, expect, it } from 'vitest'
+
+import type { JobCreateInput } from '../shared/jobs'
+import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
+
+type Handler = (_event: unknown, request: unknown) => unknown
+
+function createFakeIpcMain(): { handlers: Map<string, Handler>; ipcMain: { handle(channel: string, handler: Handler): void } } {
+  const handlers = new Map<string, Handler>()
+
+  return {
+    handlers,
+    ipcMain: {
+      handle(channel, handler) {
+        handlers.set(channel, handler)
+      },
+    },
+  }
+}
+
+describe('REQ-094 runtime style payload', () => {
+  it('enqueues a styled generation prompt from graph snapshot and node style override', () => {
+    const enqueued: JobCreateInput[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const styles = {
+      list: () => [
+        {
+          id: 'style-project',
+          code: 'project-style',
+          name: 'Project style',
+          description: null,
+          promptBefore: 'PROJECT BEFORE',
+          promptAfter: 'PROJECT AFTER',
+          legacyPromptPreset: null,
+          negativePrompt: null,
+          coverAssetId: null,
+          coverUrl: null,
+          tags: [],
+          enabled: true,
+          sortOrder: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'style-node',
+          code: 'node-style',
+          name: 'Node style',
+          description: null,
+          promptBefore: 'NODE BEFORE',
+          promptAfter: 'NODE AFTER',
+          legacyPromptPreset: null,
+          negativePrompt: 'low quality',
+          coverAssetId: null,
+          coverUrl: null,
+          tags: [],
+          enabled: true,
+          sortOrder: 2,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      getProjectDefault: () => 'style-project',
+    }
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      styles,
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'text-1',
+              type: 'text',
+              position: { x: 0, y: 0 },
+              data: { label: 'Prompt', content: 'upstream mood' },
+            },
+            {
+              id: 'image-1',
+              type: 'image',
+              position: { x: 240, y: 0 },
+              data: {
+                label: 'Image',
+                promptOverride: 'node prompt',
+                modelId: 'stub-image',
+                orientation: 'portrait',
+                assetId: null,
+                status: 'idle',
+                stylePresetId: 'style-node',
+                ratio: '9:16',
+              },
+            },
+          ],
+          edges: [
+            {
+              id: 'edge-1',
+              source: 'text-1',
+              target: 'image-1',
+              data: { edgeType: 'promptOrder', createdAt: 10 },
+            },
+          ],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-styled', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-1' })).toEqual({
+      jobId: 'job-styled',
+      status: 'pending',
+      createdAt: 1,
+    })
+    expect(enqueued).toHaveLength(1)
+    expect(enqueued[0]).toMatchObject({
+      type: 'canvas.generateImage',
+      targetId: 'image-1',
+      requestedBy: { type: 'user', id: 'user-1' },
+      payload: {
+        nodeId: 'image-1',
+        prompt: 'NODE BEFORE\nupstream mood\nnode prompt\nNODE AFTER',
+        modelKey: 'stub-image',
+        parameters: { orientation: 'portrait', ratio: '9:16', negativePrompt: 'low quality' },
+      },
+    })
+    expect(enqueued[0]?.payload.prompt).not.toContain('PROJECT BEFORE')
+  })
+
+  it('uses the workflow project default style when a node has no style override', () => {
+    const enqueued: JobCreateInput[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const styles = {
+      list: () => [
+        {
+          id: 'style-project',
+          code: 'project-style',
+          name: 'Project style',
+          description: null,
+          promptBefore: 'PROJECT BEFORE',
+          promptAfter: 'PROJECT AFTER',
+          legacyPromptPreset: null,
+          negativePrompt: 'project negative',
+          coverAssetId: null,
+          coverUrl: null,
+          tags: [],
+          enabled: true,
+          sortOrder: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      getProjectDefault: (workflowId: string) => workflowId === 'workflow-42' ? 'style-project' : null,
+    }
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      styles,
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'text-1',
+              type: 'text',
+              position: { x: 0, y: 0 },
+              data: { label: 'Prompt', content: 'city rain' },
+            },
+            {
+              id: 'image-1',
+              type: 'image',
+              position: { x: 240, y: 0 },
+              data: {
+                label: 'Image',
+                promptOverride: 'wide shot',
+                modelId: 'stub-image',
+                orientation: 'landscape',
+                assetId: null,
+                status: 'idle',
+                ratio: '16:9',
+              },
+            },
+          ],
+          edges: [
+            {
+              id: 'edge-1',
+              source: 'text-1',
+              target: 'image-1',
+              data: { edgeType: 'promptOrder', createdAt: 10 },
+            },
+          ],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-project-style', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    expect(handlers.get('canvas.runNode')?.({}, { workflowId: 'workflow-42', nodeId: 'image-1' })).toEqual({
+      jobId: 'job-project-style',
+      status: 'pending',
+      createdAt: 1,
+    })
+
+    expect(enqueued[0]).toMatchObject({
+      payload: {
+        nodeId: 'image-1',
+        prompt: 'PROJECT BEFORE\ncity rain\nwide shot\nPROJECT AFTER',
+        parameters: { orientation: 'landscape', ratio: '16:9', negativePrompt: 'project negative' },
+      },
+    })
+  })
+})

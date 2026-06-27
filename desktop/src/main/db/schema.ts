@@ -20,6 +20,8 @@ export const schemaTables = [
   'agent_runs',
   'skills',
   'skill_invocations',
+  'style_presets',
+  'canvas_snippets',
   'knowledge_documents',
   'knowledge_chunks',
   'context_packs'
@@ -86,6 +88,38 @@ export const assetReferences = sqliteTable('asset_references', {
 export const workflows = sqliteTable('workflows', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  defaultStylePresetId: text('default_style_preset_id'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at')
+})
+
+export const stylePresets = sqliteTable('style_presets', {
+  id: text('id').primaryKey(),
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  description: text('description'),
+  promptBefore: text('prompt_before'),
+  promptAfter: text('prompt_after'),
+  legacyPromptPreset: text('legacy_prompt_preset'),
+  negativePrompt: text('negative_prompt'),
+  coverAssetId: text('cover_asset_id'),
+  tagsJson: text('tags_json').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at')
+})
+
+export const canvasSnippets = sqliteTable('canvas_snippets', {
+  id: text('id').primaryKey(),
+  schemaVersion: integer('schema_version').notNull().default(1),
+  name: text('name').notNull(),
+  nodesJson: text('nodes_json').notNull(),
+  edgesJson: text('edges_json').notNull(),
+  nodeCount: integer('node_count').notNull(),
+  edgeCount: integer('edge_count').notNull(),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
   deletedAt: integer('deleted_at')

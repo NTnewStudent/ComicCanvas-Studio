@@ -10,6 +10,7 @@ import type { JobTerminalEvent, JobTicket } from '../../../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../../../shared/plan'
 import type { CanvasStoreState } from '../store/canvas.store'
 import { applyCanvasPlan, type ApplyCanvasPlanOptions, type ApplyCanvasPlanResult } from './apply-plan'
+import { terminalResultToNodePatch } from './job-reconciliation'
 import { createPlanRunner, type PlanRunner, type PlanRunnerStep, type PlanRunnerSummary } from './plan-runner'
 
 export interface CanvasPlanExecutionOptions {
@@ -39,12 +40,19 @@ function markNodeRunning(store: StoreApi<CanvasStoreState>, nodeId: string): voi
   store.getState().updateNodeData(nodeId, { status: 'pending', assetId: null })
 }
 
-function markNodeDone(store: StoreApi<CanvasStoreState>, nodeId: string, assetId: string): void {
-  store.getState().updateNodeData(nodeId, { status: 'done', assetId })
+function markNodeDone(store: StoreApi<CanvasStoreState>, nodeId: string, event: Extract<JobTerminalEvent, { channel: 'job.completed' }>): void {
+  const patch = terminalResultToNodePatch(event.result)
+  if (patch) {
+    store.getState().updateNodeData(nodeId, patch)
+  }
 }
 
 function markNodeFailed(store: StoreApi<CanvasStoreState>, nodeId: string): void {
   store.getState().updateNodeData(nodeId, { status: 'error' })
+}
+
+function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
+  return typeof value === 'object' && value !== null && 'then' in value
 }
 
 /**
@@ -61,15 +69,23 @@ export function createCanvasPlanExecutionController(options: CanvasPlanExecution
   function runStep(step: PlanRunnerStep): void {
     markNodeRunning(options.store, step.nodeId)
 
-    Promise.resolve(options.runNode(step.nodeId))
-      .then((ticket) => {
+    try {
+      const ticket = options.runNode(step.nodeId)
+      if (isPromiseLike(ticket)) {
+        ticket.then((resolvedTicket) => {
+          jobToStep.set(resolvedTicket.jobId, step)
+        }).catch(() => {
+          // runNode crosses the preload/main-process boundary; enqueue failures become node error state.
+          markNodeFailed(options.store, step.nodeId)
+          runner?.notifyNodeTerminal(step.nodeId, 'failed', 'run_node_enqueue_failed')
+        })
+      } else {
         jobToStep.set(ticket.jobId, step)
-      })
-      .catch(() => {
-        // runNode crosses the preload/main-process boundary; enqueue failures become node error state.
-        markNodeFailed(options.store, step.nodeId)
-        runner?.notifyNodeTerminal(step.nodeId, 'failed', 'run_node_enqueue_failed')
-      })
+      }
+    } catch {
+      markNodeFailed(options.store, step.nodeId)
+      runner?.notifyNodeTerminal(step.nodeId, 'failed', 'run_node_enqueue_failed')
+    }
   }
 
   return {
@@ -101,9 +117,7 @@ export function createCanvasPlanExecutionController(options: CanvasPlanExecution
 
       jobToStep.delete(event.jobId)
 
-      if (event.result.kind === 'asset') {
-        markNodeDone(options.store, step.nodeId, event.result.assetId)
-      }
+      markNodeDone(options.store, step.nodeId, event)
 
       runner?.notifyNodeTerminal(step.nodeId, 'completed')
     },

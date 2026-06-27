@@ -4,7 +4,15 @@
  */
 
 import type { JobRecord, JobRecoveryReport, JobTicket } from '../../../../shared/jobs'
+import type { JobQueue } from '../jobs/queue'
+import type { JobRepository } from '../db/repositories/job.repo'
 import type { IpcRegistrar } from './types'
+
+export interface JobHandlerDependencies {
+  jobs?: JobRepository
+  queue?: JobQueue
+  clock?: () => number
+}
 
 function createPendingTicket(jobId: string): JobTicket {
   return {
@@ -21,14 +29,30 @@ function createPendingTicket(jobId: string): JobTicket {
  * @throws Error when the registrar rejects handler registration.
  * @see docs/api-contracts/jobs.md
  */
-export function registerJobHandlers(ipcMain: IpcRegistrar): void {
+export function registerJobHandlers(ipcMain: IpcRegistrar, dependencies: JobHandlerDependencies = {}): void {
+  const clock = dependencies.clock ?? Date.now
+
   ipcMain.handle('job.enqueue', (_event, request) => {
+    if (dependencies.queue && typeof request === 'object' && request !== null) {
+      return dependencies.queue.enqueue(request as Parameters<JobQueue['enqueue']>[0])
+    }
+
     const targetId = typeof request === 'object' && request !== null && 'targetId' in request ? String(request.targetId) : 'job'
 
     return createPendingTicket(`job-${targetId}`)
   })
   ipcMain.handle('job.get', (_event, request): JobRecord => {
     const jobId = typeof request === 'object' && request !== null && 'jobId' in request ? String(request.jobId) : 'job-unknown'
+
+    if (dependencies.jobs) {
+      const job = dependencies.jobs.getById(jobId)
+
+      if (!job) {
+        throw new Error('job_not_found')
+      }
+
+      return job
+    }
 
     return {
       id: jobId,
@@ -39,8 +63,20 @@ export function registerJobHandlers(ipcMain: IpcRegistrar): void {
       updatedAt: 1
     }
   })
-  ipcMain.handle('job.list', () => [])
+  ipcMain.handle('job.list', (_event, request) => {
+    if (dependencies.jobs) {
+      return dependencies.jobs.list(typeof request === 'object' && request !== null ? request : {})
+    }
+
+    return []
+  })
   ipcMain.handle('job.recover', (): JobRecoveryReport => {
+    if (dependencies.jobs) {
+      const requeued = dependencies.jobs.requeueProcessing(clock())
+
+      return { inspected: requeued.length, requeued, failed: [] }
+    }
+
     // Recovery inspects stale pending/processing jobs and requeues or marks them failed.
     // The skeleton runtime has no persistent stale detection; return an empty report.
     return { inspected: 0, requeued: [], failed: [] }

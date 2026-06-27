@@ -23,6 +23,14 @@ const migrations = [
   {
     id: '0002_add_asset_cloud_fields',
     fileName: '0002_add_asset_cloud_fields.sql'
+  },
+  {
+    id: '0003_style_presets',
+    fileName: '0003_style_presets.sql'
+  },
+  {
+    id: '0004_canvas_snippets',
+    fileName: '0004_canvas_snippets.sql'
   }
 ] as const
 

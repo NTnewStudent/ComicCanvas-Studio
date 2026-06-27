@@ -4,7 +4,7 @@
  * 选中项高亮，点击外部关闭，ESC 关闭。
  * 参考 hjwall PopoverMenu（portal + fixed 定位）。
  */
-import { type FC, type ReactNode, useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
+import { type ReactNode, useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Check } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -136,6 +136,6 @@ function PopoverMenuInner<T>({
 }
 
 // 导出泛型组件需要类型断言，保持 FC 签名
-const PopoverMenu = PopoverMenuInner as <T>(props: PopoverMenuProps<T>) => JSX.Element
+const PopoverMenu = PopoverMenuInner
 
 export default PopoverMenu

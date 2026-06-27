@@ -7,9 +7,8 @@
  * @see docs/api-contracts/agents.md
  */
 
-import type { CanvasPlan } from '../../../shared/plan'
 import type { IpcRegistrar } from './ipc/types'
-import { createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
+import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
 import { createAgentRegistry } from './agent/registry'
 import { createIpcCanvasPlanEventBus } from './ipc/canvas-plan-fanout'
 import { createAssetPipeline } from './assets/pipeline'
@@ -17,13 +16,17 @@ import { applyMigrations, openDatabaseAtPath } from './db/migrate'
 import { createAgentRepository } from './db/repositories/agent.repo'
 import { createAssetRepository } from './db/repositories/asset.repo'
 import { createChatMessageRepository } from './db/repositories/chat-message.repo'
+import { createCanvasSnippetRepository } from './db/repositories/canvas-snippet.repo'
 import { createJobRepository } from './db/repositories/job.repo'
+import { createStyleRepository } from './db/repositories/style.repo'
 import { createWorkflowRepository } from './db/repositories/workflow.repo'
 import { registerAgentHandlers } from './ipc/agent.handler'
 import { registerAssetHandlers } from './ipc/asset.handler'
 import { registerCanvasHandlers } from './ipc/canvas.handler'
+import { registerCanvasSnippetHandlers } from './ipc/canvas-snippet.handler'
 import { registerGatewayHandlers } from './ipc/gateway.handler'
 import { registerJobHandlers } from './ipc/job.handler'
+import { registerStyleHandlers } from './ipc/style.handler'
 import { registerToolHandlers } from './ipc/tool.handler'
 import { registerStorageHandlers } from './ipc/storage.handler'
 import { createIpcJobEventBus } from './jobs/ipc-fanout'
@@ -65,33 +68,6 @@ interface MainRuntimeWindow {
 
 type MainRuntimeWindowProvider = () => MainRuntimeWindow[]
 
-function defaultPlanner(): OrchestratorPlanner {
-  return {
-    proposePlan(input): CanvasPlan {
-      return {
-        kind: 'plan',
-        summary: `Create an image node for: ${input.message}`,
-        nodes: [
-          {
-            ref: 'image-1',
-            type: 'image',
-            title: '生成图片',
-            data: {
-              promptOverride: input.message,
-              modelId: 'stub-image',
-              orientation: 'landscape'
-            }
-          }
-        ],
-        edges: [],
-        runSteps: [{ ref: 'image-1', action: 'imageRun' }],
-        question: null,
-        dropped: []
-      }
-    }
-  }
-}
-
 /**
  * Creates and wires the actual Electron main-process runtime.
  * @param options - IPC registrar, storage paths, window provider, and optional deterministic test dependencies.
@@ -107,6 +83,8 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const jobs = createJobRepository(db)
   const assets = createAssetRepository(db)
   const agents = createAgentRepository(db)
+  const styles = createStyleRepository(db)
+  const snippets = createCanvasSnippetRepository(db)
   const workflows = createWorkflowRepository(db)
   try {
     workflows.create({ id: 'default', name: 'Default workspace', createdAt: clock(), updatedAt: clock() })
@@ -131,13 +109,13 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const reloader = createGatewayConfigReloader({ registry: gateways })
   const agentRegistry = createAgentRegistry({ agents, clock })
   const graphStore: CanvasGraphStore = {
-    getGraph() {
-      return workflows.getLatestVersion('default')?.graph ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
+    getGraph(workflowId = 'default') {
+      return workflows.getLatestVersion(workflowId)?.graph ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
     },
-    setGraph(graph) {
+    setGraph(graph, workflowId = 'default') {
       workflows.addVersion({
         id: `tool-graph-version-${clock()}`,
-        workflowId: 'default',
+        workflowId,
         graph,
         createdAt: clock(),
         createdBy: options.currentUserId ?? 'tool-runtime'
@@ -180,7 +158,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     chatMessages: createChatMessageRepository(db),
     planEvents,
     workflowId: 'default',
-    planner: options.planner ?? defaultPlanner(),
+    planner: options.planner ?? createDefaultOrchestratorPlanner(),
     idFactory: options.messageIdFactory ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`),
     planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
     clock
@@ -200,6 +178,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     clock,
     handlers: {
       'agent.run': orchestrator.createJobHandler(),
+      'canvas.generateAudio': (job) => ({ kind: 'report', summary: 'Queued local audio generation stub.', data: { nodeId: job.targetId ?? null } }),
       'canvas.generateImage': (job) =>
         runImageNodeSmokePath({
           job,
@@ -208,7 +187,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
           gatewayId: 'stub-main',
           assetRepo: assets,
           assetRoot: options.assetRoot
-        })
+        }),
+      'canvas.generateVideo': (job) => ({ kind: 'report', summary: 'Queued local video generation stub.', data: { nodeId: job.targetId ?? null } }),
+      'canvas.composeVideo': (job) => ({ kind: 'report', summary: 'Queued local video composition stub.', data: { nodeId: job.targetId ?? null } }),
+      'canvas.upscaleVideo': (job) => ({ kind: 'report', summary: 'Queued local video upscale stub.', data: { nodeId: job.targetId ?? null } }),
+      'canvas.muxAudioVideo': (job) => ({ kind: 'report', summary: 'Queued local audio/video mux stub.', data: { nodeId: job.targetId ?? null } })
     }
   })
 
@@ -219,9 +202,14 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     clock,
     currentUserId: options.currentUserId ?? 'user-local',
     assets,
-    graphStore
+    graphStore,
+    styles
   })
-  registerJobHandlers(options.ipcMain)
+  registerJobHandlers(options.ipcMain, {
+    jobs,
+    queue: autoQueue,
+    clock
+  })
   registerAssetHandlers(options.ipcMain, {
     assets,
     assetRoot: options.assetRoot,
@@ -229,6 +217,16 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     idFactory: (prefix) => `${prefix}-${crypto.randomUUID()}`
   })
   registerGatewayHandlers(options.ipcMain, { reloader })
+  registerStyleHandlers(options.ipcMain, {
+    styles,
+    clock,
+    idFactory: () => `style-${crypto.randomUUID()}`
+  })
+  registerCanvasSnippetHandlers(options.ipcMain, {
+    snippets,
+    clock,
+    idFactory: () => `snippet-${crypto.randomUUID()}`
+  })
   registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
   registerStorageHandlers(options.ipcMain)

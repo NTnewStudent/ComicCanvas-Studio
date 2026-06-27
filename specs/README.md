@@ -17,6 +17,7 @@ Tool-specific directories are not spec roots:
 | `core-platform-foundation/` | Cross-module foundation for canvas, jobs, assets, gateways, tools, plugins, agents, skills, and knowledge/RAG. |
 | `milestone-execution-plan/` | Canonical execution plan migrated from historical `task/M0-M5`, with gaps filled for skills, plugins, knowledge/RAG, and observability. |
 | `canvas-agent-orchestration/` | Detailed canvas orchestration MVP: CanvasPlan, connection matrix, async generation, prompt composition, assets, and PlanRunner. |
+| `hjwall-canvas-full-migration/` | Canonical migration plan for hjwall canvas capabilities into ComicCanvas, excluding real gateway request details, with user-flow completion evidence gates. |
 
 ## Required Files
 

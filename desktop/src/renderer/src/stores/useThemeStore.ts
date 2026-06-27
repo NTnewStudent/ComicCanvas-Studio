@@ -85,7 +85,7 @@ export const useThemeStore = create<ThemeState>()(
       partialize: (s) => ({ preference: s.preference }),
       merge: (persisted, current) => {
         const p = persisted as Partial<Pick<ThemeState, 'preference'>> | undefined
-        const preference = (p?.preference ?? current.preference) as ThemePreference
+        const preference = (p?.preference ?? current.preference)
         const resolved = resolveTheme(preference)
         if (typeof document !== 'undefined') applyThemeClass(resolved)
         return { ...current, preference, resolved }

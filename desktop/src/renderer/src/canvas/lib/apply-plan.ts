@@ -11,10 +11,32 @@ import type { CanvasPlan, PlanEdge, PlanNode, RunAction } from '../../../../../.
 import type { CanvasSnapshot, CanvasStoreEdge, CanvasStoreNode, CanvasStoreState } from '../store/canvas.store'
 import type { PlanRunnerStep } from './plan-runner'
 
-const NODE_TYPES = new Set<NodeType>(['text', 'image', 'video', 'imageConfigV2', 'videoConfigV2'])
+const NODE_TYPES = new Set<NodeType>([
+  'text',
+  'image',
+  'video',
+  'character',
+  'scene',
+  'audio',
+  'imageConfigV2',
+  'videoConfigV2',
+  'videoCompose',
+  'superResolution',
+  'muxAudioVideo',
+  'mjImage'
+])
 const EDGE_TYPES = new Set<EdgeType>(['promptOrder', 'imageRole', 'default'])
 const IMAGE_ROLES = new Set<ImageRole>(['first_frame', 'last_frame', 'reference'])
-const RUN_ACTIONS = new Set<RunAction>(['imageRun', 'videoRun', 'textPolish'])
+const RUN_ACTIONS = new Set<RunAction>([
+  'imageRun',
+  'videoRun',
+  'textPolish',
+  'audioRun',
+  'mjImageRun',
+  'videoComposeRun',
+  'superResolutionRun',
+  'muxAudioVideoRun'
+])
 
 const BASE_X = 120
 const COL_GAP = 320
@@ -49,6 +71,94 @@ function defaultData(node: PlanNode): CanvasNodeData {
       promptOverride: typeof node.data.promptOverride === 'string' ? node.data.promptOverride : '',
       modelId: typeof node.data.modelId === 'string' ? node.data.modelId : 'stub-image',
       orientation: node.data.orientation === 'portrait' || node.data.orientation === 'square' ? node.data.orientation : 'landscape',
+      assetId: null,
+      status: 'idle'
+    }
+  }
+
+  if (node.type === 'video') {
+    return {
+      label: node.title,
+      promptOverride: typeof node.data.promptOverride === 'string' ? node.data.promptOverride : '',
+      modelId: typeof node.data.modelId === 'string' ? node.data.modelId : 'stub-video',
+      orientation: node.data.orientation === 'portrait' || node.data.orientation === 'square' ? node.data.orientation : 'landscape',
+      durationSeconds: typeof node.data.durationSeconds === 'number' && Number.isFinite(node.data.durationSeconds) ? node.data.durationSeconds : 3,
+      firstFrameAssetId: null,
+      lastFrameAssetId: null,
+      assetId: null,
+      status: 'idle'
+    }
+  }
+
+  if (node.type === 'character') {
+    return {
+      label: node.title,
+      description: typeof node.data.description === 'string' ? node.data.description : '',
+      assetId: typeof node.data.assetId === 'string' ? node.data.assetId : null,
+      ...(typeof node.data.url === 'string' ? { url: node.data.url } : {})
+    }
+  }
+
+  if (node.type === 'scene') {
+    return {
+      label: node.title,
+      description: typeof node.data.description === 'string' ? node.data.description : '',
+      assetId: typeof node.data.assetId === 'string' ? node.data.assetId : null,
+      ...(typeof node.data.url === 'string' ? { url: node.data.url } : {})
+    }
+  }
+
+  if (node.type === 'audio') {
+    return {
+      label: node.title,
+      assetId: typeof node.data.assetId === 'string' ? node.data.assetId : null,
+      ...(typeof node.data.url === 'string' ? { url: node.data.url } : {}),
+      ...(typeof node.data.durationSeconds === 'number' ? { durationSeconds: node.data.durationSeconds } : {}),
+      status: 'idle'
+    }
+  }
+
+  if (node.type === 'videoCompose') {
+    return {
+      label: node.title,
+      inputOrder: Array.isArray(node.data.inputOrder) ? node.data.inputOrder.filter((value): value is string => typeof value === 'string') : [],
+      transitionName: typeof node.data.transitionName === 'string' ? node.data.transitionName : null,
+      modelId: typeof node.data.modelId === 'string' ? node.data.modelId : undefined,
+      assetId: null,
+      status: 'idle'
+    }
+  }
+
+  if (node.type === 'superResolution') {
+    const scene = node.data.scene === 'short_series' || node.data.scene === 'ugc' || node.data.scene === 'old_film' ? node.data.scene : 'aigc'
+    const resolution = node.data.resolution === '720p' || node.data.resolution === '4k' ? node.data.resolution : '1080p'
+    return {
+      label: node.title,
+      scene,
+      resolution,
+      fps: typeof node.data.fps === 'number' && Number.isFinite(node.data.fps) ? node.data.fps : 30,
+      assetId: null,
+      status: 'idle'
+    }
+  }
+
+  if (node.type === 'muxAudioVideo') {
+    return {
+      label: node.title,
+      modelId: typeof node.data.modelId === 'string' ? node.data.modelId : undefined,
+      assetId: null,
+      status: 'idle'
+    }
+  }
+
+  if (node.type === 'mjImage') {
+    return {
+      label: node.title,
+      prompt: typeof node.data.prompt === 'string' ? node.data.prompt : '',
+      modelId: typeof node.data.modelId === 'string' ? node.data.modelId : 'stub-image',
+      ratio: node.data.ratio === '9:16' || node.data.ratio === '3:4' || node.data.ratio === '1:1' || node.data.ratio === '4:3' || node.data.ratio === '21:9' ? node.data.ratio : '16:9',
+      urls: [],
+      selectedIndex: 0,
       assetId: null,
       status: 'idle'
     }

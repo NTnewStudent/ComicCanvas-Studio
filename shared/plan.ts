@@ -6,7 +6,15 @@
 import type { NodeType, EdgeType, ImageRole, Orientation } from './nodes'
 
 /** Plan 执行动作白名单 */
-export type RunAction = 'imageRun' | 'videoRun' | 'textPolish'
+export type RunAction =
+  | 'imageRun'
+  | 'videoRun'
+  | 'textPolish'
+  | 'audioRun'
+  | 'mjImageRun'
+  | 'videoComposeRun'
+  | 'superResolutionRun'
+  | 'muxAudioVideoRun'
 
 export interface PlanNode {
   /** Plan 内部引用 ID */

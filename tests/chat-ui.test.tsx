@@ -101,6 +101,40 @@ describe('M4 Chat UI', () => {
     expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: false })
   })
 
+  it('renders migrated comic-drama node and run-action summaries in PlanCard', () => {
+    const migratedPlan: CanvasPlan = {
+      kind: 'plan',
+      summary: 'Create a comic-drama workflow.',
+      nodes: [
+        { ref: 'story', type: 'text', title: 'Story', data: { content: 'rainy detective' } },
+        { ref: 'character', type: 'character', title: 'Character', data: { description: 'detective' } },
+        { ref: 'scene', type: 'scene', title: 'Scene', data: { description: 'alley' } },
+        { ref: 'key-image', type: 'mjImage', title: 'Key image', data: { prompt: 'rainy alley', status: 'idle' } },
+        { ref: 'voice', type: 'audio', title: 'Voice', data: { assetId: null, status: 'idle' } },
+        { ref: 'compose', type: 'videoCompose', title: 'Compose', data: { status: 'idle' } },
+        { ref: 'mux', type: 'muxAudioVideo', title: 'Mux', data: { status: 'idle' } },
+      ],
+      edges: [],
+      runSteps: [
+        { ref: 'key-image', action: 'mjImageRun' },
+        { ref: 'voice', action: 'audioRun' },
+        { ref: 'compose', action: 'videoComposeRun' },
+        { ref: 'mux', action: 'muxAudioVideoRun' },
+      ],
+      question: null,
+      dropped: [],
+    }
+
+    render(<PlanCard plan={migratedPlan} autoExecute={false} onAutoExecuteChange={vi.fn()} onApplyPlan={vi.fn()} />)
+
+    expect(screen.getByText('角色')).toBeInTheDocument()
+    expect(screen.getByText('场景')).toBeInTheDocument()
+    expect(screen.getByText('MJ 出图')).toBeInTheDocument()
+    expect(screen.getByText('音频生成')).toBeInTheDocument()
+    expect(screen.getByText('视频合成')).toBeInTheDocument()
+    expect(screen.getByText('音视频合成')).toBeInTheDocument()
+  })
+
   it('sends chat on Enter, keeps Shift+Enter as multiline, then fetches plan after planReady', async () => {
     const api = createApi()
 

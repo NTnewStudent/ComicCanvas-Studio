@@ -57,36 +57,38 @@ function mockOf<T extends (...args: never[]) => unknown>(fn: T): Mock {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks()
   cleanup()
 })
 
 describe('M5 AssetPanel folder UI', () => {
   it('renders nested folders, creates child folders, moves assets, and deletes the selected folder', async () => {
     const api = createApi()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<AssetPanel api={api} />)
 
-    expect(await screen.findByText('Asset library')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open folder Scenes' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Scenes' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '全部资产' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open folder Shots' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Shots' }))
     await waitFor(() => expect(mockOf(api.listAssets)).toHaveBeenLastCalledWith({ folderId: 'folder-shots' }))
     expect(await screen.findByText('asset-frame')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'New folder name' }), { target: { value: 'References' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Create folder' }))
+    fireEvent.change(screen.getByRole('textbox', { name: '新文件夹名称' }), { target: { value: 'References' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建' }))
 
     await waitFor(() =>
       expect(mockOf(api.createAssetFolder)).toHaveBeenCalledWith(expect.objectContaining({ name: 'References', parentId: 'folder-shots', type: 'mixed' }))
     )
-    expect(screen.getByText('Created References')).toBeInTheDocument()
+    expect(screen.getByText('已创建 References')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole('combobox', { name: 'Move Frame 1280x720' }), { target: { value: 'folder-scenes' } })
+    fireEvent.change(screen.getByRole('combobox', { name: '移动 Frame 1280x720' }), { target: { value: 'folder-scenes' } })
     await waitFor(() => expect(mockOf(api.moveAsset)).toHaveBeenCalledWith({ assetId: 'asset-frame', folderId: 'folder-scenes' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Trash Frame 1280x720' }))
+    fireEvent.click(screen.getByRole('button', { name: '回收 Frame 1280x720' }))
     await waitFor(() => expect(mockOf(api.trashAsset)).toHaveBeenCalledWith({ assetId: 'asset-frame', mode: 'safe' }))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete folder Shots' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
     await waitFor(() => expect(mockOf(api.deleteAssetFolder)).toHaveBeenCalledWith({ folderId: 'folder-shots', mode: 'force-tombstone' }))
   })
 })

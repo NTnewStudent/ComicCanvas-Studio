@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Archive,
-  FileText,
   Folder,
   FolderPlus,
   Grid3X3,
-  Image,
   LayoutList,
   Loader2,
   Search,
   Trash2,
-  Video,
   X,
 } from 'lucide-react'
 
@@ -132,6 +129,7 @@ const MEDIA_FILTER_TABS: { key: MediaFilter; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'image', label: '图片' },
   { key: 'video', label: '视频' },
+  { key: 'audio', label: '音频' },
   { key: 'text', label: '文本' },
   { key: 'document', label: '文档' },
 ]
@@ -140,6 +138,7 @@ const MEDIA_FILTER_TABS: { key: MediaFilter; label: string }[] = [
 const MEDIA_TYPE_ICONS: Record<AssetMediaType, string> = {
   image: '🖼️',
   video: '🎬',
+  audio: '🎧',
   text: '📄',
   document: '📋',
   other: '📦',

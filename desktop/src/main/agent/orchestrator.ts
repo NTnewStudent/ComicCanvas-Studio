@@ -104,6 +104,140 @@ async function* plannerEvents(options: OrchestratorRunOptions): AsyncGenerator<O
 }
 
 /**
+ * Creates the built-in planner used when no model-backed planner has been
+ * configured yet. It deliberately emits the accepted ComicCanvas migration
+ * vocabulary instead of a one-node demo for comic-drama requests.
+ * @returns The default deterministic orchestrator planner.
+ * @see docs/api-contracts/canvas-plan.md
+ */
+export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
+  return {
+    proposePlan(input): CanvasPlan {
+      const message = input.message.trim()
+      const wantsComicDrama = /漫画|短剧|角色|场景|配音|音频|合成|comic|drama|storyboard|episode|voice/i.test(message)
+
+      if (!wantsComicDrama) {
+        return {
+          kind: 'plan',
+          summary: `Create an image node for: ${message}`,
+          nodes: [
+            {
+              ref: 'image-1',
+              type: 'image',
+              title: '生成图片',
+              data: {
+                promptOverride: message,
+                modelId: 'stub-image',
+                orientation: 'landscape'
+              }
+            }
+          ],
+          edges: [],
+          runSteps: [{ ref: 'image-1', action: 'imageRun' }],
+          question: null,
+          dropped: []
+        }
+      }
+
+      return {
+        kind: 'plan',
+        summary: `Create a comic-drama canvas workflow for: ${message}`,
+        nodes: [
+          {
+            ref: 'story',
+            type: 'text',
+            title: '故事需求',
+            data: {
+              content: message
+            }
+          },
+          {
+            ref: 'character',
+            type: 'character',
+            title: '主角',
+            data: {
+              description: '从用户需求中提炼主角外观、身份、情绪和服装。'
+            }
+          },
+          {
+            ref: 'scene',
+            type: 'scene',
+            title: '场景',
+            data: {
+              description: '从用户需求中提炼环境、时间、氛围和关键道具。',
+              category: 'exterior'
+            }
+          },
+          {
+            ref: 'key-image',
+            type: 'mjImage',
+            title: '关键画面',
+            data: {
+              prompt: message,
+              modelId: 'stub-image',
+              ratio: '16:9',
+              status: 'idle',
+              assetId: null,
+              selectedIndex: 0
+            }
+          },
+          {
+            ref: 'voice',
+            type: 'audio',
+            title: '配音/环境声',
+            data: {
+              assetId: null,
+              durationSeconds: 8,
+              status: 'idle'
+            }
+          },
+          {
+            ref: 'compose',
+            type: 'videoCompose',
+            title: '视频合成',
+            data: {
+              inputOrder: [],
+              transitionName: 'crossfade',
+              modelId: 'local-compose',
+              assetId: null,
+              status: 'idle'
+            }
+          },
+          {
+            ref: 'mux',
+            type: 'muxAudioVideo',
+            title: '音视频合成',
+            data: {
+              modelId: 'local-mux',
+              assetId: null,
+              status: 'idle'
+            }
+          }
+        ],
+        edges: [
+          { source: 'story', target: 'character', edgeType: 'promptOrder' },
+          { source: 'story', target: 'scene', edgeType: 'promptOrder' },
+          { source: 'story', target: 'key-image', edgeType: 'promptOrder' },
+          { source: 'character', target: 'key-image', edgeType: 'default' },
+          { source: 'scene', target: 'key-image', edgeType: 'default' },
+          { source: 'key-image', target: 'compose', edgeType: 'default' },
+          { source: 'voice', target: 'mux', edgeType: 'default' },
+          { source: 'compose', target: 'mux', edgeType: 'default' }
+        ],
+        runSteps: [
+          { ref: 'key-image', action: 'mjImageRun' },
+          { ref: 'voice', action: 'audioRun' },
+          { ref: 'compose', action: 'videoComposeRun' },
+          { ref: 'mux', action: 'muxAudioVideoRun' }
+        ],
+        question: null,
+        dropped: []
+      }
+    }
+  }
+}
+
+/**
  * Runs one orchestrator turn as an AsyncGenerator state machine.
  * @param options - Run IDs, user message, planner, and plan ID dependency.
  * @returns Final run result containing the produced CanvasPlan.

@@ -121,7 +121,7 @@ describe('M4 applyPlan and PlanRunner', () => {
       ...legalPlan,
       nodes: [
         ...legalPlan.nodes,
-        { ref: 'audio-a', type: 'audio', title: 'Audio', data: { promptOverride: 'voiceover' } }
+        { ref: 'legacy-a', type: 'legacyNode', title: 'Legacy', data: { promptOverride: 'unsupported' } }
       ],
       edges: [
         ...legalPlan.edges,
@@ -151,7 +151,7 @@ describe('M4 applyPlan and PlanRunner', () => {
     expect(result.dropped).toEqual(
       expect.arrayContaining([
         'model:kept-warning',
-        expect.stringContaining('node:audio-a:unsupported_type'),
+        expect.stringContaining('node:legacy-a:unsupported_type'),
         expect.stringContaining('edge:video-a->text-a:connection_rejected'),
         expect.stringContaining('edge:missing->image-a:missing_node'),
         expect.stringContaining('edge:text-a->image-a:unsupported_edge_type'),
@@ -159,6 +159,46 @@ describe('M4 applyPlan and PlanRunner', () => {
         expect.stringContaining('runStep:text-a:unsupported_action')
       ])
     )
+  })
+
+  it('maps migrated run actions for audio, mj image, composition, upscale, and mux nodes', () => {
+    const store = createStore()
+    const migratedPlan: CanvasPlan = {
+      kind: 'plan',
+      summary: 'Build a migrated media chain.',
+      nodes: [
+        { ref: 'audio-a', type: 'audio', title: 'Audio', data: { assetId: 'asset-audio', durationSeconds: 8 } },
+        { ref: 'mj-a', type: 'mjImage', title: 'MJ', data: { prompt: 'key art', modelId: 'mj-v6' } },
+        { ref: 'compose-a', type: 'videoCompose', title: 'Compose', data: { inputOrder: [], transitionName: 'crossfade' } },
+        { ref: 'upscale-a', type: 'superResolution', title: 'Upscale', data: { resolution: '4k' } },
+        { ref: 'mux-a', type: 'muxAudioVideo', title: 'Mux', data: { modelId: 'mux-local' } }
+      ],
+      edges: [],
+      runSteps: [
+        { ref: 'audio-a', action: 'audioRun' },
+        { ref: 'mj-a', action: 'mjImageRun' },
+        { ref: 'compose-a', action: 'videoComposeRun' },
+        { ref: 'upscale-a', action: 'superResolutionRun' },
+        { ref: 'mux-a', action: 'muxAudioVideoRun' }
+      ],
+      question: null,
+      dropped: []
+    }
+
+    const result = applyCanvasPlan(migratedPlan, store, {
+      idFactory: (ref) => `plan-node-${ref}`,
+      edgeIdFactory: (edge) => `plan-edge-${edge.source}-${edge.target}`,
+      clock: () => 1_783_600_000_000
+    })
+
+    expect(result.runSteps).toEqual([
+      { ref: 'audio-a', nodeId: 'plan-node-audio-a', action: 'audioRun' },
+      { ref: 'mj-a', nodeId: 'plan-node-mj-a', action: 'mjImageRun' },
+      { ref: 'compose-a', nodeId: 'plan-node-compose-a', action: 'videoComposeRun' },
+      { ref: 'upscale-a', nodeId: 'plan-node-upscale-a', action: 'superResolutionRun' },
+      { ref: 'mux-a', nodeId: 'plan-node-mux-a', action: 'muxAudioVideoRun' }
+    ])
+    expect(result.dropped).toEqual([])
   })
 
   it('runs plan steps serially and finishes only after the third terminal success', () => {

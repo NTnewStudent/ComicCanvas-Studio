@@ -6,6 +6,8 @@
 import { AlertTriangle, Check, Play, Sparkles } from 'lucide-react'
 
 import type { CanvasPlan } from '../../../../../shared/plan'
+import type { NodeType } from '../../../../../shared/nodes'
+import type { RunAction } from '../../../../../shared/plan'
 import { cn } from '../lib/cn'
 
 export interface ApplyPlanOptions {
@@ -21,6 +23,48 @@ export interface PlanCardProps {
 
 function planCounts(plan: CanvasPlan): string[] {
   return [`${plan.nodes.length} 个节点`, `${plan.edges.length} 条边`, `${plan.runSteps.length} 个运行步骤`]}
+
+const NODE_LABELS: Partial<Record<NodeType, string>> = {
+  text: '文本',
+  image: '图片',
+  video: '视频',
+  character: '角色',
+  scene: '场景',
+  audio: '音频',
+  imageConfigV2: '生图配置',
+  videoConfigV2: '视频配置',
+  videoCompose: '视频合成',
+  superResolution: '超分',
+  muxAudioVideo: '音视频合成',
+  mjImage: 'MJ 出图',
+}
+
+const ACTION_LABELS: Partial<Record<RunAction, string>> = {
+  imageRun: '图片生成',
+  videoRun: '视频生成',
+  textPolish: '文本润色',
+  audioRun: '音频生成',
+  mjImageRun: 'MJ 出图',
+  videoComposeRun: '视频合成',
+  superResolutionRun: '视频超分',
+  muxAudioVideoRun: '音视频合成',
+}
+
+function uniqueLabels(values: string[]): string[] {
+  return Array.from(new Set(values)).filter(Boolean)
+}
+
+function planNodeLabels(plan: CanvasPlan): string[] {
+  return uniqueLabels(plan.nodes.map((node) => NODE_LABELS[node.type] ?? node.type))
+}
+
+function planActionLabels(plan: CanvasPlan): string[] {
+  return uniqueLabels(plan.runSteps.map((step) => ACTION_LABELS[step.action] ?? step.action))
+}
+
+function planSummaryLabels(plan: CanvasPlan): string[] {
+  return uniqueLabels([...planNodeLabels(plan), ...planActionLabels(plan)])
+}
 
 /**
  * Renders a sanitized CanvasPlan summary and apply controls.
@@ -54,6 +98,15 @@ export function PlanCard({ plan, autoExecute, onAutoExecuteChange, onApplyPlan }
               {planCounts(plan).map((count) => (
                 <span key={count} className="rounded-pill bg-bg-input px-2.5 py-1 text-[12px] text-text-secondary">
                   {count}
+                </span>
+              ))}
+            </div>
+          )}
+          {!isClarify && (
+            <div className="mt-3 flex flex-wrap gap-2" aria-label="计划节点和运行摘要">
+              {planSummaryLabels(plan).map((label) => (
+                <span key={label} className="rounded-lg border border-border-secondary px-2 py-1 text-[12px] text-text-secondary">
+                  {label}
                 </span>
               ))}
             </div>

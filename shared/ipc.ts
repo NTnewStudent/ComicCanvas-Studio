@@ -30,6 +30,8 @@ import type { AgentDefinition, AgentRunRequest, AgentRunTicket, SpawnSubAgentInp
 import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillListRequest } from './skills'
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
 import type { ToolDescriptor, ToolInvocationRecord } from './tools'
+import type { StylePresetSaveInput, StylePresetView, StyleProjectDefaultRequest } from './styles'
+import type { CanvasSnippetDeleteRequest, CanvasSnippetDeleteResponse, CanvasSnippetSaveInput, CanvasSnippetSaveResponse, CanvasSnippetView } from './snippets'
 
 export type CanvasIpcChannel =
   | 'canvas.chatSend'
@@ -45,6 +47,8 @@ export type CanvasIpcChannel =
   | 'canvas.createWorkflow'
   | 'canvas.renameWorkflow'
   | 'canvas.deleteWorkflow'
+  | 'canvas.exportWorkflow'
+  | 'canvas.importWorkflow'
 
 export type JobIpcChannel =
   | 'job.enqueue'
@@ -73,6 +77,19 @@ export type GatewayIpcChannel =
   | 'gateway.test'
   | 'gateway.reload'
   | 'gateway.changed'
+
+export type StyleIpcChannel =
+  | 'style.list'
+  | 'style.save'
+  | 'style.delete'
+  | 'style.setProjectDefault'
+  | 'style.getProjectDefault'
+  | 'style.changed'
+
+export type CanvasSnippetIpcChannel =
+  | 'canvasSnippet.list'
+  | 'canvasSnippet.save'
+  | 'canvasSnippet.delete'
 
 export type ToolIpcChannel =
   | 'tool.list'
@@ -125,6 +142,8 @@ export type IpcChannel =
   | JobIpcChannel
   | AssetIpcChannel
   | GatewayIpcChannel
+  | StyleIpcChannel
+  | CanvasSnippetIpcChannel
   | ToolIpcChannel
   | AgentIpcChannel
   | SkillIpcChannel
@@ -179,6 +198,7 @@ export interface CanvasApplyPlanResponse {
 export interface CanvasRunPlanRequest {
   graphVersion: string
   runSteps: PlanRunStep[]
+  workflowId?: string
 }
 
 export interface CanvasRunPlanResponse {
@@ -193,18 +213,37 @@ export interface WorkflowSummaryView {
   nodeCount: number
 }
 
+export interface WorkflowExportView {
+  schemaVersion: 1
+  name: string
+  graph: CanvasGraphSnapshot
+}
+
+export interface WorkflowImportRequest {
+  json: string
+  name?: string
+}
+
+export interface WorkflowImportResponse {
+  workflowId: string
+  graphVersion: string
+  dropped: string[]
+}
+
 export interface IpcRequestMap {
   'canvas.chatSend': { message: string; agentId?: string }
   'canvas.chatGetPlan': { messageId: string }
   'canvas.applyPlan': CanvasApplyPlanRequest
   'canvas.runPlan': CanvasRunPlanRequest
-  'canvas.runNode': { nodeId: string }
+  'canvas.runNode': { nodeId: string; workflowId?: string }
   'canvas.saveGraph': CanvasSaveGraphRequest
   'canvas.loadGraph': CanvasLoadGraphRequest
   'canvas.listWorkflows': void
   'canvas.createWorkflow': { name: string }
   'canvas.renameWorkflow': { workflowId: string; name: string }
   'canvas.deleteWorkflow': { workflowId: string }
+  'canvas.exportWorkflow': { workflowId: string }
+  'canvas.importWorkflow': WorkflowImportRequest
   'job.enqueue': JobCreateInput
   'job.get': { jobId: string }
   'job.list': JobListFilter
@@ -222,6 +261,14 @@ export interface IpcRequestMap {
   'gateway.delete': { gatewayId: string }
   'gateway.test': { gatewayId: string; channel: 'text' | 'image' | 'video' }
   'gateway.reload': { gatewayId?: string }
+  'style.list': { includeDisabled?: boolean }
+  'style.save': StylePresetSaveInput
+  'style.delete': { stylePresetId: string }
+  'style.setProjectDefault': StyleProjectDefaultRequest
+  'style.getProjectDefault': { workflowId: string }
+  'canvasSnippet.list': Record<string, never>
+  'canvasSnippet.save': CanvasSnippetSaveInput
+  'canvasSnippet.delete': CanvasSnippetDeleteRequest
   'tool.list': { includeDisabled?: boolean }
   'tool.invoke': { toolId: string; input: unknown; traceId: string }
   'tool.enable': { toolId: string }
@@ -260,6 +307,8 @@ export interface IpcResponseMap {
   'canvas.createWorkflow': { id: string; name: string }
   'canvas.renameWorkflow': { id: string; name: string }
   'canvas.deleteWorkflow': { id: string; deleted: true }
+  'canvas.exportWorkflow': WorkflowExportView
+  'canvas.importWorkflow': WorkflowImportResponse | { errorClass: string; message: string; retryable: false }
   'job.enqueue': JobTicket
   'job.get': JobRecord
   'job.list': JobRecord[]
@@ -277,6 +326,14 @@ export interface IpcResponseMap {
   'gateway.delete': { gatewayId: string; deleted: true }
   'gateway.test': JobTicket
   'gateway.reload': { reloadedGatewayIds: string[] }
+  'style.list': StylePresetView[]
+  'style.save': StylePresetView
+  'style.delete': { stylePresetId: string; deleted: true }
+  'style.setProjectDefault': { workflowId: string; stylePresetId: string | null }
+  'style.getProjectDefault': { workflowId: string; stylePresetId: string | null }
+  'canvasSnippet.list': CanvasSnippetView[]
+  'canvasSnippet.save': CanvasSnippetSaveResponse
+  'canvasSnippet.delete': CanvasSnippetDeleteResponse
   'tool.list': ToolDescriptor[]
   'tool.invoke': ToolInvocationRecord
   'tool.enable': ToolDescriptor
@@ -311,6 +368,7 @@ export interface IpcEventMap {
   'job.failed': Extract<JobTerminalEvent, { channel: 'job.failed' }>
   'asset.changed': { assetId: string; change: 'created' | 'updated' | 'trashed' | 'tombstoned' }
   'gateway.changed': { gatewayId: string; change: 'saved' | 'deleted' | 'reloaded' }
+  'style.changed': { stylePresetId: string; change: 'saved' | 'deleted' | 'projectDefaultChanged' }
   'tool.progress': { invocationId: string; message: string; progress?: number }
   'tool.completed': { invocationId: string; output: unknown }
   'tool.failed': { invocationId: string; error: SafeErrorEnvelope }

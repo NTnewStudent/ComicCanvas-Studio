@@ -24,6 +24,8 @@ describe('M1 DB schema and migration baseline', () => {
       'agent_runs',
       'skills',
       'skill_invocations',
+      'style_presets',
+      'canvas_snippets',
       'knowledge_documents',
       'knowledge_chunks',
       'context_packs'

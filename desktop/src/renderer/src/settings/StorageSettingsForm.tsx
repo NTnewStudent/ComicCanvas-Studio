@@ -229,7 +229,7 @@ export default function StorageSettingsForm(): JSX.Element {
       <div className="flex items-center gap-3 pt-2">
         <button
           type="button"
-          onClick={handleTestConnection}
+          onClick={() => void handleTestConnection()}
           disabled={testState === 'testing'}
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200 border',
@@ -244,7 +244,7 @@ export default function StorageSettingsForm(): JSX.Element {
 
         <button
           type="button"
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           disabled={saving}
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors duration-200',

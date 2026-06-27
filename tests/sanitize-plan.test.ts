@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { sanitizePlan } from '../desktop/src/main/agent/sanitize-plan'
+import { canConnect } from '../shared/connection-matrix'
 import type { CanvasPlan } from '../shared/plan'
 
 const safePlan: CanvasPlan = {
@@ -58,12 +59,82 @@ describe('sanitizePlan', () => {
     expect(sanitizePlan(cloneSafePlan())).toEqual(safePlan)
   })
 
+  it('preserves migrated semantic and tool nodes with legal connections', () => {
+    const plan: CanvasPlan = {
+      kind: 'plan',
+      summary: 'Create a comic-drama scene with character, MJ image, video composition, and mux.',
+      nodes: [
+        { ref: 'story', type: 'text', title: 'Story', data: { content: 'A quiet hero enters a neon station.' } },
+        { ref: 'hero', type: 'character', title: 'Hero', data: { description: 'calm detective' } },
+        { ref: 'station', type: 'scene', title: 'Station', data: { description: 'rainy neon platform' } },
+        { ref: 'mj', type: 'mjImage', title: 'MJ image', data: { prompt: 'cinematic keyframe' } },
+        { ref: 'video-gen', type: 'videoConfigV2', title: 'Video gen', data: { promptOverride: 'slow dolly' } },
+        { ref: 'compose', type: 'videoCompose', title: 'Compose', data: { transitionName: 'cut' } },
+        { ref: 'composed-video', type: 'video', title: 'Composed Video', data: { promptOverride: '' } },
+        { ref: 'voice', type: 'audio', title: 'Voice', data: { assetId: 'asset-audio' } },
+        { ref: 'mux', type: 'muxAudioVideo', title: 'Mux', data: {} },
+        { ref: 'upscale', type: 'superResolution', title: 'Upscale', data: { resolution: '1080p' } },
+        { ref: 'video-1', type: 'video', title: 'Video', data: { promptOverride: '' } }
+      ],
+      edges: [
+        { source: 'story', target: 'hero', edgeType: 'default' },
+        { source: 'hero', target: 'mj', edgeType: 'default' },
+        { source: 'station', target: 'video-gen', edgeType: 'default' },
+        { source: 'mj', target: 'video-gen', edgeType: 'imageRole', imageRole: 'first_frame' },
+        { source: 'video-gen', target: 'compose', edgeType: 'default' },
+        { source: 'compose', target: 'composed-video', edgeType: 'default' },
+        { source: 'composed-video', target: 'mux', edgeType: 'default' },
+        { source: 'voice', target: 'mux', edgeType: 'default' },
+        { source: 'mux', target: 'video-1', edgeType: 'default' },
+        { source: 'upscale', target: 'video-1', edgeType: 'default' }
+      ],
+      runSteps: [
+        { ref: 'mj', action: 'imageRun' },
+        { ref: 'mj', action: 'mjImageRun' },
+        { ref: 'video-gen', action: 'videoRun' },
+        { ref: 'voice', action: 'audioRun' },
+        { ref: 'compose', action: 'videoComposeRun' },
+        { ref: 'mux', action: 'muxAudioVideoRun' },
+        { ref: 'upscale', action: 'superResolutionRun' }
+      ],
+      question: null,
+      dropped: []
+    }
+
+    const sanitized = sanitizePlan(plan)
+
+    expect(sanitized.nodes.map((node) => node.type)).toEqual([
+      'text',
+      'character',
+      'scene',
+      'mjImage',
+      'videoConfigV2',
+      'videoCompose',
+      'video',
+      'audio',
+      'muxAudioVideo',
+      'superResolution',
+      'video'
+    ])
+    expect(sanitized.edges).toHaveLength(10)
+    expect(sanitized.runSteps).toEqual([
+      { ref: 'mj', action: 'imageRun' },
+      { ref: 'mj', action: 'mjImageRun' },
+      { ref: 'video-gen', action: 'videoRun' },
+      { ref: 'voice', action: 'audioRun' },
+      { ref: 'compose', action: 'videoComposeRun' },
+      { ref: 'mux', action: 'muxAudioVideoRun' },
+      { ref: 'upscale', action: 'superResolutionRun' }
+    ])
+    expect(sanitized.dropped).toEqual([])
+  })
+
   it('drops unsupported nodes, illegal edges, missing references, and invalid run actions', () => {
     const dirty = {
       ...cloneSafePlan(),
       nodes: [
         ...cloneSafePlan().nodes,
-        { ref: 'audio-1', type: 'audio', title: 'Audio', data: { promptOverride: 'voiceover' } },
+        { ref: 'legacy-1', type: 'legacyNode', title: 'Legacy', data: { promptOverride: 'unsupported' } },
         { ref: '', type: 'text', title: 'Blank ref', data: {} }
       ],
       edges: [
@@ -76,7 +147,7 @@ describe('sanitizePlan', () => {
         ...cloneSafePlan().runSteps,
         { ref: 'text-1', action: 'deleteEverything' },
         { ref: 'missing', action: 'imageRun' },
-        { ref: 'audio-1', action: 'videoRun' }
+        { ref: 'legacy-1', action: 'videoRun' }
       ]
     }
 
@@ -87,14 +158,14 @@ describe('sanitizePlan', () => {
     expect(sanitized.runSteps).toEqual(safePlan.runSteps)
     expect(sanitized.dropped).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('node:audio-1:unsupported_type'),
+        expect.stringContaining('node:legacy-1:unsupported_type'),
         expect.stringContaining('node:<missing-ref>:missing_ref'),
         expect.stringContaining('edge:video-1->text-1:connection_rejected'),
         expect.stringContaining('edge:missing->image-1:missing_node'),
         expect.stringContaining('edge:text-1->image-1:unsupported_edge_type'),
         expect.stringContaining('runStep:text-1:unsupported_action'),
         expect.stringContaining('runStep:missing:missing_node'),
-        expect.stringContaining('runStep:audio-1:missing_node')
+        expect.stringContaining('runStep:legacy-1:missing_node')
       ])
     )
   })
@@ -216,11 +287,10 @@ describe('sanitizePlan', () => {
 
         expect(sourceType).toBeDefined()
         expect(targetType).toBeDefined()
-        expect(
-          (sourceType === 'text' && (targetType === 'image' || targetType === 'video')) ||
-            (sourceType === 'image' && (targetType === 'image' || targetType === 'video')) ||
-            (sourceType === 'video' && targetType === 'video')
-        ).toBe(true)
+        if (!sourceType || !targetType) {
+          throw new Error('Sanitized edge references missing nodes')
+        }
+        expect(canConnect(sourceType, targetType)).toBe(true)
         preservedEdges += 1
       }
 

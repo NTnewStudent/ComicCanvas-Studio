@@ -71,7 +71,7 @@ export function ProjectManager({
   }, [])
 
   useEffect(() => {
-    fetchWorkflows()
+    void fetchWorkflows()
   }, [fetchWorkflows])
 
   const handleCreate = useCallback(async () => {
@@ -163,7 +163,7 @@ export function ProjectManager({
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate()
+                if (e.key === 'Enter') void handleCreate()
                 if (e.key === 'Escape') {
                   setShowCreateDialog(false)
                   setNewName('')
@@ -173,7 +173,7 @@ export function ProjectManager({
               className="flex-1 rounded-lg border border-border-secondary bg-bg-base px-3 py-2 text-[13px] text-text-base outline-none placeholder:text-text-muted focus:border-brand"
             />
             <button
-              onClick={handleCreate}
+              onClick={() => void handleCreate()}
               className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-bg-base transition hover:bg-brand-hover"
             >
               <Check className="h-4 w-4" />
@@ -230,7 +230,7 @@ export function ProjectManager({
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleDelete(wf.id)
+                              void handleDelete(wf.id)
                             }}
                             className="rounded-lg bg-red-500 px-3 py-1 text-[12px] font-medium text-white transition hover:bg-red-600"
                           >
@@ -257,13 +257,13 @@ export function ProjectManager({
                           value={renameValue}
                           onChange={(e) => setRenameValue(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleRename(wf.id)
+                            if (e.key === 'Enter') void handleRename(wf.id)
                             if (e.key === 'Escape') setRenamingId(null)
                           }}
                           className="flex-1 rounded border border-border-secondary bg-bg-base px-2 py-1 text-[14px] font-semibold text-text-base outline-none focus:border-brand"
                         />
                         <button
-                          onClick={() => handleRename(wf.id)}
+                          onClick={() => void handleRename(wf.id)}
                           className="flex h-6 w-6 items-center justify-center rounded text-green-400 transition hover:bg-bg-hover"
                         >
                           <Check className="h-3.5 w-3.5" />

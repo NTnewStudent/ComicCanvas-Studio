@@ -37,6 +37,14 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     window.show()
   })
 
+  window.webContents.once('did-finish-load', () => {
+    window.show()
+  })
+
+  window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {
+    console.error('Failed to load renderer', { errorCode, errorDescription, validatedUrl })
+  })
+
   if (rendererDevServerUrl) {
     await window.loadURL(rendererDevServerUrl)
   } else {

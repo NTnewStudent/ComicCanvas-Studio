@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Folder, Image, Loader2, Search, Video, X } from 'lucide-react'
+import { Folder, Image, Loader2, Music, Search, Video, X } from 'lucide-react'
 
 import type { AssetFolder, AssetRecord } from '../../../../../../shared/assets'
 import type { AssetLibraryApi } from '../../assets/AssetPanel'
@@ -8,10 +8,10 @@ import { cn } from '../../lib/cn'
 export interface CanvasAssetPanelProps {
   open: boolean
   onClose: () => void
-  onInsertAsset: (asset: { id: string; url: string; type: 'image' | 'video'; name: string }) => void
+  onInsertAsset: (asset: { id: string; url: string; type: 'image' | 'video' | 'audio'; name: string }) => void
 }
 
-type MediaTab = 'all' | 'image' | 'video'
+type MediaTab = 'all' | 'image' | 'video' | 'audio'
 type LoadState = 'loading' | 'ready' | 'error'
 
 interface FolderNode {
@@ -59,7 +59,8 @@ function assetDisplayName(asset: AssetRecord): string {
   return basename(asset.relativePath) || asset.id
 }
 
-function toInsertType(mediaType: AssetRecord['mediaType']): 'image' | 'video' {
+function toInsertType(mediaType: AssetRecord['mediaType']): 'image' | 'video' | 'audio' {
+  if (mediaType === 'audio') return 'audio'
   return mediaType === 'video' ? 'video' : 'image'
 }
 
@@ -328,6 +329,8 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
                       />
                     ) : asset.mediaType === 'video' ? (
                       <Video className="h-6 w-6 text-text-muted" />
+                    ) : asset.mediaType === 'audio' ? (
+                      <Music className="h-6 w-6 text-text-muted" />
                     ) : (
                       <Image className="h-6 w-6 text-text-muted" />
                     )}

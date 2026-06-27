@@ -10,8 +10,9 @@ describe('M1 Electron skeleton', () => {
     }
 
     expect(packageJson.workspaces).toContain('desktop')
-    expect(packageJson.scripts?.dev).toBe('bun run --filter @comic-canvas/desktop dev')
-    expect(packageJson.scripts?.build).toBe('bun run --filter @comic-canvas/desktop build && tsc -p tsconfig.build.json')
+    expect(packageJson.scripts?.dev).toBe('bun run rebuild:native && bun run --filter @comic-canvas/desktop dev')
+    expect(packageJson.scripts?.test).toBe('bun scripts/run-vitest.mjs run')
+    expect(packageJson.scripts?.build).toBe('bun run rebuild:native && bun run --filter @comic-canvas/desktop build && bun node_modules/typescript/bin/tsc -p tsconfig.build.json')
   })
 
   it('provides main, preload, renderer, and electron-vite entry files', () => {
@@ -34,5 +35,12 @@ describe('M1 Electron skeleton', () => {
     expect(mainSource).toContain('contextIsolation: true')
     expect(mainSource).toContain('nodeIntegration: false')
     expect(mainSource).toContain('sandbox: false')
+  })
+
+  it('shows the main window after renderer load even if ready-to-show does not fire', () => {
+    const mainSource = readFileSync('desktop/src/main/index.ts', 'utf8')
+
+    expect(mainSource).toContain("window.webContents.once('did-finish-load'")
+    expect(mainSource).toContain('window.show()')
   })
 })

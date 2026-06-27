@@ -1,17 +1,19 @@
 import { useState } from 'react'
-import { IconWorld, IconRobot, IconTool, IconDatabase } from '@tabler/icons-react'
+import { IconWorld, IconRobot, IconTool, IconDatabase, IconPalette } from '@tabler/icons-react'
 import { cn } from '../lib/cn'
 import { GatewayList } from './GatewayList'
 import { AgentList } from './AgentList'
 import { ToolList } from './ToolList'
+import { StyleLibrary } from './StyleLibrary'
 import StorageSettingsForm from './StorageSettingsForm'
 
-type SettingsTab = 'gateway' | 'agent' | 'tool' | 'storage'
+type SettingsTab = 'gateway' | 'agent' | 'tool' | 'style' | 'storage'
 
 const tabs: { id: SettingsTab; label: string; icon: typeof IconWorld }[] = [
   { id: 'gateway', label: '网关', icon: IconWorld },
   { id: 'agent', label: 'Agent', icon: IconRobot },
   { id: 'tool', label: '工具', icon: IconTool },
+  { id: 'style', label: '风格', icon: IconPalette },
   { id: 'storage', label: '存储', icon: IconDatabase },
 ]
 
@@ -61,6 +63,7 @@ export default function SettingsPage(): JSX.Element {
           {activeTab === 'gateway' && <GatewayList />}
           {activeTab === 'agent' && <AgentList />}
           {activeTab === 'tool' && <ToolList />}
+          {activeTab === 'style' && <StyleLibrary />}
           {activeTab === 'storage' && <StorageSettingsForm />}
         </div>
       </div>

@@ -5,7 +5,7 @@
 
 import type { Orientation } from './nodes'
 
-export type AssetMediaType = 'image' | 'video' | 'text' | 'document' | 'other'
+export type AssetMediaType = 'image' | 'video' | 'audio' | 'text' | 'document' | 'other'
 
 export type AssetStatus = 'pending' | 'ready' | 'failed' | 'trashed' | 'tombstoned'
 

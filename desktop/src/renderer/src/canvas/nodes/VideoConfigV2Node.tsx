@@ -49,8 +49,8 @@ import type {
   VideoRatio,
   VideoResolution,
   NodeStatus,
-  CanvasNodeData,
 } from '../../../../../../shared/nodes'
+import type { StylePresetView } from '../../../../../../shared/styles'
 import { cn } from '../../lib/cn'
 import {
   V2_VIDEO_WIDTH_PORTRAIT,
@@ -62,7 +62,14 @@ import RunStatusBadge from '../components/RunStatusBadge'
 import Chip from '../components/Chip'
 import PopoverMenu from '../components/PopoverMenu'
 import MentionTextarea from '../components/MentionTextarea'
+import { createCanvasEdge } from '../lib/canvas-edge-creation'
 import { canvasStore } from '../store/canvas.store'
+
+interface MentionTarget {
+  id: string
+  name: string
+  type: string
+}
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────
 
@@ -81,7 +88,6 @@ const RATIO_LABELS: Record<VideoRatio, string> = {
 
 const DURATION_MIN = 5
 const DURATION_MAX = 15
-const DURATION_STEP = 1
 
 /** 模拟视频生成延迟（ms） */
 const MOCK_GENERATE_DELAY = 2500
@@ -176,17 +182,37 @@ interface ToolbarProps {
   nodeId: string
   data: VideoNodeData
   generating: boolean
+  stylePresets: StylePresetView[]
+  styleLoadState: 'idle' | 'loading' | 'ready' | 'error'
+  mentionTargets: MentionTarget[]
   onUpdateData: (patch: Partial<VideoNodeData>) => void
   onMentionSelect?: (mentionedNodeId: string, sourceNodeId: string) => void
   onMentionsChange?: (currentMentionIds: string[], sourceNodeId: string) => void
 }
 
-const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData, onMentionSelect, onMentionsChange }) => {
+const VideoToolbar: FC<ToolbarProps> = ({
+  nodeId,
+  data,
+  generating,
+  stylePresets,
+  styleLoadState,
+  mentionTargets,
+  onUpdateData,
+  onMentionSelect,
+  onMentionsChange,
+}) => {
   const ratio = data.ratio ?? '9:16'
   const duration = data.duration ?? data.durationSeconds ?? 5
   const resolution = data.resolution ?? '720p'
   const prompt = data.prompt ?? ''
   const referenceAssets = data.referenceAssets ?? []
+  const selectedStyle = stylePresets.find((s) => s.id === data.stylePresetId)
+  const styleLabel = selectedStyle?.name
+    ?? (data.stylePresetId
+      ? styleLoadState === 'loading'
+        ? '风格加载中'
+        : '风格不可用'
+      : '选择风格')
 
   // ── 状态芯片 mock 数据（纯 UI） ──
   const hasPromptConnection = true // mock: 假定已有 prompt 连线
@@ -225,6 +251,14 @@ const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData
     [],
   )
 
+  const styleItems = useMemo(
+    () => [
+      { value: '', label: '不使用风格' },
+      ...stylePresets.map((style) => ({ value: style.id, label: style.name })),
+    ],
+    [stylePresets],
+  )
+
   return (
     <div
       className="nodrag nowheel relative w-[960px] overflow-visible rounded-[24px] border border-border-primary bg-bg-panel p-4 shadow-card"
@@ -236,6 +270,7 @@ const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData
         placeholder="描述视频内容、动作、镜头运动..."
         rows={3}
         className="nodrag nowheel"
+        mentionTargets={mentionTargets}
         sourceNodeId={nodeId}
         {...(onMentionSelect ? { onMentionSelect } : {})}
         {...(onMentionsChange ? { onMentionsChange } : {})}
@@ -329,12 +364,17 @@ const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData
         />
 
         {/* 画风 */}
-        <Chip
-          icon={<Film className="h-3.5 w-3.5" />}
-          label="画风 ▾"
-          onClick={() => {
-            /* 桩：画风选择暂不实现 */
-          }}
+        <PopoverMenu
+          trigger={
+            <Chip
+              icon={<Film className="h-3.5 w-3.5" />}
+              label={`${styleLabel} ▾`}
+              active={!!data.stylePresetId}
+            />
+          }
+          items={styleItems}
+          selected={data.stylePresetId ?? ''}
+          onSelect={(v) => onUpdateData({ stylePresetId: v })}
         />
 
         {/* 比例 */}
@@ -348,7 +388,7 @@ const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData
           }
           items={ratioItems}
           selected={ratio}
-          onSelect={(v) => onUpdateData({ ratio: v as VideoRatio })}
+          onSelect={(v) => onUpdateData({ ratio: v })}
         />
 
         {/* 时长 */}
@@ -364,7 +404,7 @@ const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData
             return { value: d, label: `${d}s` }
           })}
           selected={duration}
-          onSelect={(v) => onUpdateData({ duration: v as number })}
+          onSelect={(v) => onUpdateData({ duration: v })}
         />
 
         {/* 分辨率 */}
@@ -377,7 +417,7 @@ const VideoToolbar: FC<ToolbarProps> = ({ nodeId, data, generating, onUpdateData
           }
           items={resolutionItems}
           selected={resolution}
-          onSelect={(v) => onUpdateData({ resolution: v as VideoResolution })}
+          onSelect={(v) => onUpdateData({ resolution: v })}
         />
 
         {/* 弹性空间 */}
@@ -419,12 +459,15 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
 
   // ── Store (vanilla zustand → React hook) ──
   const runStatus = useStore(canvasStore, (s) => s.getNodeRunStatus(id))
+  const canvasNodes = useStore(canvasStore, (s) => s.nodes)
 
   // ── 本地状态 ──
   const [isHovered, setIsHovered] = useState(false)
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false)
   const [isPreviewPinned, setIsPreviewPinned] = useState(false)
   const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null)
+  const [stylePresets, setStylePresets] = useState<StylePresetView[]>([])
+  const [styleLoadState, setStyleLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
 
   const previewVideoRef = useRef<HTMLVideoElement>(null)
   const showControls = isHovered || !!selected
@@ -436,6 +479,16 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
   const status = d.status
   const previewState = derivePreviewState(url, status)
   const generating = previewState === 'generating'
+  const mentionTargets = useMemo<MentionTarget[]>(
+    () => canvasNodes
+      .filter((node) => node.id !== id)
+      .map((node) => ({
+        id: node.id,
+        name: node.data.label || node.id,
+        type: node.type,
+      })),
+    [canvasNodes, id],
+  )
 
   // 预览卡尺寸：无结果时固定 9:16，有结果时按实际比例
   const displayRatio: VideoRatio = hasResult ? ratio : '9:16'
@@ -446,7 +499,7 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
   // ── 数据更新 ──
   const updateData = useCallback(
     (patch: Partial<VideoNodeData>) => {
-      canvasStore.getState().updateNodeData(id, patch as Partial<CanvasNodeData>)
+      canvasStore.getState().updateNodeData(id, patch)
     },
     [id],
   )
@@ -454,19 +507,15 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
   // ── @mention 自动连线管理 ──
   const handleMentionSelect = useCallback(
     (mentionedNodeId: string, srcNodeId: string) => {
-      const state = canvasStore.getState()
-      const exists = state.edges.some(
-        (e) => e.source === srcNodeId && e.target === mentionedNodeId,
-      )
-      if (exists) return
-      const result = state.addEdge(srcNodeId, mentionedNodeId)
-      if (result.ok) {
-        const edges = canvasStore.getState().edges
-        const updated = edges.map((e) =>
-          e.id === result.edgeId ? { ...e, data: { ...e.data, createdByMention: true } } : e,
-        )
-        canvasStore.getState().setEdges(updated)
-      }
+      createCanvasEdge({
+        store: canvasStore,
+        request: {
+          source: mentionedNodeId,
+          target: srcNodeId,
+          reason: 'mention',
+          markCreatedByMention: true,
+        },
+      })
     },
     [],
   )
@@ -475,9 +524,9 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
     (currentMentionIds: string[], srcNodeId: string) => {
       const state = canvasStore.getState()
       const filtered = state.edges.filter((edge) => {
-        if (edge.source !== srcNodeId) return true
+        if (edge.target !== srcNodeId) return true
         if (!edge.data.createdByMention) return true
-        return currentMentionIds.includes(edge.target)
+        return currentMentionIds.includes(edge.source)
       })
       if (filtered.length !== state.edges.length) {
         state.setEdges(filtered)
@@ -554,6 +603,37 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
     setIsPreviewPinned(false)
     setIsPreviewPlaying(false)
   }, [url])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadStyles = async (): Promise<void> => {
+      const api = window.comicCanvas
+      if (!api?.listStyles) {
+        setStylePresets([])
+        setStyleLoadState('ready')
+        return
+      }
+
+      setStyleLoadState('loading')
+      try {
+        const styles = await api.listStyles({ includeDisabled: false })
+        if (cancelled) return
+        setStylePresets(styles)
+        setStyleLoadState('ready')
+      } catch {
+        if (cancelled) return
+        setStylePresets([])
+        setStyleLoadState('error')
+      }
+    }
+
+    void loadStyles()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // ── 顶部操作栏桩事件 ──
   const handleUploadClick = useCallback((e: React.MouseEvent) => {
@@ -779,6 +859,9 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
             nodeId={id}
             data={d}
             generating={generating}
+            stylePresets={stylePresets}
+            styleLoadState={styleLoadState}
+            mentionTargets={mentionTargets}
             onUpdateData={updateData}
             onMentionSelect={handleMentionSelect}
             onMentionsChange={handleMentionsChange}

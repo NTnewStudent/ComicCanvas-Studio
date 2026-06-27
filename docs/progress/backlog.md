@@ -172,6 +172,26 @@
 
 ---
 
+## hjwall Canvas Full Migration Reverification (REQ-090 ~ REQ-098)
+
+> Added: 2026-06-26
+> Canonical spec: `specs/hjwall-canvas-full-migration/`
+> Scope: migrate hjwall canvas user capabilities into ComicCanvas, excluding real gateway request details. Existing completed labels in older milestone rows are historical until reverified against current implementation, tests, and real desktop flows.
+
+| ID | Requirement | Status |
+| :--- | :--- | :--- |
+| REQ-090 | Evidence-based hjwall canvas migration inventory and current completion audit. | 进行中 |
+| REQ-091 | Workflow project lifecycle: create, list, switch, rename, delete, import, export, save/load restore. | 进行中（workflow JSON import/export IPC round trip, graph sanitize, invalid JSON rejection, absolute-path rejection, renderer `/projects` JSON import/export UI, and dirty-save switch/beforeunload guards covered; desktop flow evidence pending） |
+| REQ-092 | Canvas interaction parity: toolbar, context menu, command palette, drag/drop media, snippets, shortcuts, connection feedback, zero asset polling. | 进行中（local media drop for image/video/audio partial with audio `asset.import` persistence coverage; snippet core extract/insert with ID remap, one-undo insertion, persisted `canvas_snippets` storage, `canvasSnippet.*` IPC/preload APIs, compact CanvasPage snippet-library selector, direct ReactFlow connection feedback via shared validation, V2 @mention candidate/edge validation, selected-node duplicate/delete shortcuts, command palette filtering/execution, Ctrl/Cmd+K launch, fit-view command, select/pan ReactFlow mode wiring, connect-to-create shared validation, and visible canvas copy quality gate covered; richer UI, remaining context-menu edge paths, and desktop evidence pending） |
+| REQ-093 | Comic-drama node system expansion: text/image/video plus character, scene, audio, imageConfigV2, videoConfigV2, videoCompose, superResolution, muxAudioVideo, mjImage as vertical slices. | 进行中（shared node contracts + connection matrix + Plan whitelist slice） |
+| REQ-094 | Style preset system: project default, node override, style library, deterministic prompt-before/prompt-after injection. | 进行中（shared contract + repository/IPC + runtime payload + image/video node selector + style library UI + project default selector slices） |
+| REQ-095 | Asset library completion: import, metadata, folders, search/filter/sort, safe URLs, references, tombstone/delete, insert to canvas. | 未开始 |
+| REQ-096 | Async run state for migrated node set: enqueue-only IPC, terminal events, one-shot reconciliation, prompt/reference snapshot composition. | 进行中（durable queue + worker + terminal fanout + real job.get/list/recover IPC + prompt/reference snapshot slices + typed migrated dispatch for audio/mjImage/videoCompose/superResolution/muxAudioVideo + typed migrated reopen reconciliation + typed migrated real-time writeback + canvas reopen one-shot reconciliation） |
+| REQ-097 | Agent orchestration over migrated canvas vocabulary: sanitized CanvasPlan, clarify behavior, applyPlan, PlanRunner, dropped warnings. | 进行中（migrated run actions preserved by sanitizePlan and mapped into PlanRunner steps; built-in comic-drama planner emits migrated nodes through chat IPC; PlanCard shows migrated node/action summary in automated tests and real Electron; full desktop autoExecute terminal-state evidence pending） |
+| REQ-098 | User-centered completion evidence: automated tests plus real desktop acceptance scenarios before any migrated capability is marked complete. | 未开始 |
+
+---
+
 ## CI/CD Foundation
 
 | ID | Requirement | Status |

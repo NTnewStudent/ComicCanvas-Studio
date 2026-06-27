@@ -4,7 +4,19 @@
  */
 
 /** 画布节点类型（含 V2 配置节点） */
-export type NodeType = 'text' | 'image' | 'video' | 'imageConfigV2' | 'videoConfigV2'
+export type NodeType =
+  | 'text'
+  | 'image'
+  | 'video'
+  | 'character'
+  | 'scene'
+  | 'audio'
+  | 'imageConfigV2'
+  | 'videoConfigV2'
+  | 'videoCompose'
+  | 'superResolution'
+  | 'muxAudioVideo'
+  | 'mjImage'
 
 /** 连线语义 */
 export type EdgeType = 'promptOrder' | 'imageRole' | 'default'
@@ -98,9 +110,143 @@ export interface VideoNodeData {
   referenceAssets?: ReferenceAsset[]
 }
 
+/** Character semantic node used as prompt/reference context. */
+export interface CharacterNodeData {
+  /** User-visible character name. */
+  label: string
+  /** Character description or role biography. */
+  description?: string
+  /** Stable referenced asset ID when the character has an image. */
+  assetId?: string | null
+  /** Safe preview URL for the selected character asset. */
+  url?: string
+  /** Optional structured tags such as real/non-real, age, or costume. */
+  tags?: string[]
+}
+
+/** Scene semantic node used as environment prompt/reference context. */
+export interface SceneNodeData {
+  /** User-visible scene name. */
+  label: string
+  /** Scene description used for prompt composition. */
+  description?: string
+  /** Stable referenced asset ID when the scene has an image. */
+  assetId?: string | null
+  /** Safe preview URL for the selected scene asset. */
+  url?: string
+  /** Optional scene category such as interior, exterior, or prop. */
+  category?: string
+}
+
+/** Audio media node used as a reference or mux input. */
+export interface AudioNodeData {
+  /** User-visible audio label. */
+  label: string
+  /** Stable referenced asset ID. */
+  assetId: string | null
+  /** Safe playback URL. */
+  url?: string
+  /** Duration in seconds when known. */
+  durationSeconds?: number
+  /** Runtime status for generated or imported audio. */
+  status?: NodeStatus
+}
+
+/** Video composition node that concatenates or transitions multiple video sources. */
+export interface VideoComposeNodeData {
+  /** User-visible node label. */
+  label: string
+  /** Ordered source video node IDs. */
+  inputOrder?: string[]
+  /** Optional transition effect name. */
+  transitionName?: string | null
+  /** Tool model ID or key selected for composition. */
+  modelId?: string
+  /** Result asset ID after composition completes. */
+  assetId?: string | null
+  /** Safe result preview URL. */
+  url?: string
+  /** Runtime status. */
+  status: NodeStatus
+  /** Last error message, if any. */
+  error?: string
+}
+
+/** Video super-resolution node. */
+export interface SuperResolutionNodeData {
+  /** User-visible node label. */
+  label: string
+  /** Super-resolution scenario. */
+  scene?: 'aigc' | 'short_series' | 'ugc' | 'old_film'
+  /** Target resolution. */
+  resolution?: '720p' | '1080p' | '4k'
+  /** Target frames per second. */
+  fps?: number
+  /** Result asset ID after enhancement completes. */
+  assetId?: string | null
+  /** Safe result preview URL. */
+  url?: string
+  /** Runtime status. */
+  status: NodeStatus
+  /** Last error message, if any. */
+  error?: string
+}
+
+/** Audio/video mux node that combines one video input and one audio input. */
+export interface MuxAudioVideoNodeData {
+  /** User-visible node label. */
+  label: string
+  /** Tool model ID or key selected for muxing. */
+  modelId?: string
+  /** Result asset ID after mux completes. */
+  assetId?: string | null
+  /** Safe result preview URL. */
+  url?: string
+  /** Runtime status. */
+  status: NodeStatus
+  /** Last error message, if any. */
+  error?: string
+}
+
+/** Midjourney-style image node that can produce multiple selectable images. */
+export interface MjImageNodeData {
+  /** User-visible node label. */
+  label: string
+  /** Prompt used for image generation. */
+  prompt?: string
+  /** Model ID or key. */
+  modelId?: string
+  /** Output ratio. */
+  ratio?: ImageRatio
+  /** Optional node-level style override. */
+  stylePresetId?: string
+  /** Generated safe image URLs. */
+  urls?: string[]
+  /** Selected result index from `urls`. */
+  selectedIndex?: number
+  /** Selected result safe URL. */
+  url?: string
+  /** Selected result asset ID. */
+  assetId?: string | null
+  /** Runtime status. */
+  status: NodeStatus
+  /** Last error message, if any. */
+  error?: string
+}
+
 export type NodeStatus = 'idle' | 'pending' | 'running' | 'done' | 'error'
 
-export type CanvasNodeData = TextNodeData | ImageNodeData | VideoNodeData
+export type CanvasNodeData =
+  | TextNodeData
+  | ImageNodeData
+  | VideoNodeData
+  | CharacterNodeData
+  | SceneNodeData
+  | AudioNodeData
+  | VideoComposeNodeData
+  | SuperResolutionNodeData
+  | MuxAudioVideoNodeData
+  | MjImageNodeData
 
 // ── Edge data ──────────────────────────────────────────────
 

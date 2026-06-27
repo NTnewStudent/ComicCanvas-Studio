@@ -10,7 +10,7 @@ import { createJobRepository } from '../desktop/src/main/db/repositories/job.rep
 import { createJobEventBus } from '../desktop/src/main/jobs/events'
 import { createJobQueue } from '../desktop/src/main/jobs/queue'
 import { createJobWorker } from '../desktop/src/main/jobs/worker'
-import { createOrchestratorRuntime, runOrchestrator } from '../desktop/src/main/agent/orchestrator'
+import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, runOrchestrator } from '../desktop/src/main/agent/orchestrator'
 
 const samplePlan: CanvasPlan = {
   kind: 'plan',
@@ -48,6 +48,45 @@ function createDeferredPlan(): { promise: Promise<CanvasPlan>; resolve: (plan: C
 }
 
 describe('M4 orchestrator AsyncGenerator runtime', () => {
+  it('defaults comic-drama requests to migrated character, scene, image, audio, compose, and mux run vocabulary', () => {
+    const plan = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-comic',
+      messageId: 'message-comic',
+      message: '做一个雨夜侦探漫画短剧，包含角色、场景、图片、配音、视频合成和音视频合成',
+      agentId: 'orchestrator',
+    }) as CanvasPlan
+
+    expect(plan.kind).toBe('plan')
+    expect(plan.question).toBeNull()
+    expect(plan.nodes.map((node) => node.type)).toEqual([
+      'text',
+      'character',
+      'scene',
+      'mjImage',
+      'audio',
+      'videoCompose',
+      'muxAudioVideo',
+    ])
+    expect(plan.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: 'story', target: 'character' }),
+        expect.objectContaining({ source: 'story', target: 'scene' }),
+        expect.objectContaining({ source: 'character', target: 'key-image' }),
+        expect.objectContaining({ source: 'scene', target: 'key-image' }),
+        expect.objectContaining({ source: 'key-image', target: 'compose' }),
+        expect.objectContaining({ source: 'voice', target: 'mux' }),
+        expect.objectContaining({ source: 'compose', target: 'mux' }),
+      ])
+    )
+    expect(plan.runSteps).toEqual([
+      { ref: 'key-image', action: 'mjImageRun' },
+      { ref: 'voice', action: 'audioRun' },
+      { ref: 'compose', action: 'videoComposeRun' },
+      { ref: 'mux', action: 'muxAudioVideoRun' },
+    ])
+    expect(JSON.stringify(plan)).not.toMatch(/onRun|function|window\.|eval/u)
+  })
+
   it('runs as an AsyncGenerator and returns a CanvasPlan after streaming progress', async () => {
     const stream = runOrchestrator({
       runId: 'run-1',

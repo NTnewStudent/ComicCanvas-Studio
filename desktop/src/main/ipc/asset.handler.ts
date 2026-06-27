@@ -15,7 +15,7 @@ import type {
 import type { AssetCreateFolderRecord, AssetRepository } from '../db/repositories/asset.repo'
 import type { IpcRegistrar } from './types'
 import { copyFileSync, mkdirSync, statSync } from 'node:fs'
-import { dirname, extname, join } from 'node:path'
+import { dirname, extname, join, posix } from 'node:path'
 import { getCurrentStorageConfig } from './storage.handler'
 import { storageFactory } from '../storage/storage-factory'
 
@@ -29,7 +29,7 @@ export interface AssetHandlerOptions {
   idFactory?: (prefix: AssetIdPrefix) => string
 }
 
-const mediaTypes = new Set<AssetMediaType>(['image', 'video', 'text', 'document', 'other'])
+const mediaTypes = new Set<AssetMediaType>(['image', 'video', 'audio', 'text', 'document', 'other'])
 const folderTypes = new Set<AssetFolder['type']>(['image', 'video', 'mixed'])
 
 function createAssetRecord(assetId: string, folderId?: string | null): AssetRecord {
@@ -149,6 +149,7 @@ function inferMediaType(extension: string): AssetMediaType {
   const ext = extension.toLowerCase()
   if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg'].includes(ext)) return 'image'
   if (['.mp4', '.webm', '.mov', '.avi', '.mkv'].includes(ext)) return 'video'
+  if (['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'].includes(ext)) return 'audio'
   if (['.txt', '.md', '.json', '.csv'].includes(ext)) return 'text'
   if (['.pdf', '.doc', '.docx'].includes(ext)) return 'document'
   return 'other'
@@ -161,6 +162,8 @@ function extensionToMime(extension: string): string {
     '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp', '.svg': 'image/svg+xml',
     '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
     '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+    '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.m4a': 'audio/mp4',
+    '.aac': 'audio/aac', '.flac': 'audio/flac', '.ogg': 'audio/ogg',
     '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
     '.pdf': 'application/pdf'
   }
@@ -193,7 +196,7 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
     const id = idFactory('asset')
     const extension = extname(sourcePath) || '.png'
     const resolvedMediaType = mediaType ?? inferMediaType(extension)
-    const relativePath = join('imported', resolvedMediaType, `${id}${extension}`)
+    const relativePath = posix.join('imported', resolvedMediaType, `${id}${extension}`)
 
     // Try cloud upload if storage is configured
     const storageConfig = getCurrentStorageConfig()

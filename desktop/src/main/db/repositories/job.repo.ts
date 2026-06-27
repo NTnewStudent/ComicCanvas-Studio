@@ -5,7 +5,7 @@
 
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 
-import type { JobError, JobRecord, JobResult, JobStatus, JobType } from '../../../../../shared/jobs'
+import type { JobError, JobListFilter, JobRecord, JobResult, JobStatus, JobType } from '../../../../../shared/jobs'
 import { decodeJson, encodeJson } from './json'
 
 export interface JobCreateRecord {
@@ -48,6 +48,7 @@ interface JobRow {
 export interface JobRepository {
   create(record: JobCreateRecord): void
   getById(id: string): PersistedJobRecord | null
+  list(filter?: JobListFilter): PersistedJobRecord[]
   claimNextPending(input: JobClaimInput): PersistedJobRecord | null
   complete(id: string, result: JobResult, completedAt: number): void
   fail(id: string, error: JobError, failedAt: number): void
@@ -70,6 +71,14 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
     )
   `)
   const select = db.prepare('SELECT * FROM jobs WHERE id = ?')
+  const listAll = db.prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?')
+  const listByStatus = db.prepare('SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?')
+  const listByType = db.prepare('SELECT * FROM jobs WHERE type = ? ORDER BY created_at DESC LIMIT ?')
+  const listByTargetId = db.prepare('SELECT * FROM jobs WHERE target_id = ? ORDER BY created_at DESC LIMIT ?')
+  const listByStatusAndType = db.prepare('SELECT * FROM jobs WHERE status = ? AND type = ? ORDER BY created_at DESC LIMIT ?')
+  const listByStatusAndTargetId = db.prepare('SELECT * FROM jobs WHERE status = ? AND target_id = ? ORDER BY created_at DESC LIMIT ?')
+  const listByTypeAndTargetId = db.prepare('SELECT * FROM jobs WHERE type = ? AND target_id = ? ORDER BY created_at DESC LIMIT ?')
+  const listByAllFilters = db.prepare('SELECT * FROM jobs WHERE status = ? AND type = ? AND target_id = ? ORDER BY created_at DESC LIMIT ?')
   const selectNextPending = db.prepare("SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1")
   const claimPending = db.prepare(`
     UPDATE jobs
@@ -158,6 +167,35 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
       }
 
       return mapRow(row)
+    },
+    list(filter = {}) {
+      const requestedLimit = Math.trunc(filter.limit ?? 100)
+      if (requestedLimit <= 0) {
+        return []
+      }
+
+      const limit = Math.min(500, requestedLimit)
+      let rows: JobRow[]
+
+      if (filter.status && filter.type && filter.targetId) {
+        rows = listByAllFilters.all(filter.status, filter.type, filter.targetId, limit) as JobRow[]
+      } else if (filter.status && filter.type) {
+        rows = listByStatusAndType.all(filter.status, filter.type, limit) as JobRow[]
+      } else if (filter.status && filter.targetId) {
+        rows = listByStatusAndTargetId.all(filter.status, filter.targetId, limit) as JobRow[]
+      } else if (filter.type && filter.targetId) {
+        rows = listByTypeAndTargetId.all(filter.type, filter.targetId, limit) as JobRow[]
+      } else if (filter.status) {
+        rows = listByStatus.all(filter.status, limit) as JobRow[]
+      } else if (filter.type) {
+        rows = listByType.all(filter.type, limit) as JobRow[]
+      } else if (filter.targetId) {
+        rows = listByTargetId.all(filter.targetId, limit) as JobRow[]
+      } else {
+        rows = listAll.all(limit) as JobRow[]
+      }
+
+      return rows.map(mapRow)
     },
     claimNextPending(input) {
       const row = selectNextPending.get() as JobRow | undefined

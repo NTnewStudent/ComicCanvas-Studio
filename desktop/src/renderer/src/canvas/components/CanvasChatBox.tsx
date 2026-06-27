@@ -111,7 +111,7 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        handleSend()
+        void handleSend()
       }
     },
     [handleSend],
@@ -255,7 +255,7 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
               {/* 发送按钮 */}
               <button
                 type="button"
-                onClick={handleSend}
+                onClick={() => void handleSend()}
                 disabled={busy || !input.trim()}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-bg-base transition hover:bg-brand-hover disabled:opacity-50"
                 title="发送"

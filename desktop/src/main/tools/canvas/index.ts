@@ -9,14 +9,14 @@ import { z } from 'zod'
 import { canConnect } from '../../../../../shared/connection-matrix'
 import type { CanvasGraphNode, CanvasGraphSnapshot } from '../../../../../shared/graph'
 import type { JobTicket } from '../../../../../shared/jobs'
-import type { CanvasEdgeData, NodeType } from '../../../../../shared/nodes'
+import type { CanvasEdgeData, CanvasNodeData, NodeType } from '../../../../../shared/nodes'
 import type { ToolActor, ToolDescriptor, ToolPermission } from '../../../../../shared/tools'
 import type { JobQueue } from '../../jobs/queue'
 import { defineTool, type ToolDefinition } from '../runtime'
 
 export interface CanvasGraphStore {
-  getGraph(): CanvasGraphSnapshot
-  setGraph(graph: CanvasGraphSnapshot): void
+  getGraph(workflowId?: string): CanvasGraphSnapshot
+  setGraph(graph: CanvasGraphSnapshot, workflowId?: string): void
 }
 
 export interface CanvasToolsOptions {
@@ -33,7 +33,20 @@ const providerSpendPermission: ToolPermission = { kind: 'provider.spend', reason
 
 const positionSchema = z.object({ x: z.number(), y: z.number() })
 const viewportSchema = z.object({ x: z.number(), y: z.number(), zoom: z.number() })
-const nodeTypeSchema = z.enum(['text', 'image', 'video', 'imageConfigV2', 'videoConfigV2'])
+const nodeTypeSchema = z.enum([
+  'text',
+  'image',
+  'video',
+  'character',
+  'scene',
+  'audio',
+  'imageConfigV2',
+  'videoConfigV2',
+  'videoCompose',
+  'superResolution',
+  'muxAudioVideo',
+  'mjImage'
+])
 const orientationSchema = z.enum(['landscape', 'portrait', 'square'])
 const statusSchema = z.enum(['idle', 'pending', 'running', 'done', 'error'])
 const edgeTypeSchema = z.enum(['promptOrder', 'imageRole', 'default'])
@@ -65,7 +78,11 @@ const videoDataSchema = z.object({
   status: statusSchema
 })
 
-const nodeDataSchema = z.union([textDataSchema, imageDataSchema, videoDataSchema])
+const semanticDataSchema = z.object({
+  label: z.string()
+}).passthrough()
+
+const nodeDataSchema: z.ZodType<CanvasNodeData> = z.union([textDataSchema, imageDataSchema, videoDataSchema, semanticDataSchema])
 
 const graphNodeSchema = z.object({
   id: z.string(),

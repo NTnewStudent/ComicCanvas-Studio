@@ -17,7 +17,7 @@ function createStore(): ReturnType<typeof createCanvasStore> {
       return () => `node-${++index}`
     })(),
     edgeIdFactory: (source, target) => `edge-${source}-${target}`,
-    clock: () => 1_782_700_000_000
+    clock: () => 1_782_700_000_000,
   })
 }
 
@@ -42,7 +42,7 @@ describe('M2 connection validation UX', () => {
     expect(notify).toHaveBeenCalledWith({
       reason: 'duplicate_edge',
       message: '这两个节点已经连接过了',
-      at: 1_782_700_000_000
+      at: 1_782_700_000_000,
     })
   })
 
@@ -60,7 +60,7 @@ describe('M2 connection validation UX', () => {
     expect(notify).toHaveBeenCalledWith({
       reason: 'connection_not_allowed',
       message: '视频节点不能连接到图片节点',
-      at: 1_782_700_000_000
+      at: 1_782_700_000_000,
     })
   })
 
@@ -70,11 +70,22 @@ describe('M2 connection validation UX', () => {
         feedback={{
           reason: 'connection_not_allowed',
           message: '视频节点不能连接到图片节点',
-          at: 1_782_700_000_000
+          at: 1_782_700_000_000,
         }}
-      />
+      />,
     )
 
     expect(screen.getByRole('status')).toHaveTextContent('视频节点不能连接到图片节点')
+  })
+
+  it('wires the shared connect handler and feedback banner into CanvasPage', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync('desktop/src/renderer/src/canvas/CanvasPage.tsx', 'utf8')
+
+    expect(source).toContain("from './lib/canvas-edge-creation'")
+    expect(source).toContain("from './components/ConnectionFeedback'")
+    expect(source).toContain('createCanvasEdge({')
+    expect(source).toContain('setConnectionFeedback')
+    expect(source).toContain('<ConnectionFeedback')
   })
 })

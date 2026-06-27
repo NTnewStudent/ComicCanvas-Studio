@@ -53,23 +53,23 @@ export interface CanvasStoreState extends CanvasSnapshot {
   lastConnectError: { reason: ConnectFailureReason; at: number } | null
   /** 节点运行状态（运行时数据，不参与 undo/redo） */
   nodeRunStatus: Map<string, NodeStatus>
-  addNode(type: NodeType, position: CanvasPosition, data?: Partial<CanvasNodeData>): string
-  deleteNode(id: string): void
-  updateNodeData(id: string, data: Partial<CanvasNodeData>): void
-  setViewport(viewport: CanvasViewport): void
+  addNode(this: void, type: NodeType, position: CanvasPosition, data?: Partial<CanvasNodeData>): string
+  deleteNode(this: void, id: string): void
+  updateNodeData(this: void, id: string, data: Partial<CanvasNodeData>): void
+  setViewport(this: void, viewport: CanvasViewport): void
   /** Batch-replace nodes (used by debounced persistence from ReactFlow) */
-  setNodes(nodes: CanvasStoreNode[]): void
+  setNodes(this: void, nodes: CanvasStoreNode[]): void
   /** Batch-replace edges (used by debounced persistence from ReactFlow) */
-  setEdges(edges: CanvasStoreEdge[]): void
-  addEdge(source: string, target: string): ConnectResult
-  deleteEdge(id: string): void
-  applyChange(snapshot: CanvasSnapshot): void
-  undo(): void
-  redo(): void
+  setEdges(this: void, edges: CanvasStoreEdge[]): void
+  addEdge(this: void, source: string, target: string): ConnectResult
+  deleteEdge(this: void, id: string): void
+  applyChange(this: void, snapshot: CanvasSnapshot): void
+  undo(this: void): void
+  redo(this: void): void
   /** 设置指定节点的运行状态 */
-  setNodeRunStatus(nodeId: string, status: NodeStatus): void
+  setNodeRunStatus(this: void, nodeId: string, status: NodeStatus): void
   /** 获取指定节点的运行状态（未登记时返回 'idle'） */
-  getNodeRunStatus(nodeId: string): NodeStatus
+  getNodeRunStatus(this: void, nodeId: string): NodeStatus
 }
 
 const maxHistory = 50
@@ -96,6 +96,57 @@ function pushHistory(state: CanvasStoreState): Pick<CanvasStoreState, 'past' | '
 function defaultData(type: NodeType, sequence: number): CanvasNodeData {
   if (type === 'text') {
     return { label: `Text ${sequence}`, content: '' }
+  }
+
+  if (type === 'character') {
+    return { label: `Character ${sequence}`, description: '', assetId: null, tags: [] }
+  }
+
+  if (type === 'scene') {
+    return { label: `Scene ${sequence}`, description: '', assetId: null, category: '' }
+  }
+
+  if (type === 'audio') {
+    return { label: `Audio ${sequence}`, assetId: null, durationSeconds: 0, status: 'idle' }
+  }
+
+  if (type === 'videoCompose') {
+    return {
+      label: `Video Compose ${sequence}`,
+      inputOrder: [],
+      transitionName: null,
+      modelId: 'stub-compose',
+      assetId: null,
+      status: 'idle'
+    }
+  }
+
+  if (type === 'superResolution') {
+    return {
+      label: `Super Resolution ${sequence}`,
+      scene: 'aigc',
+      resolution: '1080p',
+      fps: 30,
+      assetId: null,
+      status: 'idle'
+    }
+  }
+
+  if (type === 'muxAudioVideo') {
+    return { label: `Mux Audio Video ${sequence}`, modelId: 'stub-mux', assetId: null, status: 'idle' }
+  }
+
+  if (type === 'mjImage') {
+    return {
+      label: `MJ Image ${sequence}`,
+      prompt: '',
+      modelId: 'stub-mj',
+      ratio: '16:9',
+      urls: [],
+      selectedIndex: 0,
+      assetId: null,
+      status: 'idle'
+    }
   }
 
   if (type === 'image' || type === 'imageConfigV2') {

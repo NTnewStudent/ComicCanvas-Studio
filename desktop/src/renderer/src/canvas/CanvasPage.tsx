@@ -1,11 +1,11 @@
 /**
- * 全屏 ReactFlow 画布页面 — 接入 canvas store 和节点组件
- * 性能优化：
- * 1. ReactFlow 内置 useNodesState/useEdgesState 作为实时状态源
- * 2. Zustand store 仅用于持久化（debounced）和撤销/重做
- * 3. nodeTypes 定义在组件外部（模块级）避免重渲染
- * 4. 节点组件已添加 React.memo（见各节点文件）
- * 5. 所有回调用 useCallback 稳定化
+ * 閸忋劌鐫?ReactFlow 閻㈣绔锋い鐢告桨 閳?閹恒儱鍙?canvas store 閸滃矁濡悙鍦矋娴?
+ * 閹嗗厴娴兼ê瀵查敍?
+ * 1. ReactFlow 閸愬懐鐤?useNodesState/useEdgesState 娴ｆ粈璐熺€圭偞妞傞悩鑸碘偓浣圭爱
+ * 2. Zustand store 娴犲懐鏁ゆ禍搴㈠瘮娑斿懎瀵查敍鍧塭bounced閿涘鎷伴幘銈夋敘/闁插秴浠?
+ * 3. nodeTypes 鐎规矮绠熼崷銊х矋娴犺泛顦婚柈顭掔礄濡€虫健缁狙嶇礆闁灝鍘ら柌宥嗚閺?
+ * 4. 閼哄倻鍋ｇ紒鍕瀹稿弶鍧婇崝?React.memo閿涘牐顫嗛崥鍕Ν閻愯鏋冩禒璁圭礆
+ * 5. 閹碘偓閺堝娲栫拫鍐暏 useCallback 缁嬪啿鐣鹃崠?
  * @see docs/api-contracts/canvas-plan.md
  */
 
@@ -49,9 +49,13 @@ import {
   IconX,
   IconFolder,
   IconMessage,
+  IconListDetails,
   IconMoon,
   IconSun,
   IconChevronDown,
+  IconHandGrab,
+  IconPointer,
+  IconSearch,
 } from '@tabler/icons-react'
 import type { TablerIcon } from '@tabler/icons-react'
 import { useStore } from 'zustand'
@@ -68,11 +72,23 @@ import { ImageNode } from './nodes/ImageNode'
 import { VideoNode } from './nodes/VideoNode'
 import ImageConfigV2Node from './nodes/ImageConfigV2Node'
 import VideoConfigV2Node from './nodes/VideoConfigV2Node'
+import { MigratedNode } from './nodes/MigratedNode'
 import { useCanvasRealtime } from './hooks/use-canvas-realtime'
 import { ProjectManager } from './components/ProjectManager'
 import CanvasChatBox from './components/CanvasChatBox'
 import { CanvasAssetPanel } from './components/CanvasAssetPanel'
-import { applyCanvasPlan } from './lib/apply-plan'
+import { ProjectStyleSelector } from './components/ProjectStyleSelector'
+import { CanvasJobPanel } from './components/CanvasJobPanel'
+import { CanvasCommandPalette, type CanvasCommand } from './components/CanvasCommandPalette'
+import { ConnectionFeedback } from './components/ConnectionFeedback'
+import { createCanvasPlanExecutionController } from './lib/canvas-plan-execution'
+import { reconcileCanvasNodesWithJobs } from './lib/job-reconciliation'
+import { guardWorkflowSwitch, installDirtyBeforeUnloadGuard } from './lib/workflow-switch-guard'
+import { extractCanvasSnippet, insertCanvasSnippet, type CanvasSnippet } from './lib/canvas-snippet'
+import { createCanvasEdge } from './lib/canvas-edge-creation'
+import { connectCreatedCanvasNode } from './lib/canvas-connect-to-create'
+import { deleteSelectedCanvasNodes, duplicateSelectedCanvasNodes } from './lib/canvas-selection-actions'
+import type { ConnectionValidationFeedback } from './lib/connection-validation'
 import type { ApplyPlanOptions } from '../chat/PlanCard'
 import './canvas.css'
 
@@ -84,10 +100,13 @@ import type {
   CanvasNodeData,
   CanvasEdgeData,
 } from '../../../../../shared/nodes'
+import type { AssetRecord } from '../../../../../shared/assets'
 import type { CanvasPlan } from '../../../../../shared/plan'
 import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
+import type { CanvasSnippetView } from '../../../../../shared/snippets'
+import { planLocalMediaDrop } from './lib/local-media-drop'
 
-/* ─── Debounce utility ─── */
+/* 閳光偓閳光偓閳光偓 Debounce utility 閳光偓閳光偓閳光偓 */
 
 function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
   let timer: ReturnType<typeof setTimeout>
@@ -97,13 +116,47 @@ function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
   }) as unknown as T
 }
 
-/* ─── Default data factories ─── */
+/* 閳光偓閳光偓閳光偓 Default data factories 閳光偓閳光偓閳光偓 */
 
 function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
   if (type === 'text') return { label: `Text ${sequence}`, content: '' }
+  if (type === 'character') return { label: `Character ${sequence}`, description: '', assetId: null, tags: [] }
+  if (type === 'scene') return { label: `Scene ${sequence}`, description: '', assetId: null, category: '' }
+  if (type === 'audio') return { label: `Audio ${sequence}`, assetId: null, durationSeconds: 0, status: 'idle' }
+  if (type === 'videoCompose')
+    return {
+      label: `Video Compose ${sequence}`,
+      inputOrder: [],
+      transitionName: null,
+      modelId: 'stub-compose',
+      assetId: null,
+      status: 'idle',
+    }
+  if (type === 'superResolution')
+    return {
+      label: `Super Resolution ${sequence}`,
+      scene: 'aigc',
+      resolution: '1080p',
+      fps: 30,
+      assetId: null,
+      status: 'idle',
+    }
+  if (type === 'muxAudioVideo')
+    return { label: `Mux Audio Video ${sequence}`, modelId: 'stub-mux', assetId: null, status: 'idle' }
+  if (type === 'mjImage')
+    return {
+      label: `MJ Image ${sequence}`,
+      prompt: '',
+      modelId: 'stub-mj',
+      ratio: '16:9',
+      urls: [],
+      selectedIndex: 0,
+      assetId: null,
+      status: 'idle',
+    }
   if (type === 'image' || type === 'imageConfigV2')
     return {
-      label: type === 'imageConfigV2' ? `生图 ${sequence}` : `Image ${sequence}`,
+      label: type === 'imageConfigV2' ? `Image Generation ${sequence}` : `Image ${sequence}`,
       promptOverride: '',
       modelId: 'stub-image',
       orientation: 'landscape',
@@ -111,7 +164,7 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
       status: 'idle',
     }
   return {
-    label: type === 'videoConfigV2' ? `生视频 ${sequence}` : `Video ${sequence}`,
+    label: type === 'videoConfigV2' ? `Video Generation ${sequence}` : `Video ${sequence}`,
     promptOverride: '',
     modelId: 'stub-video',
     orientation: 'landscape',
@@ -123,7 +176,7 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
   }
 }
 
-/* ─── Node wrapper 将 store 回调注入 ReactFlow 自动传入的 props ─── */
+/* 閳光偓閳光偓閳光偓 Node wrapper 鐏?store 閸ョ偠鐨熷▔銊ュ弳 ReactFlow 閼奉亜濮╂导鐘插弳閻?props 閳光偓閳光偓閳光偓 */
 
 function TextNodeWrapper({
   id,
@@ -174,6 +227,7 @@ function ImageNodeWrapper({
     <ImageNode
       id={id}
       data={data}
+      {...(data.url ? { assetSafeUrl: data.url } : {})}
       selected={selected ?? false}
       onChange={handleChange}
     />
@@ -199,13 +253,43 @@ function VideoNodeWrapper({
     <VideoNode
       id={id}
       data={data}
+      {...(data.url ? { assetSafeUrl: data.url } : {})}
       selected={selected ?? false}
       onChange={handleChange}
     />
   )
 }
 
-/* ─── Node types（模块级常量，避免组件内每次渲染创建新引用） ─── */
+function createMigratedNodeWrapper(type: NodeType) {
+  return function MigratedNodeWrapper({
+    id,
+    data,
+    selected,
+  }: {
+    id: string
+    data: CanvasNodeData
+    selected?: boolean
+  }): JSX.Element {
+    const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
+    const handleChange = useCallback(
+      (nodeId: string, patch: Partial<CanvasNodeData>) =>
+        updateNodeData(nodeId, patch),
+      [updateNodeData],
+    )
+
+    return (
+      <MigratedNode
+        id={id}
+        type={type}
+        data={data}
+        selected={selected ?? false}
+        onChange={handleChange}
+      />
+    )
+  }
+}
+
+/* 閳光偓閳光偓閳光偓 Node types閿涘牊膩閸ф楠囩敮鎼佸櫤閿涘矂浼╅崗宥囩矋娴犺泛鍞村В蹇旑偧濞撳弶鐓嬮崚娑樼紦閺傛澘绱╅悽顭掔礆 閳光偓閳光偓閳光偓 */
 
 const nodeTypes: NodeTypes = {
   text: TextNodeWrapper,
@@ -213,9 +297,16 @@ const nodeTypes: NodeTypes = {
   video: VideoNodeWrapper,
   imageConfigV2: ImageConfigV2Node,
   videoConfigV2: VideoConfigV2Node,
+  character: createMigratedNodeWrapper('character'),
+  scene: createMigratedNodeWrapper('scene'),
+  audio: createMigratedNodeWrapper('audio'),
+  videoCompose: createMigratedNodeWrapper('videoCompose'),
+  superResolution: createMigratedNodeWrapper('superResolution'),
+  muxAudioVideo: createMigratedNodeWrapper('muxAudioVideo'),
+  mjImage: createMigratedNodeWrapper('mjImage'),
 }
 
-/* ─── Store → ReactFlow 映射 ─── */
+/* 閳光偓閳光偓閳光偓 Store 閳?ReactFlow 閺勭姴鐨?閳光偓閳光偓閳光偓 */
 
 function mapStoreNodes(storeNodes: CanvasStoreNode[]): Node[] {
   return storeNodes.map((n) => ({
@@ -236,40 +327,60 @@ function mapStoreEdges(storeEdges: CanvasStoreEdge[]): Edge[] {
   }))
 }
 
-/** 新节点默认位置偏移 */
+/** 閺傛媽濡悙褰掔帛鐠併倓缍呯純顔间焊缁?*/
 const NODE_OFFSETS: Record<NodeType, { x: number; y: number }> = {
   text: { x: 160, y: 120 },
   image: { x: 540, y: 120 },
   video: { x: 920, y: 120 },
+  character: { x: 160, y: 360 },
+  scene: { x: 160, y: 600 },
+  audio: { x: 540, y: 760 },
   imageConfigV2: { x: 540, y: 500 },
   videoConfigV2: { x: 920, y: 500 },
+  videoCompose: { x: 1240, y: 300 },
+  superResolution: { x: 1240, y: 560 },
+  muxAudioVideo: { x: 1240, y: 820 },
+  mjImage: { x: 540, y: 300 },
 }
 
-/* ─── Context menu node options ─── */
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
+}
+
+/* 閳光偓閳光偓閳光偓 Context menu node options 閳光偓閳光偓閳光偓 */
 
 const CONTEXT_MENU_NODE_OPTIONS: {
   type: NodeType
   label: string
   icon: TablerIcon
 }[] = [
-  { type: 'text', label: '文本', icon: IconFileText },
-  { type: 'image', label: '图片', icon: IconPhoto },
-  { type: 'imageConfigV2', label: '生图 V2', icon: IconPhotoPlus },
-  { type: 'video', label: '视频', icon: IconVideo },
-  { type: 'videoConfigV2', label: '生视频 V2', icon: IconMovie },
+  { type: 'text', label: 'Text', icon: IconFileText },
+  { type: 'character', label: 'Character', icon: IconFileText },
+  { type: 'scene', label: 'Scene', icon: IconPhoto },
+  { type: 'image', label: 'Image', icon: IconPhoto },
+  { type: 'mjImage', label: 'MJ Image', icon: IconPhotoPlus },
+  { type: 'imageConfigV2', label: 'Image V2', icon: IconPhotoPlus },
+  { type: 'audio', label: 'Audio', icon: IconMovie },
+  { type: 'video', label: 'Video', icon: IconVideo },
+  { type: 'videoConfigV2', label: 'Video V2', icon: IconMovie },
+  { type: 'videoCompose', label: 'Video Compose', icon: IconMovie },
+  { type: 'superResolution', label: 'Super Resolution', icon: IconMovie },
+  { type: 'muxAudioVideo', label: 'Mux Audio Video', icon: IconMovie },
 ]
 
-/* ─── Quick tools（左侧直接添加按钮） ─── */
+/* 閳光偓閳光偓閳光偓 Quick tools閿涘牆涔忔笟褏娲块幒銉﹀潑閸旂姵瀵滈柦顕嗙礆 閳光偓閳光偓閳光偓 */
 
 const QUICK_TOOLS: { type: NodeType; label: string; icon: TablerIcon }[] = [
-  { type: 'text', label: '文本', icon: IconTypography },
-  { type: 'image', label: '图片', icon: IconPhoto },
-  { type: 'imageConfigV2', label: '生图 V2', icon: IconPhotoPlus },
-  { type: 'video', label: '视频', icon: IconVideo },
-  { type: 'videoConfigV2', label: '生视频 V2', icon: IconMovie },
+  { type: 'text', label: 'Text', icon: IconTypography },
+  { type: 'image', label: 'Image', icon: IconPhoto },
+  { type: 'imageConfigV2', label: 'Image V2', icon: IconPhotoPlus },
+  { type: 'video', label: 'Video', icon: IconVideo },
+  { type: 'videoConfigV2', label: 'Video V2', icon: IconMovie },
 ]
 
-/* ─── Extra node types（展开菜单中分类列表） ─── */
+/* 閳光偓閳光偓閳光偓 Extra node types閿涘牆鐫嶅鈧懣婊冨礋娑擃厼鍨庣猾璇插灙鐞涱煉绱?閳光偓閳光偓閳光偓 */
 
 const EXTRA_NODE_TYPES: {
   type: NodeType
@@ -277,36 +388,46 @@ const EXTRA_NODE_TYPES: {
   icon: TablerIcon
   category: string
 }[] = [
-  { type: 'text', label: '文本节点', icon: IconTypography, category: '基础' },
-  { type: 'image', label: '图片节点', icon: IconPhoto, category: '基础' },
-  { type: 'video', label: '视频节点', icon: IconVideo, category: '基础' },
-  { type: 'imageConfigV2', label: '生图 V2', icon: IconPhotoPlus, category: 'AI 生成' },
-  { type: 'videoConfigV2', label: '生视频 V2', icon: IconMovie, category: 'AI 生成' },
+  { type: 'text', label: 'Text Node', icon: IconTypography, category: 'Base' },
+  { type: 'character', label: 'Character Node', icon: IconFileText, category: 'Context' },
+  { type: 'scene', label: 'Scene Node', icon: IconPhoto, category: 'Context' },
+  { type: 'image', label: 'Image Node', icon: IconPhoto, category: 'Base' },
+  { type: 'audio', label: 'Audio Node', icon: IconMovie, category: 'Base' },
+  { type: 'video', label: 'Video Node', icon: IconVideo, category: 'Base' },
+  { type: 'mjImage', label: 'MJ Image', icon: IconPhotoPlus, category: 'AI Generation' },
+  { type: 'imageConfigV2', label: 'Image V2', icon: IconPhotoPlus, category: 'AI Generation' },
+  { type: 'videoConfigV2', label: 'Video V2', icon: IconMovie, category: 'AI Generation' },
+  { type: 'videoCompose', label: 'Video Compose', icon: IconMovie, category: 'Post Tools' },
+  { type: 'superResolution', label: 'Super Resolution', icon: IconMovie, category: 'Post Tools' },
+  { type: 'muxAudioVideo', label: 'Mux Audio Video', icon: IconMovie, category: 'Post Tools' },
 ]
 
-/* ─── Default workflow ID ─── */
+/* 閳光偓閳光偓閳光偓 Default workflow ID 閳光偓閳光偓閳光偓 */
 
 const DEFAULT_WORKFLOW_ID = 'default'
-const DEFAULT_WORKFLOW_NAME = '未命名工作流'
+const DEFAULT_WORKFLOW_NAME = 'Untitled workflow'
 
-/* ─── Save status type ─── */
+/* 閳光偓閳光偓閳光偓 Save status type 閳光偓閳光偓閳光偓 */
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
-/* ─── CanvasPageInner（必须在 ReactFlowProvider 内） ─── */
+/* 閳光偓閳光偓閳光偓 CanvasPageInner閿涘牆绻€妞よ婀?ReactFlowProvider 閸愬拑绱?閳光偓閳光偓閳光偓 */
 
 function CanvasPageInner(): JSX.Element {
-  /* ── ReactFlow hooks ── */
-  const { screenToFlowPosition } = useReactFlow()
+  /* 閳光偓閳光偓 ReactFlow hooks 閳光偓閳光偓 */
+  const { screenToFlowPosition, fitView } = useReactFlow()
 
-  /* ── Toolbar state ── */
+  /* 閳光偓閳光偓 Toolbar state 閳光偓閳光偓 */
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
   const [showAssetPanel, setShowAssetPanel] = useState(false)
+  const [showJobPanel, setShowJobPanel] = useState(false)
   const [showChatBox, setShowChatBox] = useState(false)
+  const [showCommandPalette, setShowCommandPalette] = useState(false)
+  const [interactionMode, setInteractionMode] = useState<'select' | 'pan'>('select')
   const themePreference = useThemeStore((s) => s.preference)
   const setThemePreference = useThemeStore((s) => s.setPreference)
 
-  /* ── Context menu state ── */
+  /* 閳光偓閳光偓 Context menu state 閳光偓閳光偓 */
   const [contextMenu, setContextMenu] = useState<{
     type: 'pane' | 'node'
     x: number
@@ -314,21 +435,26 @@ function CanvasPageInner(): JSX.Element {
     nodeId?: string
   } | null>(null)
 
-  /* ── Save/Load state ── */
+  /* 閳光偓閳光偓 Save/Load state 閳光偓閳光偓 */
   const [innerSearchParams] = useSearchParams()
   const [currentWorkflowId, setCurrentWorkflowId] = useState(innerSearchParams.get('id') || DEFAULT_WORKFLOW_ID)
   const [workflowName, setWorkflowName] = useState(DEFAULT_WORKFLOW_NAME)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [dropFeedback, setDropFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
+  const [snippetFeedback, setSnippetFeedback] = useState<string | null>(null)
+  const [connectionFeedback, setConnectionFeedback] = useState<ConnectionValidationFeedback | null>(null)
+  const [snippets, setSnippets] = useState<CanvasSnippetView[]>([])
+  const [selectedSnippetId, setSelectedSnippetId] = useState<string>('')
   const [showProjectManager, setShowProjectManager] = useState(false)
   const isDirtyRef = useRef(false)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /* ── Store selectors（仅用于撤销/重做 UI 和持久化回调） ── */
+  /* 閳光偓閳光偓 Store selectors閿涘牅绮庨悽銊ょ艾閹俱倝鏀?闁插秴浠?UI 閸滃本瀵旀稊鍛閸ョ偠鐨熼敍?閳光偓閳光偓 */
   const pastLen = useStore(canvasStore, (s) => s.past.length)
   const futureLen = useStore(canvasStore, (s) => s.future.length)
 
-  /* ── ReactFlow 作为实时状态唯一来源 ── */
+  /* 閳光偓閳光偓 ReactFlow 娴ｆ粈璐熺€圭偞妞傞悩鑸碘偓浣告暜娑撯偓閺夈儲绨?閳光偓閳光偓 */
   const initialNodes = useMemo<Node[]>(
     () => mapStoreNodes(canvasStore.getState().nodes),
     [],
@@ -339,11 +465,102 @@ function CanvasPageInner(): JSX.Element {
   )
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>(initialNodes)
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges)
+  const selectedNodeIds = useMemo(
+    () => rfNodes.filter((node) => node.selected).map((node) => node.id),
+    [rfNodes],
+  )
+  const selectedSnippet = useMemo(
+    () => snippets.find((snippet) => snippet.id === selectedSnippetId) ?? snippets[0] ?? null,
+    [selectedSnippetId, snippets],
+  )
 
-  /* ── Debounced 持久化到 store ── */
+  const syncReactFlowFromStore = useCallback(() => {
+    const state = canvasStore.getState()
+    setRfNodes(state.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: n.position,
+      data: n.data as unknown as Record<string, unknown>,
+    })))
+    setRfEdges(state.edges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      type: 'default' as const,
+      data: e.data as unknown as Record<string, unknown>,
+    })))
+  }, [setRfNodes, setRfEdges])
+
+  const loadSnippets = useCallback(async () => {
+    try {
+      const nextSnippets = await window.comicCanvas.listCanvasSnippets()
+      setSnippets(nextSnippets)
+      setSelectedSnippetId((current) => (
+        current && nextSnippets.some((snippet) => snippet.id === current)
+          ? current
+          : nextSnippets[0]?.id ?? ''
+      ))
+    } catch {
+      setSnippetFeedback('Failed to load snippets')
+    }
+  }, [])
+
+  const restoreWorkflowGraph = useCallback(async (snapshot: CanvasGraphSnapshot) => {
+    let restoredNodes = snapshot.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: n.position,
+      data: n.data,
+    }))
+
+    if (restoredNodes.length > 0) {
+      try {
+        const jobs = await window.comicCanvas.listJobs({ limit: 100 })
+        restoredNodes = reconcileCanvasNodesWithJobs(restoredNodes, jobs)
+      } catch {
+        // Job reconciliation is best-effort; graph loading must remain available offline.
+      }
+    }
+
+    canvasStore.getState().setNodes(restoredNodes)
+    canvasStore.getState().setEdges(
+      snapshot.edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        data: e.data,
+      })),
+    )
+    setRfNodes(restoredNodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      position: n.position,
+      data: n.data as unknown as Record<string, unknown>,
+    })))
+    setRfEdges(snapshot.edges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      type: 'default' as const,
+      data: e.data as unknown as Record<string, unknown>,
+    })))
+    if (snapshot.viewport) {
+      canvasStore.getState().setViewport(snapshot.viewport)
+    }
+  }, [setRfNodes, setRfEdges])
+
+  const planExecutionController = useMemo(
+    () =>
+      createCanvasPlanExecutionController({
+        store: canvasStore,
+        runNode: (nodeId) => window.comicCanvas.runCanvasNode({ workflowId: currentWorkflowId, nodeId }),
+      }),
+    [currentWorkflowId],
+  )
+
+  /* 閳光偓閳光偓 Debounced 閹镐椒绠欓崠鏍у煂 store 閳光偓閳光偓 */
   const skipNextPersistRef = useRef(false)
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const persistToStore = useCallback(
     debounce((nodes: Node[], edges: Edge[]) => {
       if (skipNextPersistRef.current) {
@@ -363,7 +580,7 @@ function CanvasPageInner(): JSX.Element {
           id: e.id,
           source: e.source,
           target: e.target,
-          // 保留已有边数据（含 edgeType），避免覆盖为 default
+          // 娣囨繄鏆€瀹稿弶婀佹潏瑙勬殶閹诡噯绱欓崥?edgeType閿涘绱濋柆鍨帳鐟曞棛娲婃稉?default
           data: (e.data as unknown as CanvasEdgeData) ?? { edgeType: 'default' as const, createdAt: Date.now() },
         })),
       )
@@ -377,7 +594,27 @@ function CanvasPageInner(): JSX.Element {
     isDirtyRef.current = true
   }, [rfNodes, rfEdges, persistToStore])
 
-  /* ── Save graph handler ── */
+  useEffect(() => {
+    void loadSnippets()
+  }, [loadSnippets])
+
+  useEffect(() => {
+    const unsubscribeCompleted = window.comicCanvas.onJobCompleted((event) => {
+      planExecutionController.notifyJobCompleted(event)
+      syncReactFlowFromStore()
+    })
+    const unsubscribeFailed = window.comicCanvas.onJobFailed((event) => {
+      planExecutionController.notifyJobFailed(event)
+      syncReactFlowFromStore()
+    })
+
+    return () => {
+      unsubscribeCompleted()
+      unsubscribeFailed()
+    }
+  }, [planExecutionController, syncReactFlowFromStore])
+
+  /* 閳光偓閳光偓 Save graph handler 閳光偓閳光偓 */
   const handleSave = useCallback(async () => {
     try {
       setSaveStatus('saving')
@@ -406,31 +643,37 @@ function CanvasPageInner(): JSX.Element {
       // Reset status after 2s
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
       saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000)
-    } catch {
+    } catch (error) {
       setSaveStatus('error')
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
       saveStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 3000)
+      throw error
     }
   }, [currentWorkflowId])
 
-  /* ── Ctrl+S / Cmd+S keyboard shortcut ── */
+  /* 閳光偓閳光偓 Ctrl+S / Cmd+S keyboard shortcut 閳光偓閳光偓 */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
-        handleSave()
+        void handleSave().catch(() => undefined)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [handleSave])
 
-  /* ── Debounced auto-save (2s after changes) ── */
+  useEffect(() => installDirtyBeforeUnloadGuard({
+    target: window,
+    isDirty: () => isDirtyRef.current,
+  }), [])
+
+  /* 閳光偓閳光偓 Debounced auto-save (2s after changes) 閳光偓閳光偓 */
   useEffect(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = setTimeout(() => {
       if (isDirtyRef.current) {
-        handleSave()
+        void handleSave().catch(() => undefined)
       }
     }, 2000)
     return () => {
@@ -438,7 +681,7 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [rfNodes, rfEdges, handleSave])
 
-  /* ── Load graph helper (reusable for initial load and workflow switch) ── */
+  /* 閳光偓閳光偓 Load graph helper (reusable for initial load and workflow switch) 閳光偓閳光偓 */
   const loadGraphForWorkflow = useCallback(async (workflowId: string) => {
     try {
       const snapshot = await window.comicCanvas.loadGraph({
@@ -447,37 +690,7 @@ function CanvasPageInner(): JSX.Element {
       if (!snapshot) return
       // Only restore if there are actual nodes/edges
       if (snapshot.nodes.length > 0 || snapshot.edges.length > 0) {
-        canvasStore.getState().setNodes(
-          snapshot.nodes.map((n) => ({
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: n.data,
-          })),
-        )
-        canvasStore.getState().setEdges(
-          snapshot.edges.map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            data: e.data,
-          })),
-        )
-        setRfNodes(snapshot.nodes.map((n) => ({
-          id: n.id,
-          type: n.type,
-          position: n.position,
-          data: n.data as unknown as Record<string, unknown>,
-        })))
-        setRfEdges(snapshot.edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          type: 'default',
-        })))
-        if (snapshot.viewport) {
-          canvasStore.getState().setViewport(snapshot.viewport)
-        }
+        await restoreWorkflowGraph(snapshot)
       } else {
         // Empty workflow - clear canvas
         canvasStore.getState().setNodes([])
@@ -491,7 +704,7 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [setRfNodes, setRfEdges])
 
-  /* ── Load graph on mount ── */
+  /* 閳光偓閳光偓 Load graph on mount 閳光偓閳光偓 */
   useEffect(() => {
     let cancelled = false
     async function loadGraph() {
@@ -502,37 +715,7 @@ function CanvasPageInner(): JSX.Element {
         if (cancelled || !snapshot) return
         // Only restore if there are actual nodes/edges
         if (snapshot.nodes.length > 0 || snapshot.edges.length > 0) {
-          canvasStore.getState().setNodes(
-            snapshot.nodes.map((n) => ({
-              id: n.id,
-              type: n.type,
-              position: n.position,
-              data: n.data,
-            })),
-          )
-          canvasStore.getState().setEdges(
-            snapshot.edges.map((e) => ({
-              id: e.id,
-              source: e.source,
-              target: e.target,
-              data: e.data,
-            })),
-          )
-          setRfNodes(snapshot.nodes.map((n) => ({
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: n.data as unknown as Record<string, unknown>,
-          })))
-          setRfEdges(snapshot.edges.map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            type: 'default',
-          })))
-          if (snapshot.viewport) {
-            canvasStore.getState().setViewport(snapshot.viewport)
-          }
+          await restoreWorkflowGraph(snapshot)
         }
         setWorkflowName(DEFAULT_WORKFLOW_NAME)
         isDirtyRef.current = false
@@ -540,49 +723,27 @@ function CanvasPageInner(): JSX.Element {
         // Silently fall back to empty canvas
       }
     }
-    loadGraph()
+    void loadGraph()
     return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentWorkflowId, restoreWorkflowGraph])
 
-  /* ── Switch workflow handler ── */
+  /* 閳光偓閳光偓 Switch workflow handler 閳光偓閳光偓 */
   const handleSwitchWorkflow = useCallback(async (workflowId: string, name: string) => {
-    // Save current workflow first if dirty
-    if (isDirtyRef.current) {
-      try {
-        const state = canvasStore.getState()
-        const snapshot: CanvasGraphSnapshot = {
-          nodes: state.nodes.map((n) => ({
-            id: n.id,
-            type: n.type,
-            position: n.position,
-            data: n.data,
-          })),
-          edges: state.edges.map((e) => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            data: e.data,
-          })),
-          viewport: state.viewport,
-        }
-        await window.comicCanvas.saveGraph({
-          projectId: currentWorkflowId,
-          graph: snapshot,
-        })
-      } catch {
-        // Continue even if save fails
-      }
-    }
-    // Switch to new workflow
-    setCurrentWorkflowId(workflowId)
-    setWorkflowName(name)
-    skipNextPersistRef.current = true
-    await loadGraphForWorkflow(workflowId)
-    setShowProjectManager(false)
-  }, [currentWorkflowId, loadGraphForWorkflow])
+    await guardWorkflowSwitch({
+      isDirty: isDirtyRef.current,
+      saveCurrent: handleSave,
+      onSaveFailed: () => setSaveStatus('error'),
+      switchWorkflow: async () => {
+        setCurrentWorkflowId(workflowId)
+        setWorkflowName(name)
+        skipNextPersistRef.current = true
+        await loadGraphForWorkflow(workflowId)
+        setShowProjectManager(false)
+      },
+    })
+  }, [handleSave, loadGraphForWorkflow])
 
-  /* ── Cleanup timers ── */
+  /* 閳光偓閳光偓 Cleanup timers 閳光偓閳光偓 */
   useEffect(() => {
     return () => {
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
@@ -590,7 +751,7 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [])
 
-  /* ── Undo/Redo：从 store 重新同步到 ReactFlow ── */
+  /* 閳光偓閳光偓 Undo/Redo閿涙矮绮?store 闁插秵鏌婇崥灞绢劄閸?ReactFlow 閳光偓閳光偓 */
   const prevPastLen = useRef(pastLen)
   const prevFutureLen = useRef(futureLen)
 
@@ -608,31 +769,37 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [pastLen, futureLen, setRfNodes, setRfEdges])
 
-  /* ── 实时事件 ── */
+  /* 閳光偓閳光偓 鐎圭偞妞傛禍瀣╂ 閳光偓閳光偓 */
   useCanvasRealtime()
-
-  /* ── 连接处理器 ── */
   const handleConnect = useCallback<OnConnect>((connection) => {
-    const result = canvasStore
-      .getState()
-      .addEdge(connection.source!, connection.target!)
+    const result = createCanvasEdge({
+      store: canvasStore,
+      notify: setConnectionFeedback,
+      request: {
+        source: connection.source,
+        target: connection.target,
+        reason: 'direct',
+      },
+    })
+
     if (result.ok) {
-      // 从 store 获取边数据（含正确的 edgeType）
-      const storeEdge = canvasStore.getState().edges.find((e) => e.id === result.edgeId)
+      const edgeId = (result as { edgeId: string }).edgeId
+      const storeEdge = canvasStore.getState().edges.find((edge) => edge.id === edgeId)
       setRfEdges((eds) => [
         ...eds,
         {
-          id: result.edgeId,
-          source: connection.source!,
-          target: connection.target!,
+          id: edgeId,
+          source: connection.source,
+          target: connection.target,
           type: 'default',
           data: storeEdge?.data as unknown as Record<string, unknown>,
         },
       ])
+      setConnectionFeedback(null)
     }
   }, [setRfEdges])
 
-  /* ── 拖拽结束：提交位置到 store + 历史 ── */
+  /* 閳光偓閳光偓 閹锋牗瀚跨紒鎾存将閿涙碍褰佹禍銈勭秴缂冾喖鍩?store + 閸樺棗褰?閳光偓閳光偓 */
   const handleNodeDragStop = useCallback<OnNodeDrag>((_event, node) => {
     canvasStore.setState((prev) => {
       const snapshot = {
@@ -652,7 +819,7 @@ function CanvasPageInner(): JSX.Element {
     })
   }, [])
 
-  /* ── 操作回调 ── */
+  /* 閳光偓閳光偓 閹垮秳缍旈崶鐐剁殶 閳光偓閳光偓 */
   const handleUndo = useCallback(() => {
     canvasStore.getState().undo()
   }, [])
@@ -683,7 +850,7 @@ function CanvasPageInner(): JSX.Element {
       }
       setRfNodes((nds) => [...nds, newNode])
 
-      // 同步压入 store 历史栈（用于撤销）
+      // 閸氬本顒為崢瀣弳 store 閸樺棗褰堕弽鍫礄閻劋绨幘銈夋敘閿?
       canvasStore.setState((prev) => {
         const snapshot = {
           nodes: prev.nodes,
@@ -704,11 +871,12 @@ function CanvasPageInner(): JSX.Element {
           ],
         }
       })
+      return id
     },
     [setRfNodes],
   )
 
-  /* ── Context menu handlers ── */
+  /* 閳光偓閳光偓 Context menu handlers 閳光偓閳光偓 */
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent | MouseEvent) => {
       event.preventDefault()
@@ -744,92 +912,213 @@ function CanvasPageInner(): JSX.Element {
     [contextMenu, screenToFlowPosition, handleAddNode],
   )
 
-  const handleCopyNode = useCallback(
-    (nodeId: string) => {
-      const storeNodes = canvasStore.getState().nodes
-      const source = storeNodes.find((n) => n.id === nodeId)
-      if (!source) return
-      const id = `node-${crypto.randomUUID()}`
-      const position = {
-        x: source.position.x + 40,
-        y: source.position.y + 40,
-      }
-      const newNode: Node = {
-        id,
-        type: source.type,
-        position,
-        data: structuredClone(source.data) as unknown as Record<string, unknown>,
-      }
-      setRfNodes((nds) => [...nds, newNode])
-      canvasStore.setState((prev) => {
-        const snapshot = {
-          nodes: prev.nodes,
-          edges: prev.edges,
-          viewport: prev.viewport,
-        }
-        return {
-          past: [...prev.past, structuredClone(snapshot)].slice(-50),
-          future: [],
-          nodes: [
-            ...prev.nodes,
-            { ...structuredClone(source), id, position } as typeof prev.nodes[number],
-          ],
-        }
+  const handleCreateConnectedNodeAtContextMenu = useCallback(
+    (type: NodeType) => {
+      if (!contextMenu?.nodeId) return
+      const pos = screenToFlowPosition({ x: contextMenu.x + 260, y: contextMenu.y })
+      const createdNodeId = handleAddNode(type, pos)
+      const result = connectCreatedCanvasNode({
+        store: canvasStore,
+        sourceNodeId: contextMenu.nodeId,
+        createdNodeId,
+        notify: setConnectionFeedback,
       })
+      if (result.ok) {
+        syncReactFlowFromStore()
+        setConnectionFeedback(null)
+      }
       setContextMenu(null)
     },
-    [setRfNodes],
+    [contextMenu, handleAddNode, screenToFlowPosition, syncReactFlowFromStore],
   )
 
-  const handleDeleteNode = useCallback(
-    (nodeId: string) => {
-      setRfNodes((nds) => nds.filter((n) => n.id !== nodeId))
-      setRfEdges((eds) =>
-        eds.filter((e) => e.source !== nodeId && e.target !== nodeId),
-      )
-      canvasStore.setState((prev) => {
-        const snapshot = {
-          nodes: prev.nodes,
-          edges: prev.edges,
-          viewport: prev.viewport,
-        }
-        return {
-          past: [...prev.past, structuredClone(snapshot)].slice(-50),
-          future: [],
-          nodes: prev.nodes.filter((n) => n.id !== nodeId),
-          edges: prev.edges.filter(
-            (e) => e.source !== nodeId && e.target !== nodeId,
-          ),
-        }
+  const syncStoreSnapshotToReactFlow = useCallback(() => {
+    const state = canvasStore.getState()
+    setRfNodes(mapStoreNodes(state.nodes))
+    setRfEdges(mapStoreEdges(state.edges))
+  }, [setRfNodes, setRfEdges])
+
+  const handleDuplicateSelection = useCallback(
+    (nodeIds: string[]) => {
+      const result = duplicateSelectedCanvasNodes({
+        store: canvasStore,
+        selectedNodeIds: nodeIds,
       })
+      if (result.duplicatedNodeIds.length === 0) return
+      skipNextPersistRef.current = true
+      syncStoreSnapshotToReactFlow()
       setContextMenu(null)
     },
-    [setRfNodes, setRfEdges],
+    [syncStoreSnapshotToReactFlow],
   )
+
+  const handleDeleteSelection = useCallback(
+    (nodeIds: string[]) => {
+      const result = deleteSelectedCanvasNodes({
+        store: canvasStore,
+        selectedNodeIds: nodeIds,
+      })
+      if (result.deletedNodeIds.length === 0) return
+      skipNextPersistRef.current = true
+      syncStoreSnapshotToReactFlow()
+      setContextMenu(null)
+    },
+    [syncStoreSnapshotToReactFlow],
+  )
+
+  const canvasCommands = useMemo<CanvasCommand[]>(() => [
+    {
+      id: 'fit-view',
+      label: 'Fit view',
+      keywords: ['fit', 'zoom', 'view'],
+      run: () => fitView({ padding: 0.18, duration: 240 }),
+    },
+    {
+      id: 'select-mode',
+      label: 'Select mode',
+      keywords: ['select', 'pointer'],
+      run: () => setInteractionMode('select'),
+    },
+    {
+      id: 'pan-mode',
+      label: 'Pan mode',
+      keywords: ['pan', 'hand'],
+      run: () => setInteractionMode('pan'),
+    },
+    {
+      id: 'duplicate-selection',
+      label: 'Duplicate selected nodes',
+      keywords: ['duplicate', 'copy'],
+      disabled: selectedNodeIds.length === 0,
+      run: () => handleDuplicateSelection(selectedNodeIds),
+    },
+    {
+      id: 'delete-selection',
+      label: 'Delete selected nodes',
+      keywords: ['delete', 'remove'],
+      disabled: selectedNodeIds.length === 0,
+      run: () => handleDeleteSelection(selectedNodeIds),
+    },
+  ], [fitView, handleDeleteSelection, handleDuplicateSelection, selectedNodeIds])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(e.target)) return
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setShowCommandPalette(true)
+        return
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault()
+        handleDuplicateSelection(selectedNodeIds)
+        return
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodeIds.length === 0) return
+        e.preventDefault()
+        handleDeleteSelection(selectedNodeIds)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleDeleteSelection, handleDuplicateSelection, selectedNodeIds])
 
   const handleRunAll = useCallback(() => {
-    // 预留：未来触发全节点运行
+    // 妫板嫮鏆€閿涙碍婀弶銉ㄐ曢崣鎴濆弿閼哄倻鍋ｆ潻鎰攽
   }, [])
 
-  /* ── 资产插入回调：将资产作为新节点添加到画布 ── */
-  const handleInsertAsset = useCallback(
-    (asset: { id: string; url: string; type: 'image' | 'video'; name: string }) => {
-      const nodeType: NodeType = asset.type === 'video' ? 'video' : 'image'
+  const handleSaveSnippet = useCallback(async () => {
+    try {
+      const snippet = extractCanvasSnippet({
+        name: `Snippet ${new Date().toLocaleString('zh-CN')}`,
+        graph: canvasStore.getState(),
+        selectedNodeIds,
+        createdAt: Date.now(),
+      })
+      const saved = await window.comicCanvas.saveCanvasSnippet({
+        name: snippet.name,
+        nodes: snippet.nodes,
+        edges: snippet.edges,
+      })
+
+      if ('errorClass' in saved) {
+        setSnippetFeedback(saved.message)
+        return
+      }
+
+      await loadSnippets()
+      setSelectedSnippetId(saved.id)
+      setSnippetFeedback(`Saved snippet with ${saved.nodes.length} nodes`)
+    } catch {
+      setSnippetFeedback('Select at least two nodes before saving a snippet')
+    }
+  }, [loadSnippets, selectedNodeIds])
+
+  const handleInsertSnippet = useCallback(() => {
+    if (!selectedSnippet) {
+      setSnippetFeedback('No snippet selected')
+      return
+    }
+
+    const snippet: CanvasSnippet = {
+      schemaVersion: 1,
+      name: selectedSnippet.name,
+      createdAt: selectedSnippet.createdAt,
+      nodes: selectedSnippet.nodes,
+      edges: selectedSnippet.edges,
+    }
+
+    insertCanvasSnippet(snippet, canvasStore, {
+      origin: {
+        x: Math.max(120, ...canvasStore.getState().nodes.map((node) => node.position.x + 360)),
+        y: Math.max(120, ...canvasStore.getState().nodes.map((node) => node.position.y)),
+      },
+    })
+    syncReactFlowFromStore()
+    setSnippetFeedback(`Inserted snippet with ${selectedSnippet.nodes.length} nodes`)
+  }, [selectedSnippet, syncReactFlowFromStore])
+
+  /* 閳光偓閳光偓 鐠у嫪楠囬幓鎺戝弳閸ョ偠鐨熼敍姘殺鐠у嫪楠囨担婊€璐熼弬鎷屽Ν閻愯鍧婇崝鐘插煂閻㈣绔?閳光偓閳光偓 */
+  const showDropFeedback = useCallback((kind: 'success' | 'error', message: string) => {
+    const normalizedMessage =
+      kind === 'success' && !message.startsWith('\u5df2\u5bfc\u5165')
+        ? `Imported ${message.replace(/^.*?\?/u, '')}`
+        : kind === 'error' && message.includes('{plan.label}')
+          ? '\u5bfc\u5165\u5931\u8d25'
+          : message
+    setDropFeedback({ kind, message: normalizedMessage })
+    window.setTimeout(() => setDropFeedback(null), 2800)
+  }, [])
+
+  const appendAssetNode = useCallback(
+    (asset: { id: string; safeUrl: string; mediaType: 'image' | 'video' | 'audio'; name: string }, flowPosition?: { x: number; y: number }) => {
+      const nodeType: Extract<NodeType, 'image' | 'video' | 'audio'> = asset.mediaType
       const currentNodes = canvasStore.getState().nodes
       const count = currentNodes.filter((n) => n.type === nodeType).length
-      const offset = NODE_OFFSETS[nodeType] ?? { x: 160, y: 120 }
-      const position = { x: offset.x + count * 40, y: offset.y + count * 60 }
+      const position = flowPosition
+        ? { x: flowPosition.x - 140, y: flowPosition.y - 40 }
+        : (() => {
+            const offset = NODE_OFFSETS[nodeType]
+            return { x: offset.x + count * 40, y: offset.y + count * 60 }
+          })()
       const id = `node-${crypto.randomUUID()}`
       const data = {
         ...defaultNodeData(nodeType, count + 1),
         assetId: asset.id,
         label: asset.name,
+        status: 'done' as const,
+        url: asset.safeUrl,
       }
       const newNode: Node = {
         id,
         type: nodeType,
         position,
-        data: data as unknown as Record<string, unknown>,
+        data,
       }
       setRfNodes((nds) => [...nds, newNode])
       canvasStore.setState((prev) => {
@@ -837,46 +1126,77 @@ function CanvasPageInner(): JSX.Element {
         return {
           past: [...prev.past, structuredClone(snapshot)].slice(-50),
           future: [],
-          nodes: [...prev.nodes, { id, type: nodeType, position, data } as typeof prev.nodes[number]],
+          nodes: [...prev.nodes, { id, type: nodeType, position, data }],
         }
       })
     },
     [setRfNodes],
   )
 
-  /* ── AI 对话 Plan 应用回调 ── */
-  const handleApplyPlan = useCallback(
-    (p: CanvasPlan, options: ApplyPlanOptions) => {
-      applyCanvasPlan(p, canvasStore)
-      // 从 store 同步到 ReactFlow
-      const state = canvasStore.getState()
-      setRfNodes(state.nodes.map((n) => ({
-        id: n.id,
-        type: n.type,
-        position: n.position,
-        data: n.data as unknown as Record<string, unknown>,
-      })))
-      setRfEdges(state.edges.map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: 'default' as const,
-      })))
-      // 自动执行时触发节点运行（未来接入）
-      void options
+  const handleInsertAsset = useCallback(
+    (asset: { id: string; url: string; type: 'image' | 'video' | 'audio'; name: string }) => {
+      appendAssetNode({ id: asset.id, safeUrl: asset.url, mediaType: asset.type, name: asset.name })
     },
-    [setRfNodes, setRfEdges],
+    [appendAssetNode],
+  )
+
+  const handleCanvasDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (event.dataTransfer.types.includes('Files')) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
+  const handleCanvasDrop = useCallback(
+    async (event: React.DragEvent<HTMLDivElement>) => {
+      const files = Array.from(event.dataTransfer.files)
+      const firstFile = files[0]
+      if (!firstFile) return
+      event.preventDefault()
+
+      const plan = planLocalMediaDrop(firstFile)
+      if (!plan.ok) {
+        showDropFeedback('error', plan.reason)
+        return
+      }
+
+      try {
+        const imported: AssetRecord = await window.comicCanvas.importAsset({
+          sourcePath: plan.sourcePath,
+          mediaType: plan.mediaType,
+        })
+        appendAssetNode({
+          id: imported.id,
+          safeUrl: imported.safeUrl,
+          mediaType: plan.mediaType,
+          name: plan.label,
+        }, screenToFlowPosition({ x: event.clientX, y: event.clientY }))
+        showDropFeedback('success', `Inserted ${plan.label}`)
+      } catch {
+        showDropFeedback('error', `Failed to insert ${plan.label}`)
+      }
+    },
+    [appendAssetNode, screenToFlowPosition, showDropFeedback],
+  )
+
+  /* 閳光偓閳光偓 AI 鐎电鐦?Plan 鎼存梻鏁ら崶鐐剁殶 閳光偓閳光偓 */
+  const handleApplyPlan = useCallback(
+    (p: CanvasPlan, { autoExecute }: ApplyPlanOptions) => {
+      planExecutionController.applyPlan(p, { autoExecute })
+      syncReactFlowFromStore()
+    },
+    [planExecutionController, syncReactFlowFromStore],
   )
 
   return (
     <div className="flex h-screen w-screen flex-col bg-bg-base">
-      {/* ── 顶栏 ── */}
+      {/* 閳光偓閳光偓 妞よ埖鐖?閳光偓閳光偓 */}
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-secondary bg-bg-surface px-4">
         <div className="flex items-center gap-3">
           <Link
             to="/projects"
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="返回项目列表"
+            aria-label="Back to projects"
           >
             <IconArrowLeft className="h-4 w-4" />
           </Link>
@@ -887,6 +1207,7 @@ function CanvasPageInner(): JSX.Element {
             {workflowName}
             <IconChevronDown className="h-3.5 w-3.5 text-text-muted" />
           </button>
+          <ProjectStyleSelector workflowId={currentWorkflowId} />
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -895,63 +1216,105 @@ function CanvasPageInner(): JSX.Element {
             onClick={handleUndo}
             disabled={pastLen === 0}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="撤销"
+            aria-label="Undo"
           >
             <IconArrowBackUp className="h-3.5 w-3.5" />
-            撤销
+            Undo
           </button>
           <button
             type="button"
             onClick={handleRedo}
             disabled={futureLen === 0}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="重做"
+            aria-label="Redo"
           >
             <IconArrowForwardUp className="h-3.5 w-3.5" />
-            重做
+            Redo
           </button>
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => void handleSave().catch(() => undefined)}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="保存"
+            aria-label="Save"
           >
             {saveStatus === 'saving' ? (
               <>
                 <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
-                保存中...
+                Saving...
               </>
             ) : saveStatus === 'saved' ? (
               <>
                 <IconCheck className="h-3.5 w-3.5 text-green-400" />
-                <span className="text-green-400">已保存</span>
+                <span className="text-green-400">Saved</span>
               </>
             ) : saveStatus === 'error' ? (
               <>
                 <IconDeviceFloppy className="h-3.5 w-3.5 text-red-400" />
-                <span className="text-red-400">保存失败</span>
+                <span className="text-red-400">Save failed</span>
               </>
             ) : (
               <>
                 <IconDeviceFloppy className="h-3.5 w-3.5" />
-                保存
+                Save
               </>
             )}
           </button>
           <button
             type="button"
+            onClick={() => void handleSaveSnippet()}
+            disabled={selectedNodeIds.length < 2}
+            className="inline-flex h-8 items-center rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="保存片段"
+            title={selectedNodeIds.length < 2 ? '请选择至少两个节点' : '保存选中节点为片段'}
+          >
+            保存片段
+          </button>
+          <select
+            value={selectedSnippet?.id ?? ''}
+            onChange={(event) => setSelectedSnippetId(event.target.value)}
+            className="h-8 max-w-[180px] rounded-lg border border-border-secondary bg-bg-card px-2 text-[13px] font-medium text-text-secondary outline-none transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base"
+            aria-label="片段库"
+          >
+            {snippets.length === 0 ? (
+              <option value="">暂无片段</option>
+            ) : snippets.map((snippet) => (
+              <option key={snippet.id} value={snippet.id}>
+                {snippet.name} ({snippet.nodeCount})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleInsertSnippet}
+            disabled={!selectedSnippet}
+            className="inline-flex h-8 items-center rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="插入片段"
+          >
+            插入片段
+          </button>
+          <button
+            type="button"
             onClick={handleRunAll}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
-            aria-label="运行全部"
+            aria-label="Run all"
           >
             <IconPlayerPlay className="h-3.5 w-3.5" />
-            运行全部
+            Run all
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowJobPanel((v) => !v)}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary px-3 text-[13px] font-medium transition-all duration-200 ease-luxury active:scale-95 ${showJobPanel ? 'bg-brand/10 text-brand' : 'bg-bg-card text-text-secondary hover:bg-bg-hover hover:text-text-base'}`}
+            aria-label="Jobs"
+          >
+            <IconListDetails className="h-3.5 w-3.5" />
+            Jobs
           </button>
         </div>
       </header>
 
-      {/* ── 画布区域 ── */}
-      <div className="relative flex-1">
+      {/* 閳光偓閳光偓 閻㈣绔烽崠鍝勭厵 閳光偓閳光偓 */}
+      <div className="relative flex-1" onDragOver={handleCanvasDragOver} onDrop={(event) => void handleCanvasDrop(event)}>
         <ReactFlow
           nodes={rfNodes}
           edges={rfEdges}
@@ -967,6 +1330,8 @@ function CanvasPageInner(): JSX.Element {
           defaultViewport={{ x: 120, y: 80, zoom: 0.75 }}
           minZoom={0.15}
           maxZoom={2}
+          selectionOnDrag={interactionMode === 'select'}
+          panOnDrag={interactionMode === 'pan'}
           selectionMode={SelectionMode.Partial}
           onlyRenderVisibleElements
           proOptions={{ hideAttribution: true }}
@@ -983,7 +1348,34 @@ function CanvasPageInner(): JSX.Element {
           <Controls position="bottom-left" />
         </ReactFlow>
 
-        {/* ── 右键菜单 ── */}
+        {dropFeedback && (
+          <div
+            role="status"
+            className={`pointer-events-none absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg border px-3 py-2 text-[13px] shadow-card ${
+              dropFeedback.kind === 'success'
+                ? 'border-green-500/30 bg-green-500/10 text-green-300'
+                : 'border-red-500/30 bg-red-500/10 text-red-300'
+            }`}
+          >
+            {dropFeedback.message}
+          </div>
+        )}
+
+        <ConnectionFeedback
+          feedback={connectionFeedback}
+          className="pointer-events-none absolute left-1/2 top-4 z-30 -translate-x-1/2"
+        />
+
+        {snippetFeedback && (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-16 z-30 -translate-x-1/2 rounded-lg border border-border-secondary bg-bg-panel px-3 py-2 text-[13px] text-text-base shadow-card"
+          >
+            {snippetFeedback}
+          </div>
+        )}
+
+        {/* 閳光偓閳光偓 閸欐娊鏁懣婊冨礋 閳光偓閳光偓 */}
         {contextMenu && (
           <>
             <div
@@ -1001,7 +1393,7 @@ function CanvasPageInner(): JSX.Element {
               {contextMenu.type === 'pane' ? (
                 <>
                   <p className="px-3 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">
-                    添加节点
+                    Add node
                   </p>
                   {CONTEXT_MENU_NODE_OPTIONS.map((opt) => (
                     <button
@@ -1019,105 +1411,160 @@ function CanvasPageInner(): JSX.Element {
               ) : (
                 <>
                   <p className="px-3 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">
-                    节点操作
+                    Node actions
                   </p>
                   <button
-                    onClick={() => handleCopyNode(contextMenu.nodeId!)}
+                    onClick={() => handleDuplicateSelection([contextMenu.nodeId!])}
                     className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                   >
                     <IconCopy className="h-4 w-4 text-text-secondary group-hover:text-brand" />
                     <span className="text-[13px] font-medium text-text-base">
-                      复制节点
+                      Duplicate node
                     </span>
                   </button>
                   <button
-                    onClick={() => handleDeleteNode(contextMenu.nodeId!)}
+                    onClick={() => handleDeleteSelection([contextMenu.nodeId!])}
                     className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                   >
                     <IconTrash className="h-4 w-4 text-text-secondary group-hover:text-red-400" />
                     <span className="text-[13px] font-medium text-text-base">
-                      删除节点
+                      Delete node
                     </span>
                   </button>
+                  <span className="my-1 block h-px bg-border-secondary" />
+                  {CONTEXT_MENU_NODE_OPTIONS.map((opt) => (
+                    <button
+                      key={`connect-${opt.type}`}
+                      onClick={() => handleCreateConnectedNodeAtContextMenu(opt.type)}
+                      className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
+                    >
+                      <opt.icon className="h-4 w-4 text-text-secondary group-hover:text-brand" />
+                      <span className="text-[13px] font-medium text-text-base">
+                        Link {opt.label}
+                      </span>
+                    </button>
+                  ))}
                 </>
               )}
             </div>
           </>
         )}
 
-        {/* ── 左侧浮动工具栏 ── */}
+        {/* 閳光偓閳光偓 瀹革缚鏅跺ù顔煎З瀹搞儱鍙块弽?閳光偓閳光偓 */}
         <aside className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border border-border-primary bg-bg-panel p-1 shadow-card">
-          {/* Plus 展开按钮 */}
+          {/* Plus 鐏炴洖绱戦幐澶愭尦 */}
           <button
             type="button"
             onClick={() => setIsAddMenuOpen((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury active:scale-90 ${isAddMenuOpen ? 'bg-brand text-bg-base' : 'text-text-secondary hover:border-brand/30 hover:bg-bg-hover hover:text-text-base'}`}
-            title={isAddMenuOpen ? '收起' : '添加节点'}
+            title={isAddMenuOpen ? 'Collapse' : 'Add node'}
           >
             {isAddMenuOpen ? <IconX className="h-4 w-4" /> : <IconPlus className="h-4 w-4" />}
           </button>
 
-          {/* 分隔线 */}
+          {/* 閸掑棝娈х痪?*/}
           <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
 
-          {/* Quick tools 直接添加 */}
+          <button
+            type="button"
+            onClick={() => setInteractionMode('select')}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${interactionMode === 'select' ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Select mode"
+            aria-label="Select mode"
+          >
+            <IconPointer className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setInteractionMode('pan')}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${interactionMode === 'pan' ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Pan mode"
+            aria-label="Pan mode"
+          >
+            <IconHandGrab className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowCommandPalette(true)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showCommandPalette ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Command palette"
+            aria-label="Command palette"
+          >
+            <IconSearch className="h-4 w-4" />
+          </button>
+
+          <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
+          {/* Quick tools 閻╁瓨甯村ǎ璇插 */}
           {QUICK_TOOLS.map((tool) => (
             <button
               key={tool.type}
               type="button"
               onClick={() => { handleAddNode(tool.type); setIsAddMenuOpen(false) }}
               className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:border-brand/30 hover:bg-bg-hover hover:text-text-base active:scale-90"
-              title={`添加${tool.label}`}
+              title={`Add ${tool.label}`}
             >
               <tool.icon className="h-4 w-4" />
             </button>
           ))}
 
-          {/* 分隔线 */}
+          {/* 閸掑棝娈х痪?*/}
           <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
 
-          {/* 保存 */}
+          {/* 娣囨繂鐡?*/}
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => void handleSave().catch(() => undefined)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${saveStatus === 'saving' ? 'text-brand' : saveStatus === 'saved' ? 'text-green-400' : 'text-text-secondary hover:text-text-base'}`}
-            title={saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '已保存' : '保存 (Ctrl+S)'}
+            title={saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save (Ctrl+S)'}
           >
             {saveStatus === 'saving' ? <IconLoader2 className="h-4 w-4 animate-spin" /> : saveStatus === 'saved' ? <IconCheck className="h-4 w-4" /> : <IconDeviceFloppy className="h-4 w-4" />}
           </button>
 
-          {/* 资产库 */}
+          {/* 鐠у嫪楠囨惔?*/}
           <button
             type="button"
             onClick={() => setShowAssetPanel((v) => !v)}
-            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="资产库"
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-base'}`}
+            title="Asset library"
           >
             <IconFolder className="h-4 w-4" />
           </button>
 
-          {/* 对话 */}
+          {/* 鐎电鐦?*/}
           <button
             type="button"
             onClick={() => setShowChatBox((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showChatBox ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
-            title="对话"
+            title="Chat"
           >
             <IconMessage className="h-4 w-4" />
           </button>
 
-          {/* 主题切换 */}
+          {/* 鏉╂劘顢戞禒璇插 */}
+          <button
+            type="button"
+            onClick={() => setShowJobPanel((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showJobPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Jobs"
+            aria-label="Jobs"
+          >
+            <IconListDetails className="h-4 w-4" />
+          </button>
+
+          {/* 娑撳顣介崚鍥ㄥ床 */}
           <button
             type="button"
             onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            title={themePreference === 'dark' ? '切换亮色' : '切换暗色'}
+            title={themePreference === 'dark' ? 'Switch to light' : 'Switch to dark'}
           >
             {themePreference === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
           </button>
         </aside>
 
-        {/* ── 展开式节点菜单（始终渲染，切换可见性实现过渡动画） ── */}
+        {/* 閳光偓閳光偓 鐏炴洖绱戝蹇氬Ν閻愮褰嶉崡鏇礄婵绮撳〒鍙夌厠閿涘苯鍨忛幑銏犲讲鐟欎焦鈧冪杽閻滄媽绻冨〒鈥冲З閻紮绱?閳光偓閳光偓 */}
         <div
           className={`absolute left-[72px] top-1/2 z-30 w-[220px] -translate-y-1/2 rounded-xl border border-border-primary bg-bg-panel p-3 shadow-pop transition-all duration-300 ease-luxury ${isAddMenuOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-2 opacity-0'}`}
         >
@@ -1143,16 +1590,16 @@ function CanvasPageInner(): JSX.Element {
           ))}
         </div>
 
-        {/* ── 项目管理器 ── */}
+        {/* 閳光偓閳光偓 妞ゅ湱娲扮粻锛勬倞閸?閳光偓閳光偓 */}
         {showProjectManager && (
           <ProjectManager
             currentWorkflowId={currentWorkflowId}
-            onSwitchWorkflow={handleSwitchWorkflow}
+            onSwitchWorkflow={(workflowId, name) => void handleSwitchWorkflow(workflowId, name)}
             onClose={() => setShowProjectManager(false)}
           />
         )}
 
-        {/* ── 资产库面板 ── */}
+        {/* 閳光偓閳光偓 鐠у嫪楠囨惔鎾绘桨閺?閳光偓閳光偓 */}
         {showAssetPanel && (
           <CanvasAssetPanel
             open={showAssetPanel}
@@ -1161,7 +1608,17 @@ function CanvasPageInner(): JSX.Element {
           />
         )}
 
-        {/* ── AI 对话面板 ── */}
+        {showJobPanel && (
+          <CanvasJobPanel onClose={() => setShowJobPanel(false)} />
+        )}
+
+        <CanvasCommandPalette
+          open={showCommandPalette}
+          onClose={() => setShowCommandPalette(false)}
+          commands={canvasCommands}
+        />
+
+        {/* 閳光偓閳光偓 AI 鐎电鐦介棃銏℃緲 閳光偓閳光偓 */}
         <CanvasChatBox
           open={showChatBox}
           onToggle={() => setShowChatBox((v) => !v)}
@@ -1172,7 +1629,7 @@ function CanvasPageInner(): JSX.Element {
   )
 }
 
-/* ─── CanvasPage（带 ReactFlowProvider） ─── */
+/* 閳光偓閳光偓閳光偓 CanvasPage閿涘牆鐢?ReactFlowProvider閿?閳光偓閳光偓閳光偓 */
 
 export default function CanvasPage(): JSX.Element {
   const [searchParams] = useSearchParams()

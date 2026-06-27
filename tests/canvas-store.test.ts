@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { createCanvasStore, type CanvasStoreState } from '../desktop/src/renderer/src/canvas/store/canvas.store'
+import type { NodeType } from '../shared/nodes'
 
 function createStore(): ReturnType<typeof createCanvasStore> {
   return createCanvasStore({
@@ -71,6 +72,29 @@ describe('M2 canvas store', () => {
     expect(store.getState().addEdge(text, image)).toEqual({ ok: false, reason: 'duplicate_edge' })
     expect(store.getState().addEdge(video, image)).toEqual({ ok: false, reason: 'connection_not_allowed' })
     expect(store.getState().lastConnectError).toEqual({ reason: 'connection_not_allowed', at: 1_782_700_000_000 })
+  })
+
+  it('creates migrated hjwall nodes with type-specific default data instead of video fallbacks', () => {
+    const expectedDefaults: ReadonlyArray<readonly [NodeType, Record<string, unknown>]> = [
+      ['character', { label: 'Character 1', description: '', assetId: null, tags: [] }],
+      ['scene', { label: 'Scene 1', description: '', assetId: null, category: '' }],
+      ['audio', { label: 'Audio 1', assetId: null, durationSeconds: 0, status: 'idle' }],
+      ['videoCompose', { label: 'Video Compose 1', inputOrder: [], transitionName: null, modelId: 'stub-compose', assetId: null, status: 'idle' }],
+      ['superResolution', { label: 'Super Resolution 1', scene: 'aigc', resolution: '1080p', fps: 30, assetId: null, status: 'idle' }],
+      ['muxAudioVideo', { label: 'Mux Audio Video 1', modelId: 'stub-mux', assetId: null, status: 'idle' }],
+      ['mjImage', { label: 'MJ Image 1', prompt: '', modelId: 'stub-mj', ratio: '16:9', urls: [], selectedIndex: 0, assetId: null, status: 'idle' }]
+    ]
+
+    for (const [type, expectedData] of expectedDefaults) {
+      const id = store.getState().addNode(type, { x: 0, y: 0 })
+      const node = store.getState().nodes.find((candidate) => candidate.id === id)
+
+      expect(node?.data).toMatchObject(expectedData)
+      expect(node?.data).not.toHaveProperty('promptOverride')
+      expect(node?.data).not.toHaveProperty('durationSeconds', 3)
+      expect(node?.data).not.toHaveProperty('firstFrameAssetId')
+      expect(node?.data).not.toHaveProperty('lastFrameAssetId')
+    }
   })
 
   it('updates node data and viewport without mutating previous snapshots', () => {

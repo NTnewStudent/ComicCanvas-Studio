@@ -5,14 +5,24 @@
  * 相同入参必产出字节等价结果。
  */
 
-import type { NodeType, CanvasEdgeData, TextNodeData, ImageNodeData, VideoNodeData } from './nodes'
+import type {
+  NodeType,
+  CanvasEdgeData,
+  CanvasNodeData,
+  TextNodeData,
+  ImageNodeData,
+  VideoNodeData,
+  CharacterNodeData,
+  SceneNodeData,
+  MjImageNodeData
+} from './nodes'
 
 // ── Graph Snapshot 类型 ─────────────────────────────────────
 
 export interface SnapshotNode {
   id: string
   type: NodeType
-  data: TextNodeData | ImageNodeData | VideoNodeData
+  data: CanvasNodeData
 }
 
 export interface SnapshotEdge {
@@ -41,6 +51,18 @@ const VIDEO_REF_PREFIX = '参考视频：'
 
 // ── 核心函数 ─────────────────────────────────────────────────
 
+function pushAssetRef(refs: AssetRef[], nodeId: string, assetId: string | null | undefined): void {
+  if (!assetId) return
+  if (refs.some((ref) => ref.nodeId === nodeId && ref.assetId === assetId)) return
+  refs.push({ nodeId, assetId })
+}
+
+function semanticLine(kind: string, label: string, content: string | undefined): string | null {
+  const normalized = content?.trim()
+  if (!normalized) return null
+  return `${kind} ${label}: ${normalized}`
+}
+
 export function composeFinalPrompt(
   graph: GraphSnapshot,
   nodeId: string,
@@ -63,10 +85,25 @@ export function composeFinalPrompt(
       if (d.content) textParts.push(d.content)
     } else if (srcNode.type === 'image') {
       const d = srcNode.data as ImageNodeData
-      if (d.assetId) referenceImages.push({ nodeId: srcNode.id, assetId: d.assetId })
+      pushAssetRef(referenceImages, srcNode.id, d.assetId)
     } else if (srcNode.type === 'video') {
       const d = srcNode.data as VideoNodeData
-      if (d.assetId) referenceVideos.push({ nodeId: srcNode.id, assetId: d.assetId })
+      pushAssetRef(referenceVideos, srcNode.id, d.assetId)
+    } else if (srcNode.type === 'character') {
+      const d = srcNode.data as CharacterNodeData
+      const line = semanticLine('Character', d.label, d.description)
+      if (line) textParts.push(line)
+      pushAssetRef(referenceImages, srcNode.id, d.assetId)
+    } else if (srcNode.type === 'scene') {
+      const d = srcNode.data as SceneNodeData
+      const line = semanticLine('Scene', d.label, d.description)
+      if (line) textParts.push(line)
+      pushAssetRef(referenceImages, srcNode.id, d.assetId)
+    } else if (srcNode.type === 'mjImage') {
+      const d = srcNode.data as MjImageNodeData
+      const line = semanticLine('MJ Image', d.label, d.prompt)
+      if (line) textParts.push(line)
+      pushAssetRef(referenceImages, srcNode.id, d.assetId)
     }
   }
 

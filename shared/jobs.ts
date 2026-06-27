@@ -6,6 +6,10 @@
 export type JobType =
   | 'canvas.generateImage'
   | 'canvas.generateVideo'
+  | 'canvas.generateAudio'
+  | 'canvas.composeVideo'
+  | 'canvas.upscaleVideo'
+  | 'canvas.muxAudioVideo'
   | 'agent.run'
   | 'gateway.test'
   | 'knowledge.ingest'

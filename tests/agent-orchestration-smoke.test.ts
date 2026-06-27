@@ -170,14 +170,77 @@ describe('M4 agent orchestration smoke path', () => {
   })
 
   it('wires the renderer App and preload bridge to the Plan execution controller', () => {
-    const appSource = readFileSync('desktop/src/renderer/src/App.tsx', 'utf8')
+    const canvasPageSource = readFileSync('desktop/src/renderer/src/canvas/CanvasPage.tsx', 'utf8')
     const preloadSource = readFileSync('desktop/src/preload/index.ts', 'utf8')
 
-    expect(appSource).toContain('createCanvasPlanExecutionController')
-    expect(appSource).toContain('notifyJobCompleted')
-    expect(appSource).toContain('notifyJobFailed')
-    expect(appSource).toContain('autoExecute')
+    expect(canvasPageSource).toContain('createCanvasPlanExecutionController')
+    expect(canvasPageSource).toContain('runCanvasNode({ workflowId: currentWorkflowId, nodeId })')
+    expect(canvasPageSource).toContain('notifyJobCompleted')
+    expect(canvasPageSource).toContain('notifyJobFailed')
+    expect(canvasPageSource).toContain('autoExecute')
     expect(preloadSource).toContain('runCanvasNode')
     expect(preloadSource).toContain("invokeMain('canvas.runNode'")
+  })
+
+  it('writes completed migrated report job metadata back to the running node in real time', async () => {
+    const store = createCanvasStore({
+      idFactory: () => 'plan-node-compose-1',
+      edgeIdFactory: (source, target) => `edge-${source}-${target}`,
+      clock: () => 1_783_500_000_000,
+    })
+    const plan: CanvasPlan = {
+      kind: 'plan',
+      summary: 'Compose two generated clips.',
+      nodes: [
+        {
+          ref: 'compose-1',
+          type: 'videoCompose',
+          title: 'Compose',
+          data: {
+            label: 'Compose',
+            inputOrder: [],
+            transitionName: 'crossfade',
+            modelId: 'compose-local',
+            assetId: null,
+            status: 'idle',
+          },
+        },
+      ],
+      edges: [],
+      runSteps: [{ ref: 'compose-1', action: 'videoRun' }],
+      question: null,
+      dropped: [],
+    }
+    const controller = createCanvasPlanExecutionController({
+      store,
+      runNode: () => ({ jobId: 'job-compose-1', status: 'pending', createdAt: 1 }),
+      applyOptions: {
+        idFactory: (ref) => `plan-node-${ref}`,
+        edgeIdFactory: (edge) => `edge-${edge.source}-${edge.target}`,
+        clock: () => 1_783_500_000_001,
+      },
+    })
+
+    controller.applyPlan(plan, { autoExecute: true })
+    controller.notifyJobCompleted({
+      channel: 'job.completed',
+      jobId: 'job-compose-1',
+      result: {
+        kind: 'report',
+        summary: 'composed',
+        data: { assetId: 'asset-compose-1', url: 'cc-asset://asset/asset-compose-1' },
+      },
+      emittedAt: 1_783_500_000_002,
+    })
+
+    expect(store.getState().nodes.find((node) => node.id === 'plan-node-compose-1')).toMatchObject({
+      type: 'videoCompose',
+      data: {
+        status: 'done',
+        assetId: 'asset-compose-1',
+        url: 'cc-asset://asset/asset-compose-1',
+      },
+    })
+    expect(controller.currentRunner?.active).toBe(false)
   })
 })

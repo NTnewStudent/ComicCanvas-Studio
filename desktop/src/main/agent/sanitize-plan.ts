@@ -7,10 +7,32 @@ import { canConnect } from '../../../../shared/connection-matrix'
 import type { EdgeType, ImageRole, NodeType } from '../../../../shared/nodes'
 import type { CanvasPlan, PlanEdge, PlanNode, PlanRunStep, RunAction } from '../../../../shared/plan'
 
-const NODE_TYPES = new Set<NodeType>(['text', 'image', 'video', 'imageConfigV2', 'videoConfigV2'])
+const NODE_TYPES = new Set<NodeType>([
+  'text',
+  'image',
+  'video',
+  'character',
+  'scene',
+  'audio',
+  'imageConfigV2',
+  'videoConfigV2',
+  'videoCompose',
+  'superResolution',
+  'muxAudioVideo',
+  'mjImage'
+])
 const EDGE_TYPES = new Set<EdgeType>(['promptOrder', 'imageRole', 'default'])
 const IMAGE_ROLES = new Set<ImageRole>(['first_frame', 'last_frame', 'reference'])
-const RUN_ACTIONS = new Set<RunAction>(['imageRun', 'videoRun', 'textPolish'])
+const RUN_ACTIONS = new Set<RunAction>([
+  'imageRun',
+  'videoRun',
+  'textPolish',
+  'audioRun',
+  'mjImageRun',
+  'videoComposeRun',
+  'superResolutionRun',
+  'muxAudioVideoRun'
+])
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 const DROP = Symbol('drop')
 

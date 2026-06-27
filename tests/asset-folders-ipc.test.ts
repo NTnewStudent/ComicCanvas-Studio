@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -101,6 +101,55 @@ describe('M5 asset folder IPC', () => {
         status: 'deleted',
         tombstonedAssetIds: ['asset-frame']
       })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('imports local audio files through IPC and persists audio metadata', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-audio-import-'))
+    const dbPath = join(tempDir, 'assets.sqlite')
+    const assetRoot = join(tempDir, 'asset-root')
+    const sourcePath = join(tempDir, 'voice.mp3')
+    writeFileSync(sourcePath, Buffer.from([0x49, 0x44, 0x33, 0x03]))
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    try {
+      const assets = createAssetRepository(db)
+      registerAssetHandlers(ipcMain, {
+        assets,
+        assetRoot,
+        clock: () => 1_783_700_000_000,
+        idFactory: (prefix) => `${prefix}-audio`
+      })
+
+      const imported = await handlers.get('asset.import')?.({}, {
+        sourcePath,
+        mediaType: 'audio'
+      })
+
+      expect(imported).toMatchObject({
+        id: 'asset-audio',
+        mediaType: 'audio',
+        status: 'ready',
+        relativePath: 'imported/audio/asset-audio.mp3',
+        safeUrl: 'cc-asset://asset/asset-audio',
+        metadata: {
+          mimeType: 'audio/mpeg',
+          sizeBytes: 4
+        }
+      })
+      expect(existsSync(join(assetRoot, 'imported/audio/asset-audio.mp3'))).toBe(true)
+      expect(await handlers.get('asset.list')?.({}, { mediaType: 'audio' })).toEqual([
+        expect.objectContaining({
+          id: 'asset-audio',
+          mediaType: 'audio',
+          relativePath: 'imported/audio/asset-audio.mp3'
+        })
+      ])
     } finally {
       db.close()
       rmSync(tempDir, { recursive: true, force: true })

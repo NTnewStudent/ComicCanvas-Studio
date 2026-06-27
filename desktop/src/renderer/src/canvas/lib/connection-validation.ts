@@ -9,7 +9,7 @@ import type { NodeType } from '../../../../../../shared/nodes'
 import type {
   CanvasStoreState,
   ConnectFailureReason,
-  ConnectResult
+  ConnectResult,
 } from '../store/canvas.store'
 
 /** Minimal connection shape emitted by the canvas UI. */
@@ -42,14 +42,21 @@ const nodeTypeLabel: Record<NodeType, string> = {
   text: '文本',
   image: '图片',
   video: '视频',
+  character: '角色',
+  scene: '场景',
+  audio: '音频',
   imageConfigV2: '生图',
   videoConfigV2: '生视频',
+  videoCompose: '视频合成',
+  superResolution: '视频超分',
+  muxAudioVideo: '音视频合成',
+  mjImage: 'MJ 生图',
 }
 
 const fallbackMessages: Record<ConnectFailureReason, string> = {
   node_not_found: '连接失败：节点不存在',
   connection_not_allowed: '这两个节点不能连接',
-  duplicate_edge: '这两个节点已经连接过了'
+  duplicate_edge: '这两个节点已经连接过了',
 }
 
 /**
@@ -64,20 +71,20 @@ export function createConnectionFeedback(
   reason: ConnectFailureReason,
   sourceType: NodeType | null,
   targetType: NodeType | null,
-  at: number
+  at: number,
 ): ConnectionValidationFeedback {
   if (reason === 'connection_not_allowed' && sourceType !== null && targetType !== null) {
     return {
       reason,
       message: `${nodeTypeLabel[sourceType]}节点不能连接到${nodeTypeLabel[targetType]}节点`,
-      at
+      at,
     }
   }
 
   return {
     reason,
     message: fallbackMessages[reason],
-    at
+    at,
   }
 }
 
@@ -90,7 +97,7 @@ export function createConnectionFeedback(
  */
 export function createCanvasConnectHandler({
   store,
-  notify
+  notify,
 }: CanvasConnectHandlerOptions): (connection: CanvasConnectRequest) => ConnectResult {
   return (connection) => {
     const source = connection.source

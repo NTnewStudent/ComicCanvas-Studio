@@ -7,11 +7,18 @@
 import type { NodeType } from './nodes'
 
 export const NODE_CONNECTION_MATRIX: Readonly<Record<NodeType, ReadonlyArray<NodeType>>> = {
-  text:  ['image', 'video', 'imageConfigV2', 'videoConfigV2'],
-  image: ['image', 'video', 'imageConfigV2', 'videoConfigV2'],
-  video: ['video'],
-  imageConfigV2: ['image', 'video', 'imageConfigV2', 'videoConfigV2'],
-  videoConfigV2: ['video'],
+  text: ['text', 'image', 'video', 'audio', 'character', 'scene', 'imageConfigV2', 'videoConfigV2', 'mjImage'],
+  image: ['image', 'video', 'character', 'scene', 'imageConfigV2', 'videoConfigV2', 'mjImage'],
+  video: ['video', 'videoCompose', 'superResolution', 'videoConfigV2', 'muxAudioVideo'],
+  character: ['image', 'video', 'character', 'scene', 'imageConfigV2', 'videoConfigV2', 'mjImage'],
+  scene: ['image', 'video', 'character', 'scene', 'imageConfigV2', 'videoConfigV2', 'mjImage'],
+  audio: ['video', 'videoConfigV2', 'muxAudioVideo'],
+  imageConfigV2: ['image', 'video', 'character', 'scene', 'imageConfigV2', 'videoConfigV2', 'mjImage'],
+  videoConfigV2: ['video', 'videoCompose', 'superResolution'],
+  videoCompose: ['video'],
+  superResolution: ['video'],
+  muxAudioVideo: ['video'],
+  mjImage: ['image', 'video', 'character', 'scene', 'imageConfigV2', 'videoConfigV2'],
 }
 
 /**

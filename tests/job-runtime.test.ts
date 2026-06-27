@@ -167,4 +167,71 @@ describe('M1 JobRuntime skeleton', () => {
       expect(jobs.getById('job-stale-1')?.status).toBe('pending')
       expect(jobs.getById('job-stale-1')?.progress).toBe(0)
     }))
+
+  it('lists durable jobs by status, type, target, and bounded newest-first limit', () =>
+    withRuntimeFixture(({ jobs }) => {
+      jobs.create({
+        id: 'job-list-old',
+        type: 'canvas.generateImage',
+        status: 'pending',
+        targetId: 'image-node-1',
+        payload: { prompt: 'old' },
+        progress: 0,
+        attempts: 0,
+        retryable: false,
+        createdAt: 1_782_400_000_010,
+        updatedAt: 1_782_400_000_010
+      })
+      jobs.create({
+        id: 'job-list-video',
+        type: 'canvas.generateVideo',
+        status: 'pending',
+        targetId: 'video-node-1',
+        payload: { prompt: 'video' },
+        progress: 0,
+        attempts: 0,
+        retryable: false,
+        createdAt: 1_782_400_000_011,
+        updatedAt: 1_782_400_000_011
+      })
+      jobs.create({
+        id: 'job-list-done',
+        type: 'canvas.generateImage',
+        status: 'completed',
+        targetId: 'image-node-1',
+        payload: { prompt: 'done' },
+        progress: 100,
+        attempts: 1,
+        retryable: false,
+        createdAt: 1_782_400_000_012,
+        updatedAt: 1_782_400_000_012
+      })
+      jobs.create({
+        id: 'job-list-new',
+        type: 'canvas.generateImage',
+        status: 'pending',
+        targetId: 'image-node-1',
+        payload: { prompt: 'new' },
+        progress: 0,
+        attempts: 0,
+        retryable: false,
+        createdAt: 1_782_400_000_013,
+        updatedAt: 1_782_400_000_013
+      })
+
+      expect(jobs.list({ status: 'pending' }).map((job) => job.id)).toEqual([
+        'job-list-new',
+        'job-list-video',
+        'job-list-old'
+      ])
+      expect(jobs.list({ type: 'canvas.generateImage', targetId: 'image-node-1' }).map((job) => job.id)).toEqual([
+        'job-list-new',
+        'job-list-done',
+        'job-list-old'
+      ])
+      expect(jobs.list({ status: 'pending', type: 'canvas.generateImage', targetId: 'image-node-1', limit: 1 }).map((job) => job.id)).toEqual([
+        'job-list-new'
+      ])
+      expect(jobs.list({ limit: 0 })).toHaveLength(0)
+    }))
 })

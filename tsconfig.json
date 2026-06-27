@@ -15,7 +15,9 @@
     "types": ["node", "vitest/globals"],
     "baseUrl": ".",
     "paths": {
-      "@xyflow/react": ["./desktop/node_modules/@xyflow/react"]
+      "@xyflow/react": ["./desktop/node_modules/@xyflow/react"],
+      "react-router": ["./desktop/node_modules/react-router"],
+      "react-router-dom": ["./desktop/node_modules/react-router-dom"]
     }
   },
   "include": [

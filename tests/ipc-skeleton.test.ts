@@ -8,8 +8,10 @@ import type { AgentRepository } from '../desktop/src/main/db/repositories/agent.
 import { registerAgentHandlers } from '../desktop/src/main/ipc/agent.handler'
 import { registerAssetHandlers } from '../desktop/src/main/ipc/asset.handler'
 import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
+import { registerCanvasSnippetHandlers } from '../desktop/src/main/ipc/canvas-snippet.handler'
 import { createSafeErrorEnvelope, registerGatewayHandlers } from '../desktop/src/main/ipc/gateway.handler'
 import { registerJobHandlers } from '../desktop/src/main/ipc/job.handler'
+import { registerStyleHandlers } from '../desktop/src/main/ipc/style.handler'
 import { registerToolHandlers } from '../desktop/src/main/ipc/tool.handler'
 import { createToolRuntime } from '../desktop/src/main/tools/runtime'
 
@@ -46,9 +48,11 @@ describe('M1 IPC skeleton', () => {
     const agentRegistry = createAgentRegistry({ agents: createAgentRepo() })
 
     registerCanvasHandlers(ipcMain)
+    registerCanvasSnippetHandlers(ipcMain)
     registerJobHandlers(ipcMain)
     registerAssetHandlers(ipcMain)
     registerGatewayHandlers(ipcMain)
+    registerStyleHandlers(ipcMain)
     registerAgentHandlers(ipcMain, { registry: agentRegistry })
     registerToolHandlers(ipcMain, { runtime: createToolRuntime(), currentUserId: 'user-local' })
 
@@ -64,11 +68,22 @@ describe('M1 IPC skeleton', () => {
       'asset.list',
       'asset.move',
       'asset.trash',
+      'canvas.applyPlan',
       'canvas.chatGetPlan',
       'canvas.chatSend',
+      'canvas.createWorkflow',
+      'canvas.deleteWorkflow',
+      'canvas.exportWorkflow',
+      'canvas.importWorkflow',
+      'canvas.listWorkflows',
       'canvas.loadGraph',
+      'canvas.renameWorkflow',
       'canvas.runNode',
+      'canvas.runPlan',
       'canvas.saveGraph',
+      'canvasSnippet.delete',
+      'canvasSnippet.list',
+      'canvasSnippet.save',
       'gateway.delete',
       'gateway.list',
       'gateway.reload',
@@ -77,6 +92,12 @@ describe('M1 IPC skeleton', () => {
       'job.enqueue',
       'job.get',
       'job.list',
+      'job.recover',
+      'style.delete',
+      'style.getProjectDefault',
+      'style.list',
+      'style.save',
+      'style.setProjectDefault',
       'tool.disable',
       'tool.enable',
       'tool.invoke',
@@ -174,14 +195,14 @@ describe('M1 IPC skeleton', () => {
       {
         type: 'canvas.generateImage',
         targetId: 'image-1',
-        payload: { nodeId: 'image-1' },
+        payload: { nodeId: 'image-1', references: [] },
         requestedBy: { type: 'user', id: 'user-1' }
       }
     ])
   })
 
   it('documents every new IPC handler with API contract anchors', () => {
-    for (const file of ['canvas.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts', 'agent.handler.ts', 'tool.handler.ts']) {
+    for (const file of ['canvas.handler.ts', 'canvas-snippet.handler.ts', 'job.handler.ts', 'asset.handler.ts', 'gateway.handler.ts', 'style.handler.ts', 'agent.handler.ts', 'tool.handler.ts']) {
       const source = readFileSync(`desktop/src/main/ipc/${file}`, 'utf8')
 
       expect(source, `${file} must link to an API contract`).toMatch(/@see docs\/api-contracts\//u)
