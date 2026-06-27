@@ -144,3 +144,26 @@ AsyncGenerator 状态机（参考 cc-haha `query()`）：消息准备 → 流式
 | D | 画布节点 + 手动生成 + 连接校验 + prompt 预览 | flag 控制 |
 | E | Orchestrator 主循环 + Canvas 工具集 + proposePlan + sanitize | flag 控制 |
 | F | applyPlan + PlanRunner 串行执行 + 端到端 | flag 控制 |
+
+## Agent Vocabulary Refresh
+
+This refresh reopens Agent orchestration requirements after the Phase A acceptance gate without enabling Task 60 automation yet. `HDR-PHASEA-001` remains the product gate: while that row is Pending, Agent plan apply/run over the migrated workflow vocabulary stays disabled unless there is a human review pass or explicit product deferral.
+
+The future CanvasPlan vocabulary SHALL equal the migrated production node set: text, image, video, imageConfigV2, videoConfigV2, character, scene, audio, videoCompose, superResolution, muxAudioVideo. MJ is legacy-known but unavailable: it may be recognized in legacy graphs for safe validation messages, but it is not addable, runnable, plan-created, URL-refreshed, or eligible for Agent automation in local Phase A.
+
+The Agent edge vocabulary SHALL be promptOrder, imageOrder, imageRole, outputLink, reference, default. Every Agent-created edge still flows through shared validation and the connection matrix, and any rejected edge becomes dropped warnings rather than hidden mutation.
+
+Clarify behavior is now a first-class branch. The planner must choose clarify branches when user intent is missing required assets, model/style choices are unavailable, requested behavior depends on MJ, or a gateway/tool would require unsupported permissions. The response should preserve a user-facing question and avoid writing partial hidden defaults.
+
+Dropped warnings remain audit output. `sanitizePlan`, ToolRuntime structured errors, and future plan-apply code must preserve dropped warnings for unsupported nodes, illegal edges, executable strings, unavailable actions, unavailable assets/styles/models, and legacy MJ requests. This keeps future Agent execution aligned with `docs/api-contracts/tools-agents.md` and the current `createCanvasTools` descriptors.
+
+## Task 60 Readiness Gate
+
+`docs/progress/task-60-agent-plan-apply-readiness.md` is the preflight audit for
+starting Agent plan apply/run implementation after the Phase A human gate opens.
+It records the required reuse points for `sanitizePlan`, renderer `applyPlan`,
+`canvas.runNode`, JobQueue/JobWorker terminal events, ToolRuntime descriptors,
+and durable asset/workflow/snippet/style/job services. It also records the
+prohibited shortcuts: no Agent-only graph mutation path, no duplicate
+connection matrix, no Agent-only style or asset resolver, no MJ implementation,
+no Seedance/live-person flow, and no LTM state.

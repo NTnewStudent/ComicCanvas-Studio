@@ -15,14 +15,14 @@ ComicCanvas Studio 的 Kiro IDE 配置层。完整项目身份与全局禁止见
 │   ├── rules/                           # 规则类 steering（always + fileMatch）
 │   │   ├── project-identity.md          # always — 项目身份、核心契约、全局禁止
 │   │   ├── coding-standards.md          # always — 通用编码规范
-│   │   ├── ltm-operations.md            # always — LTM 记忆操作
+│   │   ├── ltm-operations.md            # always — LTM 已停用
 │   │   ├── electron-node.md             # fileMatch: desktop/src/main/**, preload/**
 │   │   ├── agent-runtime.md             # fileMatch: desktop/src/main/agent/**
 │   │   ├── canvas-engine.md             # fileMatch: desktop/src/renderer/canvas/**
 │   │   ├── tool-contracts.md            # fileMatch: desktop/src/main/tools/**
 │   │   ├── data-persistence.md          # fileMatch: desktop/src/main/db/**
 │   │   ├── tests.md                     # fileMatch: **/*.test.ts, **/*.spec.ts 等
-│   │   └── ltm-memory-format.md         # fileMatch: ltm/**
+│   │   └── ltm-memory-format.md         # fileMatch: ltm/**，历史格式说明
 │   ├── agents/                          # Agent 角色定义（manual，# 引用激活）
 │   │   ├── agent-orchestrator.md        # #agent-orchestrator
 │   │   ├── agent-canvas.md              # #agent-canvas
@@ -33,8 +33,8 @@ ComicCanvas Studio 的 Kiro IDE 配置层。完整项目身份与全局禁止见
 │       ├── skill-pm-req-planner.md       # #skill-pm-req-planner
 │       └── skill-creator.md              # #skill-creator
 └── hooks/                               # Kiro 自动化钩子（JSON，v1 schema）
-    ├── ltm-capture-on-stop.json         # trigger: Stop → ltm.py capture-turn
-    └── ltm-checkpoint-post-task.json    # trigger: PostTaskExec → ltm checkpoint
+    ├── ltm-capture-on-stop.json         # disabled
+    └── ltm-checkpoint-post-task.json    # disabled
 ```
 
 ---
@@ -48,7 +48,7 @@ ComicCanvas Studio 的 Kiro IDE 配置层。完整项目身份与全局禁止见
 | :--- | :--- |
 | `rules/project-identity.md` | 项目身份、核心契约、全局禁止、角色速查 |
 | `rules/coding-standards.md` | 通用 TS/架构编码规范 |
-| `rules/ltm-operations.md` | LTM 记忆操作指令 |
+| `rules/ltm-operations.md` | LTM 已停用提示 |
 
 ### rules/ — 文件匹配自动加载（inclusion: fileMatch）
 当 chat 中引用或打开匹配路径的文件时自动加载：
@@ -61,7 +61,7 @@ ComicCanvas Studio 的 Kiro IDE 配置层。完整项目身份与全局禁止见
 | `rules/tool-contracts.md` | `desktop/src/main/tools/**` |
 | `rules/data-persistence.md` | `desktop/src/main/db/**` |
 | `rules/tests.md` | `**/*.test.ts`, `**/*.spec.ts`, `**/*.test.tsx`, `**/*.spec.tsx` |
-| `rules/ltm-memory-format.md` | `ltm/**` |
+| `rules/ltm-memory-format.md` | `ltm/**`（历史格式说明） |
 
 ### agents/ — 手动激活（inclusion: manual）
 在 chat 输入框用 `#` 引用，或输入 `/` 选择 slash command：
@@ -104,8 +104,8 @@ ComicCanvas Studio 的 Kiro IDE 配置层。完整项目身份与全局禁止见
 | `skills/skill-canvas-node-designer.md` | `.agents/skills/canvas-node-designer/SKILL.md` |
 | `skills/skill-pm-req-planner.md` | `.agents/skills/pm-req-planner/SKILL.md` |
 | `skills/skill-creator.md` | `.agents/skills/skill-creator/SKILL.md` |
-| `hooks/ltm-capture-on-stop.json` | `.claude/settings.json` Stop hook + `.codex/config.toml [[hooks.Stop]]` |
-| `hooks/ltm-checkpoint-post-task.json` | 新增（Kiro spec 任务工作流专用）|
+| `hooks/ltm-capture-on-stop.json` | 已停用 |
+| `hooks/ltm-checkpoint-post-task.json` | 已停用 |
 
 ---
 
@@ -128,5 +128,5 @@ specs/<feature-slug>/
 
 1. 本目录所有文件为 Kiro IDE 专属配置，**不修改** `.codex/`、`.claude/`、`.agents/` 源文件。
 2. 三套系统（Kiro / Claude Code / Codex）共享同一个 `specs/` 目录作为产品 spec 真源。
-3. Windows 上运行 `python_cmd` 前，先查 `ltm/config.json` 确认是 `python` 还是 `py`。
+3. 当前项目不再使用 LTM；不要运行 `ltm/bin/ltm.py`。
 4. Kiro 引擎会递归扫描 `steering/` 子目录，`rules/`、`agents/`、`skills/` 均正常加载。

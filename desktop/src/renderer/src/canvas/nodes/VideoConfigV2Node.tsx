@@ -77,6 +77,13 @@ const VIDEO_RATIOS: VideoRatio[] = ['9:16', '3:4', '1:1', '4:3', '16:9', '21:9']
 
 const VIDEO_RESOLUTIONS: VideoResolution[] = ['480p', '720p', '1080p']
 
+const VIDEO_MODELS = [
+  { id: 'stub-video', label: 'Stub Video' },
+  { id: 'runway-gen3', label: 'Runway Gen-3' },
+  { id: 'kling-v2', label: 'Kling V2' },
+  { id: 'wan-video', label: 'Wan Video' },
+]
+
 const RATIO_LABELS: Record<VideoRatio, string> = {
   '9:16': '9:16 (竖屏)',
   '3:4': '3:4 (竖屏)',
@@ -88,9 +95,6 @@ const RATIO_LABELS: Record<VideoRatio, string> = {
 
 const DURATION_MIN = 5
 const DURATION_MAX = 15
-
-/** 模拟视频生成延迟（ms） */
-const MOCK_GENERATE_DELAY = 2500
 
 // ─── 预览卡尺寸计算 ─────────────────────────────────────────────────────────
 
@@ -124,6 +128,18 @@ function derivePreviewState(url: string | undefined, status: NodeStatus): Previe
   if (status === 'error') return 'error'
   if (url && status === 'done') return 'done'
   return 'empty'
+}
+
+/**
+ * Derives an asset ID from a safe renderer video URL.
+ * @param url Safe URL such as `cc-asset://asset/video-result`.
+ * @returns Asset ID for repository writeback, or null when not asset-backed.
+ */
+function assetIdFromSafeUrl(url: string): string | null {
+  const match = /^cc-asset:\/\/asset\/([^/?#]+)$/u.exec(url)
+  if (!match) return null
+  const value = decodeURIComponent(match[1]!)
+  return value.startsWith('asset-') ? value : `asset-${value}`
 }
 
 // ─── 全屏视频预览弹窗 ──────────────────────────────────────────────────────
@@ -219,16 +235,12 @@ const VideoToolbar: FC<ToolbarProps> = ({
   const hasFirstFrame = data.firstFrameAssetId !== null || data.firstFrameAssetV2Id != null
   const hasLastFrame = data.lastFrameAssetId !== null || data.lastFrameAssetV2Id != null
 
-  // ── 生成按钮桩 ──
+  const selectedModelLabel = VIDEO_MODELS.find((model) => model.id === data.modelId)?.label ?? data.modelId
+
+  // ── 生成按钮：只进入异步运行态，结果由 JobWorker/IPC 回写 ──
   const handleGenerate = useCallback(() => {
     if (generating) return
-    onUpdateData({ status: 'running' })
-    setTimeout(() => {
-      onUpdateData({
-        status: 'done',
-        url: 'mock://video-result.mp4',
-      })
-    }, MOCK_GENERATE_DELAY)
+    onUpdateData({ status: 'running', url: '' })
   }, [generating, onUpdateData])
 
   // ── 比例选择 ──
@@ -259,8 +271,23 @@ const VideoToolbar: FC<ToolbarProps> = ({
     [stylePresets],
   )
 
+  const modelItems = useMemo(
+    () => VIDEO_MODELS.map((model) => ({ value: model.id, label: model.label })),
+    [],
+  )
+
+  const handleWriteback = useCallback(() => {
+    if (!data.url) return
+    onUpdateData({
+      assetId: data.assetId ?? assetIdFromSafeUrl(data.url),
+      status: 'done',
+      url: data.url,
+    })
+  }, [data.assetId, data.url, onUpdateData])
+
   return (
     <div
+      data-testid="video-config-v2-toolbar"
       className="nodrag nowheel relative w-[960px] overflow-visible rounded-[24px] border border-border-primary bg-bg-panel p-4 shadow-card"
     >
       {/* ── 提示词输入 ── */}
@@ -354,13 +381,17 @@ const VideoToolbar: FC<ToolbarProps> = ({
       {/* ── 设置芯片行 ── */}
       <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border-secondary/50 pt-3">
         {/* 模型 */}
-        <Chip
-          icon={<Clapperboard className="h-3.5 w-3.5" />}
-          label={`${data.modelId || '模型'} ▾`}
-          active={!!data.modelId}
-          onClick={() => {
-            /* 桩：模型选择暂不实现 */
-          }}
+        <PopoverMenu
+          trigger={
+            <Chip
+              icon={<Clapperboard className="h-3.5 w-3.5" />}
+              label={`${selectedModelLabel || '模型'} ▾`}
+              active={!!data.modelId}
+            />
+          }
+          items={modelItems}
+          selected={data.modelId}
+          onSelect={(v) => onUpdateData({ modelId: v })}
         />
 
         {/* 画风 */}
@@ -429,6 +460,7 @@ const VideoToolbar: FC<ToolbarProps> = ({
           onClick={handleGenerate}
           disabled={generating}
           data-testid="video-v2-generate-btn"
+          aria-label={generating ? '生成中' : '生成视频'}
           className={cn(
             'cc-btn-primary nodrag flex shrink-0 items-center justify-center gap-1.5 rounded-xl px-5 py-2 text-[13px] font-bold shadow-sm transition-all',
             'disabled:cursor-not-allowed disabled:opacity-50',
@@ -447,6 +479,17 @@ const VideoToolbar: FC<ToolbarProps> = ({
             </>
           )}
         </button>
+
+        <button
+          type="button"
+          aria-label="写回视频结果资产"
+          disabled={!data.url}
+          onClick={handleWriteback}
+          className="nodrag flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border-input bg-bg-input px-3 text-[12px] font-semibold text-text-secondary transition hover:border-border-primary hover:text-text-base disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <Download className="h-3.5 w-3.5" />
+          写回
+        </button>
       </div>
     </div>
   )
@@ -455,11 +498,11 @@ const VideoToolbar: FC<ToolbarProps> = ({
 // ─── 主组件 ────────────────────────────────────────────────────────────────
 
 const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
-  const d = data as unknown as VideoNodeData
-
   // ── Store (vanilla zustand → React hook) ──
   const runStatus = useStore(canvasStore, (s) => s.getNodeRunStatus(id))
   const canvasNodes = useStore(canvasStore, (s) => s.nodes)
+  const storeNodeData = canvasNodes.find((node) => node.id === id)?.data as VideoNodeData | undefined
+  const d: VideoNodeData = { ...(data as unknown as VideoNodeData), ...(storeNodeData ?? {}) }
 
   // ── 本地状态 ──
   const [isHovered, setIsHovered] = useState(false)

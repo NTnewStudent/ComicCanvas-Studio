@@ -29,9 +29,31 @@ const failedJob: JobRecord = {
   updatedAt: 3,
 }
 
+const completedTextJob: JobRecord = {
+  id: 'job-text-done',
+  type: 'canvas.polishText',
+  status: 'completed',
+  targetId: 'text-node-1',
+  progress: 100,
+  result: { kind: 'text', text: 'Polished line' },
+  createdAt: 4,
+  updatedAt: 5,
+}
+
+const canceledJob: JobRecord = {
+  id: 'job-canceled',
+  type: 'canvas.generateAudio',
+  status: 'canceled',
+  targetId: 'audio-node-1',
+  progress: 10,
+  createdAt: 6,
+  updatedAt: 7,
+}
+
 function createApi(overrides: Partial<CanvasJobPanelApi> = {}): CanvasJobPanelApi {
   return {
     listJobs: vi.fn().mockResolvedValue([failedJob, queuedJob]),
+    runNode: vi.fn().mockResolvedValue({ jobId: 'job-rerun', status: 'pending', createdAt: 8 }),
     onJobCompleted: vi.fn().mockReturnValue(() => undefined),
     onJobFailed: vi.fn().mockReturnValue(() => undefined),
     ...overrides,
@@ -99,5 +121,38 @@ describe('REQ-096 canvas job panel', () => {
     })
     expect(await screen.findByText('job-failed')).toBeInTheDocument()
     expect(listJobs).toHaveBeenCalledTimes(3)
+  })
+
+  it('opens a run detail view with output, node status, failed/canceled states, and manual rerun', async () => {
+    const listJobs = vi.fn().mockResolvedValue([completedTextJob, failedJob, canceledJob])
+    const runNode = vi.fn().mockResolvedValue({ jobId: 'job-rerun-text', status: 'pending', createdAt: 9 })
+
+    render(<CanvasJobPanel api={createApi({ listJobs, runNode })} />)
+
+    expect(await screen.findByText('文本润色')).toBeInTheDocument()
+    expect(screen.getByText('1 个已完成')).toBeInTheDocument()
+    expect(screen.getByText('1 个失败')).toBeInTheDocument()
+    expect(screen.getByText('1 个已取消')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '查看运行详情 job-text-done' }))
+
+    expect(screen.getByRole('heading', { name: '运行详情' })).toBeInTheDocument()
+    expect(screen.getByText('text-node-1')).toBeInTheDocument()
+    expect(screen.getByText('Polished line')).toBeInTheDocument()
+    expect(screen.getByText('输出类型：文本')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '重新运行 text-node-1' }))
+    await waitFor(() => expect(runNode).toHaveBeenCalledWith('text-node-1'))
+    await waitFor(() => expect(listJobs).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: '返回运行列表' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看运行详情 job-failed' }))
+    expect(screen.getByText('Provider failed')).toBeInTheDocument()
+    expect(screen.getByText('错误类型：provider_error')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '返回运行列表' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看运行详情 job-canceled' }))
+    expect(screen.getByText('已取消')).toBeInTheDocument()
+    expect(screen.getByText('audio-node-1')).toBeInTheDocument()
   })
 })

@@ -101,8 +101,16 @@ export function createStyleRepository(db: BetterSqliteDatabase): StyleRepository
       deleted_at = NULL
   `)
   const softDeleteStyle = db.prepare('UPDATE style_presets SET enabled = 0, deleted_at = @deletedAt, updated_at = @deletedAt WHERE id = @stylePresetId AND deleted_at IS NULL')
+  const clearDeletedWorkflowDefaults = db.prepare('UPDATE workflows SET default_style_preset_id = NULL, updated_at = @deletedAt WHERE default_style_preset_id = @stylePresetId')
   const setWorkflowDefault = db.prepare('UPDATE workflows SET default_style_preset_id = @stylePresetId, updated_at = @updatedAt WHERE id = @workflowId')
   const selectWorkflowDefault = db.prepare('SELECT default_style_preset_id FROM workflows WHERE id = ? AND deleted_at IS NULL')
+  const deleteStyleTransaction = db.transaction((stylePresetId: string, timestamp: number) => {
+    const result = softDeleteStyle.run({ stylePresetId, deletedAt: timestamp })
+    if (result.changes > 0) {
+      clearDeletedWorkflowDefaults.run({ stylePresetId, deletedAt: timestamp })
+    }
+    return result.changes > 0
+  })
 
   return {
     list(options = {}) {
@@ -130,8 +138,7 @@ export function createStyleRepository(db: BetterSqliteDatabase): StyleRepository
       return styleFromRow(selectById.get(id) as StyleRow)
     },
     delete(stylePresetId, timestamp) {
-      const result = softDeleteStyle.run({ stylePresetId, deletedAt: timestamp })
-      return result.changes > 0
+      return deleteStyleTransaction(stylePresetId, timestamp)
     },
     setProjectDefault(workflowId, stylePresetId) {
       setWorkflowDefault.run({ workflowId, stylePresetId, updatedAt: Date.now() })

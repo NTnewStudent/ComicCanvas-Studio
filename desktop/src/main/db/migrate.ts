@@ -31,6 +31,42 @@ const migrations = [
   {
     id: '0004_canvas_snippets',
     fileName: '0004_canvas_snippets.sql'
+  },
+  {
+    id: '0005_storage_configs',
+    fileName: '0005_storage_configs.sql'
+  },
+  {
+    id: '0006_asset_categories',
+    fileName: '0006_asset_categories.sql'
+  },
+  {
+    id: '0007_asset_display_name',
+    fileName: '0007_asset_display_name.sql'
+  },
+  {
+    id: '0008_workflow_project_metadata',
+    fileName: '0008_workflow_project_metadata.sql'
+  },
+  {
+    id: '0009_workflow_templates',
+    fileName: '0009_workflow_templates.sql'
+  },
+  {
+    id: '0010_workflow_version_restore_metadata',
+    fileName: '0010_workflow_version_restore_metadata.sql'
+  },
+  {
+    id: '0011_workflow_version_validation_warnings',
+    fileName: '0011_workflow_version_validation_warnings.sql'
+  },
+  {
+    id: '0012_canvas_snippet_metadata',
+    fileName: '0012_canvas_snippet_metadata.sql'
+  },
+  {
+    id: '0013_workflow_template_metadata',
+    fileName: '0013_workflow_template_metadata.sql'
   }
 ] as const
 

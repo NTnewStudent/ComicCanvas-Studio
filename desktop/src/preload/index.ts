@@ -22,12 +22,14 @@ export interface ComicCanvasApi {
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
   testGateway(input: IpcRequestMap['gateway.test']): Promise<IpcResponseMap['gateway.test']>
   reloadGateways(input: IpcRequestMap['gateway.reload']): Promise<IpcResponseMap['gateway.reload']>
+  listGatewayModels(input?: IpcRequestMap['gateway.models']): Promise<IpcResponseMap['gateway.models']>
   listStyles(input?: IpcRequestMap['style.list']): Promise<IpcResponseMap['style.list']>
   saveStyle(input: IpcRequestMap['style.save']): Promise<IpcResponseMap['style.save']>
   deleteStyle(input: IpcRequestMap['style.delete']): Promise<IpcResponseMap['style.delete']>
   setProjectDefaultStyle(input: IpcRequestMap['style.setProjectDefault']): Promise<IpcResponseMap['style.setProjectDefault']>
   getProjectDefaultStyle(input: IpcRequestMap['style.getProjectDefault']): Promise<IpcResponseMap['style.getProjectDefault']>
-  listCanvasSnippets(): Promise<IpcResponseMap['canvasSnippet.list']>
+  listCanvasSnippets(input?: IpcRequestMap['canvasSnippet.list']): Promise<IpcResponseMap['canvasSnippet.list']>
+  getCanvasSnippet(input: IpcRequestMap['canvasSnippet.get']): Promise<IpcResponseMap['canvasSnippet.get']>
   saveCanvasSnippet(input: IpcRequestMap['canvasSnippet.save']): Promise<IpcResponseMap['canvasSnippet.save']>
   deleteCanvasSnippet(input: IpcRequestMap['canvasSnippet.delete']): Promise<IpcResponseMap['canvasSnippet.delete']>
   listTools(): Promise<IpcResponseMap['tool.list']>
@@ -37,15 +39,22 @@ export interface ComicCanvasApi {
   listAssets(input?: IpcRequestMap['asset.list']): Promise<IpcResponseMap['asset.list']>
   importAsset(input: IpcRequestMap['asset.import']): Promise<IpcResponseMap['asset.import']>
   moveAsset(input: IpcRequestMap['asset.move']): Promise<IpcResponseMap['asset.move']>
+  renameAsset(input: IpcRequestMap['asset.rename']): Promise<IpcResponseMap['asset.rename']>
   trashAsset(input: IpcRequestMap['asset.trash']): Promise<IpcResponseMap['asset.trash']>
   getAssetFolders(): Promise<IpcResponseMap['asset.getFolders']>
   createAssetFolder(input: IpcRequestMap['asset.createFolder']): Promise<IpcResponseMap['asset.createFolder']>
   deleteAssetFolder(input: IpcRequestMap['asset.deleteFolder']): Promise<IpcResponseMap['asset.deleteFolder']>
+  getAssetCategories(input?: IpcRequestMap['asset.getCategories']): Promise<IpcResponseMap['asset.getCategories']>
+  createAssetCategory(input: IpcRequestMap['asset.createCategory']): Promise<IpcResponseMap['asset.createCategory']>
+  updateAssetCategory(input: IpcRequestMap['asset.updateCategory']): Promise<IpcResponseMap['asset.updateCategory']>
+  assignAssetCategory(input: IpcRequestMap['asset.assignCategory']): Promise<IpcResponseMap['asset.assignCategory']>
+  removeAssetCategory(input: IpcRequestMap['asset.removeCategory']): Promise<IpcResponseMap['asset.removeCategory']>
   onJobCompleted(handler: (event: Extract<JobTerminalEvent, { channel: 'job.completed' }>) => void): () => void
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
   onCanvasPlanReady(handler: (event: IpcEventMap['canvas.planReady']) => void): () => void
   saveGraph(input: IpcRequestMap['canvas.saveGraph']): Promise<IpcResponseMap['canvas.saveGraph']>
+  validateGraph(input: IpcRequestMap['canvas.validateGraph']): Promise<IpcResponseMap['canvas.validateGraph']>
   loadGraph(input: IpcRequestMap['canvas.loadGraph']): Promise<IpcResponseMap['canvas.loadGraph']>
   listWorkflows(): Promise<WorkflowSummaryView[]>
   createWorkflow(input: IpcRequestMap['canvas.createWorkflow']): Promise<IpcResponseMap['canvas.createWorkflow']>
@@ -53,6 +62,11 @@ export interface ComicCanvasApi {
   deleteWorkflow(input: IpcRequestMap['canvas.deleteWorkflow']): Promise<IpcResponseMap['canvas.deleteWorkflow']>
   exportWorkflow(input: IpcRequestMap['canvas.exportWorkflow']): Promise<IpcResponseMap['canvas.exportWorkflow']>
   importWorkflow(input: IpcRequestMap['canvas.importWorkflow']): Promise<IpcResponseMap['canvas.importWorkflow']>
+  listWorkflowTemplates(input?: IpcRequestMap['canvas.listWorkflowTemplates']): Promise<IpcResponseMap['canvas.listWorkflowTemplates']>
+  copyWorkflowTemplate(input: IpcRequestMap['canvas.copyWorkflowTemplate']): Promise<IpcResponseMap['canvas.copyWorkflowTemplate']>
+  publishWorkflowTemplate(input: IpcRequestMap['canvas.publishWorkflowTemplate']): Promise<IpcResponseMap['canvas.publishWorkflowTemplate']>
+  listWorkflowVersions(input: IpcRequestMap['canvas.listWorkflowVersions']): Promise<IpcResponseMap['canvas.listWorkflowVersions']>
+  restoreWorkflowVersion(input: IpcRequestMap['canvas.restoreWorkflowVersion']): Promise<IpcResponseMap['canvas.restoreWorkflowVersion']>
   /** Returns the current storage configuration or null. */
   getStorageConfig(): Promise<IpcResponseMap['storage.getConfig']>
   /** Saves a storage configuration. */
@@ -87,12 +101,14 @@ function invokeMain<TChannel extends 'gateway.save'>(channel: TChannel, request:
 function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.test'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'gateway.models'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.setProjectDefault'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.getProjectDefault'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvasSnippet.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvasSnippet.get'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvasSnippet.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvasSnippet.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'tool.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -102,11 +118,18 @@ function invokeMain<TChannel extends 'tool.invoke'>(channel: TChannel, request: 
 function invokeMain<TChannel extends 'asset.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.import'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.move'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.rename'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.trash'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.getFolders'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.createFolder'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.deleteFolder'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.getCategories'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.createCategory'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.updateCategory'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.assignCategory'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.removeCategory'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.saveGraph'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.validateGraph'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.loadGraph'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.listWorkflows'>(channel: TChannel): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.createWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -114,6 +137,11 @@ function invokeMain<TChannel extends 'canvas.renameWorkflow'>(channel: TChannel,
 function invokeMain<TChannel extends 'canvas.deleteWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.exportWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'canvas.importWorkflow'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.listWorkflowTemplates'>(channel: TChannel, request?: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.copyWorkflowTemplate'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.publishWorkflowTemplate'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.listWorkflowVersions'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'canvas.restoreWorkflowVersion'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'storage.getConfig'>(channel: TChannel): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'storage.saveConfig'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'storage.testConnection'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -248,6 +276,14 @@ const api: ComicCanvasApi = {
    */
   reloadGateways: (input) => invokeMain('gateway.reload', input),
   /**
+   * Lists renderer-safe gateway model catalog and capability flags.
+   * @param input - Empty request object reserved for future filters.
+   * @returns Model catalog grouped by text/image/video/tool channels.
+   * @throws Error when the main process rejects the model catalog request.
+   * @see docs/api-contracts/gateway-providers.md
+   */
+  listGatewayModels: (input = {}) => invokeMain('gateway.models', input),
+  /**
    * Lists style presets visible to renderer style selectors.
    * @param input - Optional disabled preset inclusion flag.
    * @returns Style preset views without secret provider data.
@@ -293,7 +329,15 @@ const api: ComicCanvasApi = {
    * @throws Error when the main process rejects the snippet list request.
    * @see docs/api-contracts/canvas-plan.md
    */
-  listCanvasSnippets: () => invokeMain('canvasSnippet.list', {}),
+  listCanvasSnippets: (input = {}) => invokeMain('canvasSnippet.list', input),
+  /**
+   * Loads one reusable canvas snippet detail fragment.
+   * @param input - Snippet lookup request.
+   * @returns Snippet detail or safe not-found envelope.
+   * @throws Error when the main process rejects the snippet detail request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  getCanvasSnippet: (input) => invokeMain('canvasSnippet.get', input),
   /**
    * Saves a reusable canvas snippet through main-process validation.
    * @param input - Snippet save input containing selected nodes and internal edges.
@@ -366,6 +410,14 @@ const api: ComicCanvasApi = {
    */
   moveAsset: (input) => invokeMain('asset.move', input),
   /**
+   * Renames an asset display label without changing safe URLs or storage paths.
+   * @param input - Asset rename request.
+   * @returns Updated asset record.
+   * @throws Error when the main process rejects the asset rename request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  renameAsset: (input) => invokeMain('asset.rename', input),
+  /**
    * Trashes or tombstones an asset with reference-integrity checks.
    * @param input - Asset trash request.
    * @returns Trash result including blocking references for safe mode.
@@ -396,6 +448,46 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/assets-files.md
    */
   deleteAssetFolder: (input) => invokeMain('asset.deleteFolder', input),
+  /**
+   * Lists image asset categories, including built-in starter categories.
+   * @param input - Optional disabled-category inclusion flag.
+   * @returns Asset category records.
+   * @throws Error when the main process rejects the category list request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  getAssetCategories: (input = {}) => invokeMain('asset.getCategories', input),
+  /**
+   * Creates a user-defined image asset category.
+   * @param input - Category creation request.
+   * @returns Created category record.
+   * @throws Error when the main process rejects the category creation request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  createAssetCategory: (input) => invokeMain('asset.createCategory', input),
+  /**
+   * Updates an asset category display and enabled state.
+   * @param input - Category update request.
+   * @returns Updated category record.
+   * @throws Error when the main process rejects the category update request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  updateAssetCategory: (input) => invokeMain('asset.updateCategory', input),
+  /**
+   * Assigns an image asset to a category.
+   * @param input - Asset/category assignment request.
+   * @returns Assignment acknowledgement.
+   * @throws Error when the main process rejects the assignment request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  assignAssetCategory: (input) => invokeMain('asset.assignCategory', input),
+  /**
+   * Removes an image asset from a category.
+   * @param input - Asset/category assignment request.
+   * @returns Removal acknowledgement.
+   * @throws Error when the main process rejects the removal request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  removeAssetCategory: (input) => invokeMain('asset.removeCategory', input),
   /**
    * Subscribes to completed job terminal events.
    * @param handler - Event payload handler.
@@ -436,6 +528,14 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/canvas-plan.md
    */
   saveGraph: (input) => invokeMain('canvas.saveGraph', input),
+  /**
+   * Validates a graph in lenient draft-save or strict runtime mode.
+   * @param input - Workflow ID, optional graph snapshot, and validation mode.
+   * @returns Validation issues and aggregate warning summary.
+   * @throws Error when the main process rejects the validation request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  validateGraph: (input) => invokeMain('canvas.validateGraph', input),
   /**
    * Loads the latest canvas graph snapshot for the given project.
    * @param input - Load request including project ID.
@@ -491,6 +591,45 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/canvas-plan.md
    */
   importWorkflow: (input) => invokeMain('canvas.importWorkflow', input),
+  /**
+   * Lists published public workflow templates.
+   * @returns Published workflow template summaries.
+   * @throws Error when the main process rejects the list request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  listWorkflowTemplates: (input = {}) => invokeMain('canvas.listWorkflowTemplates', input),
+  /**
+   * Copies a published workflow template into a private draft workflow.
+   * @param input - Template copy request.
+   * @returns Created draft workflow ID and graph version.
+   * @throws Error when the main process rejects the copy request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  copyWorkflowTemplate: (input) => invokeMain('canvas.copyWorkflowTemplate', input),
+  /**
+   * Publishes a local workflow template after strict graph validation.
+   * @param input - Template ID and target visibility.
+   * @returns Published template summary or a safe validation error envelope.
+   * @throws Error when the main process rejects the publish request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  publishWorkflowTemplate: (input) => invokeMain('canvas.publishWorkflowTemplate', input),
+  /**
+   * Lists immutable graph versions for workflow debug and restore UI.
+   * @param input - Workflow ID and optional result limit.
+   * @returns Version summaries with checksums and warning counts.
+   * @throws Error when the main process rejects the list request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  listWorkflowVersions: (input) => invokeMain('canvas.listWorkflowVersions', input),
+  /**
+   * Restores a historical graph version by creating a new latest version.
+   * @param input - Workflow ID and source version ID.
+   * @returns Restored graph version metadata.
+   * @throws Error when the main process rejects the restore request.
+   * @see docs/api-contracts/canvas-plan.md
+   */
+  restoreWorkflowVersion: (input) => invokeMain('canvas.restoreWorkflowVersion', input),
   /**
    * Returns the current storage configuration or null if not yet configured.
    * @returns Storage configuration or null.

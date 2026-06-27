@@ -17,6 +17,13 @@ export interface JobWorkerOptions {
   handlers: JobHandlerMap
   leaseOwner: string
   clock?: () => number
+  onCompletedAsset?: (job: PersistedJobRecord, assetId: string, emittedAt: number) => void
+}
+
+function completedAssetId(result: JobResult): string | null {
+  if (result.kind === 'asset') return result.assetId
+  if (result.kind === 'report' && typeof result.data?.assetId === 'string') return result.data.assetId
+  return null
 }
 
 export interface JobWorker {
@@ -52,6 +59,10 @@ export function createJobWorker(options: JobWorkerOptions): JobWorker {
 
         const result = await handler(job)
         options.jobs.complete(job.id, result, emittedAt)
+        const assetId = completedAssetId(result)
+        if (assetId) {
+          options.onCompletedAsset?.(job, assetId, emittedAt)
+        }
         options.events.emitTerminal({ channel: 'job.completed', jobId: job.id, result, emittedAt })
       } catch (error: unknown) {
         // Worker handlers are untrusted provider/tool boundaries, so failures become persisted job errors.

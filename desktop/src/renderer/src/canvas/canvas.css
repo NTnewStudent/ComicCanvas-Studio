@@ -17,6 +17,27 @@
   stroke-width: 2;
 }
 
+.cc-flow .cc-semantic-edge-prompt {
+  stroke: color-mix(in srgb, var(--cc-accent) 72%, var(--cc-text-primary));
+  stroke-width: 2.25;
+}
+
+.cc-flow .cc-semantic-edge-image-order {
+  stroke: var(--cc-accent);
+  stroke-width: 2.25;
+  stroke-dasharray: 5 4;
+}
+
+.cc-flow .cc-semantic-edge-image-role {
+  stroke: var(--cc-warning, #f59e0b);
+  stroke-width: 2.5;
+}
+
+.cc-flow .cc-semantic-edge-default {
+  stroke: color-mix(in srgb, var(--cc-text-secondary) 58%, transparent);
+  stroke-width: 1.75;
+}
+
 /* 选中/拖拽连线：全亮青色 */
 .cc-flow .react-flow__edge.selected .react-flow__edge-path,
 .cc-flow .react-flow__edge:hover .react-flow__edge-path {
@@ -235,6 +256,13 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
   box-shadow: 0 0 18px rgba(70, 217, 230, 0.22), 0 14px 30px rgba(0, 0, 0, 0.50);
 }
 
+.cc-flow .react-flow__node.cc-flow-node-related {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--cc-accent) 72%, transparent),
+    0 0 0 7px color-mix(in srgb, var(--cc-accent) 14%, transparent),
+    0 16px 32px rgba(0, 0, 0, 0.48);
+}
+
 /* 夜间选中节点阴影与选中光环合并，见下方 .selected 规则 */
 
 /* ── 连线流动动画 ── */
@@ -420,6 +448,28 @@ html.light .cc-btn-primary:hover {
 }
 .cc-btn-secondary:disabled {
   opacity: 0.45;
+}
+
+.cc-toolbar-button {
+  display: inline-flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--cc-border-input);
+  border-radius: var(--cc-radius-sm);
+  background: var(--cc-bg-input);
+  color: var(--cc-text-secondary);
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.cc-toolbar-button:hover {
+  border-color: var(--cc-border-primary);
+  background: var(--cc-bg-hover);
+  color: var(--cc-text-primary);
 }
 
 /* ── 毛玻璃（DESIGN.md 第十一节 wf-glass） ── */

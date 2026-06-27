@@ -43,3 +43,24 @@
 - [x] 20. `applyPlan`（白名单+矩阵二次校验 + 分层布局 + 一条 undo）→ verify: 单元 _（R2）_
 - [x] 21. `PlanRunner`（串行 + failed 短路保留剩余）→ verify: 状态机单元 _（R3）_
 - [x] 22. 端到端「文本→图→视频」（provider stub）→ verify: 集成，核对资产相对路径 + orientation + 矩阵 _（R3, R4, R6, all Properties）_
+
+## 阶段 A59 — Phase A 后重开 Agent 编排需求
+
+- [x] A59. Reopen Agent orchestration requirements after manual parity gate.
+  - Phase A acceptance gate: `HDR-PHASEA-001` remains the product gate before
+    enabling migrated Agent plan apply/run automation.
+  - CanvasPlan node vocabulary: text, image, video, imageConfigV2,
+    videoConfigV2, character, scene, audio, videoCompose, superResolution,
+    muxAudioVideo.
+  - CanvasPlan node vocabulary exact set: text, image, video, imageConfigV2, videoConfigV2, character, scene, audio, videoCompose, superResolution, muxAudioVideo.
+  - MJ is legacy-known but unavailable for Agent planning, add paths, run
+    steps, URL refresh, and local Phase A automation.
+  - Edge vocabulary: promptOrder, imageOrder, imageRole, outputLink, reference,
+    default.
+  - Edge vocabulary exact set: promptOrder, imageOrder, imageRole, outputLink, reference, default.
+  - Agent planning must preserve clarify branches and dropped warnings for
+    underspecified, unsafe, invalid, or unavailable requests.
+  - Task 60 readiness is recorded in
+    `docs/progress/task-60-agent-plan-apply-readiness.md` and must be checked
+    before enabling Agent plan apply/run implementation.
+  - Verify: `tests/agent-orchestration-requirements-refresh.test.ts`.

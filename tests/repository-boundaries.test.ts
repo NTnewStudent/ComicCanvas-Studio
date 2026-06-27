@@ -18,6 +18,7 @@ const requiredRepositoryFiles = [
   'job.repo.ts',
   'knowledge.repo.ts',
   'skill.repo.ts',
+  'storage.repo.ts',
   'tool.repo.ts',
   'workflow.repo.ts'
 ]

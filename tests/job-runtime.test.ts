@@ -64,6 +64,7 @@ describe('M1 JobRuntime skeleton', () => {
   it('moves a pending job through processing to completed and emits one completed event', async () =>
     withRuntimeFixture(async ({ jobs }) => {
       const events = createJobEventBus()
+      const completedReferences: Array<{ jobId: string; assetId: string }> = []
       const queue = createJobQueue({
         jobs,
         idFactory: () => 'job-complete-1',
@@ -81,6 +82,9 @@ describe('M1 JobRuntime skeleton', () => {
             expect(jobs.getById(job.id)?.status).toBe('processing')
             return { kind: 'asset', assetId: 'asset-1', metadata: { orientation: 'landscape' } }
           }
+        },
+        onCompletedAsset: (job, assetId) => {
+          completedReferences.push({ jobId: job.id, assetId })
         }
       })
 
@@ -99,9 +103,42 @@ describe('M1 JobRuntime skeleton', () => {
           emittedAt: 1_782_400_000_002
         }
       ])
+      expect(completedReferences).toEqual([{ jobId: 'job-complete-1', assetId: 'asset-1' }])
 
       expect(await worker.runNext()).toBeNull()
       expect(events.getTerminalEvents()).toHaveLength(1)
+    }))
+
+  it('emits completed asset hooks for report results with asset metadata', async () =>
+    withRuntimeFixture(async ({ jobs }) => {
+      const events = createJobEventBus()
+      const completedReferences: Array<{ jobId: string; assetId: string }> = []
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-report-asset-1',
+        clock: () => 1_782_400_000_003
+      })
+      queue.enqueue(createImageJobInput())
+
+      const worker = createJobWorker({
+        jobs,
+        events,
+        leaseOwner: 'worker-report',
+        clock: () => 1_782_400_000_004,
+        handlers: {
+          'canvas.generateImage': () => ({
+            kind: 'report',
+            summary: 'asset in report',
+            data: { assetId: 'asset-report-1', url: 'cc-asset://asset/asset-report-1' }
+          })
+        },
+        onCompletedAsset: (job, assetId) => {
+          completedReferences.push({ jobId: job.id, assetId })
+        }
+      })
+
+      expect(await worker.runNext()).toBe('job-report-asset-1')
+      expect(completedReferences).toEqual([{ jobId: 'job-report-asset-1', assetId: 'asset-report-1' }])
     }))
 
   it('moves a pending job through processing to failed and emits one failed event', async () =>

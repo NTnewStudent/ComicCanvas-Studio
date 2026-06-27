@@ -146,7 +146,10 @@ describe('REQ-094 style repository and IPC', () => {
         deleted: true,
       })
       expect(await handlers.get('style.list')?.({}, { includeDisabled: false })).toEqual([])
-      expect(repo.getProjectDefault('workflow-1')).toBe('style-project')
+      expect(repo.getProjectDefault('workflow-1')).toBeNull()
+      expect(await handlers.get('style.getProjectDefault')?.({}, {
+        workflowId: 'workflow-1',
+      })).toEqual({ workflowId: 'workflow-1', stylePresetId: null })
 
       expect(await handlers.get('style.setProjectDefault')?.({}, {
         workflowId: 'workflow-1',

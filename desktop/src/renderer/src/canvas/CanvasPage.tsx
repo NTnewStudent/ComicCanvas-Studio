@@ -1,20 +1,21 @@
 /**
- * 閸忋劌鐫?ReactFlow 閻㈣绔锋い鐢告桨 閳?閹恒儱鍙?canvas store 閸滃矁濡悙鍦矋娴?
- * 閹嗗厴娴兼ê瀵查敍?
- * 1. ReactFlow 閸愬懐鐤?useNodesState/useEdgesState 娴ｆ粈璐熺€圭偞妞傞悩鑸碘偓浣圭爱
- * 2. Zustand store 娴犲懐鏁ゆ禍搴㈠瘮娑斿懎瀵查敍鍧塭bounced閿涘鎷伴幘銈夋敘/闁插秴浠?
- * 3. nodeTypes 鐎规矮绠熼崷銊х矋娴犺泛顦婚柈顭掔礄濡€虫健缁狙嶇礆闁灝鍘ら柌宥嗚閺?
- * 4. 閼哄倻鍋ｇ紒鍕瀹稿弶鍧婇崝?React.memo閿涘牐顫嗛崥鍕Ν閻愯鏋冩禒璁圭礆
- * 5. 閹碘偓閺堝娲栫拫鍐暏 useCallback 缁嬪啿鐣鹃崠?
+ * Canvas state ownership model:
+ * 1. React Flow owns transient interaction state: drag positions, selection,
+ *    viewport gestures, and pending connection gestures.
+ * 2. Zustand owns the durable graph snapshot used by undo/redo, autosave,
+ *    snippets, realtime job reconciliation, and IPC persistence.
+ * 3. React Flow -> Zustand sync is debounced after local user edits.
+ * 4. Zustand -> React Flow sync must set `skipNextPersistRef` before writing
+ *    local React Flow state, otherwise the next effect can echo the same graph
+ *    back into the store and create duplicate history/autosave races.
  * @see docs/api-contracts/canvas-plan.md
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import {
   ReactFlow,
   Background,
   MiniMap,
-  Controls,
   BackgroundVariant,
   SelectionMode,
   ReactFlowProvider,
@@ -23,9 +24,11 @@ import {
   useReactFlow,
   type Node,
   type Edge,
+  type EdgeTypes,
   type NodeTypes,
   type OnConnect,
   type OnNodeDrag,
+  type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Link, useSearchParams, Navigate } from 'react-router-dom'
@@ -56,6 +59,15 @@ import {
   IconHandGrab,
   IconPointer,
   IconSearch,
+  IconUpload,
+  IconDownload,
+  IconHelp,
+  IconZoomIn,
+  IconZoomOut,
+  IconMaximize,
+  IconUsers,
+  IconPalette,
+  IconTemplate,
 } from '@tabler/icons-react'
 import type { TablerIcon } from '@tabler/icons-react'
 import { useStore } from 'zustand'
@@ -72,17 +84,31 @@ import { ImageNode } from './nodes/ImageNode'
 import { VideoNode } from './nodes/VideoNode'
 import ImageConfigV2Node from './nodes/ImageConfigV2Node'
 import VideoConfigV2Node from './nodes/VideoConfigV2Node'
-import { MigratedNode } from './nodes/MigratedNode'
+import { CharacterNode } from './nodes/CharacterNode'
+import { SceneNode } from './nodes/SceneNode'
+import { AudioNode } from './nodes/AudioNode'
+import { VideoComposeNode } from './nodes/VideoComposeNode'
+import { SuperResolutionNode } from './nodes/SuperResolutionNode'
+import { MuxAudioVideoNode } from './nodes/MuxAudioVideoNode'
+import { MjImageNode } from './nodes/MjImageNode'
 import { useCanvasRealtime } from './hooks/use-canvas-realtime'
 import { ProjectManager } from './components/ProjectManager'
 import CanvasChatBox from './components/CanvasChatBox'
-import { CanvasAssetPanel } from './components/CanvasAssetPanel'
+import { CanvasAssetPanel, type CanvasAssetInsertMode } from './components/CanvasAssetPanel'
+import { WorkflowPanel } from './components/WorkflowPanel'
+import { CharacterLibraryPanel } from './components/CharacterLibraryPanel'
+import { StyleLibraryPanel } from './components/StyleLibraryPanel'
+import { BottomInputPanel } from './components/BottomInputPanel'
 import { ProjectStyleSelector } from './components/ProjectStyleSelector'
 import { CanvasJobPanel } from './components/CanvasJobPanel'
 import { CanvasCommandPalette, type CanvasCommand } from './components/CanvasCommandPalette'
 import { ConnectionFeedback } from './components/ConnectionFeedback'
+import PromptOrderEdge from './edges/PromptOrderEdge'
+import ImageOrderEdge from './edges/ImageOrderEdge'
+import ImageRoleEdge from './edges/ImageRoleEdge'
+import DeletableBezierEdge from './edges/DeletableBezierEdge'
 import { createCanvasPlanExecutionController } from './lib/canvas-plan-execution'
-import { reconcileCanvasNodesWithJobs } from './lib/job-reconciliation'
+import { buildGenerationTaskStatusList, reconcileCanvasNodesWithJobs, terminalFailureToNodePatch, terminalResultToNodePatch } from './lib/job-reconciliation'
 import { guardWorkflowSwitch, installDirtyBeforeUnloadGuard } from './lib/workflow-switch-guard'
 import { extractCanvasSnippet, insertCanvasSnippet, type CanvasSnippet } from './lib/canvas-snippet'
 import { createCanvasEdge } from './lib/canvas-edge-creation'
@@ -100,13 +126,17 @@ import type {
   CanvasNodeData,
   CanvasEdgeData,
 } from '../../../../../shared/nodes'
-import type { AssetRecord } from '../../../../../shared/assets'
+import type { AssetCategory, AssetRecord, ImageEditIntent } from '../../../../../shared/assets'
 import type { CanvasPlan } from '../../../../../shared/plan'
 import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
 import type { CanvasSnippetView } from '../../../../../shared/snippets'
-import { planLocalMediaDrop } from './lib/local-media-drop'
+import type { JobType } from '../../../../../shared/jobs'
+import { getAddableNodeDefinitions, getConnectCreateNodeDefinitions } from '../../../../../shared/workflow-node-definitions'
+import { planLocalMediaDrops } from './lib/local-media-drop'
+import { buildAssetNodeInsertion, buildReferenceAssetPatch } from './lib/asset-node-insertion'
+import { computeRelatedNodeIds } from './lib/related-highlight'
 
-/* 閳光偓閳光偓閳光偓 Debounce utility 閳光偓閳光偓閳光偓 */
+/* Debounce utility */
 
 function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
   let timer: ReturnType<typeof setTimeout>
@@ -116,7 +146,17 @@ function debounce<T extends (...args: never[]) => void>(fn: T, ms: number): T {
   }) as unknown as T
 }
 
-/* 閳光偓閳光偓閳光偓 Default data factories 閳光偓閳光偓閳光偓 */
+function downloadWorkflowJson(payload: unknown, filename: string): void {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+/* Default node data factories */
 
 function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
   if (type === 'text') return { label: `Text ${sequence}`, content: '' }
@@ -135,6 +175,7 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
   if (type === 'superResolution')
     return {
       label: `Super Resolution ${sequence}`,
+      inputVideoId: '',
       scene: 'aigc',
       resolution: '1080p',
       fps: 30,
@@ -176,7 +217,18 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
   }
 }
 
-/* 閳光偓閳光偓閳光偓 Node wrapper 鐏?store 閸ョ偠鐨熷▔銊ュ弳 ReactFlow 閼奉亜濮╂导鐘插弳閻?props 閳光偓閳光偓閳光偓 */
+function jobTypeForNodeType(type: NodeType): JobType | null {
+  if (type === 'text') return 'canvas.polishText'
+  if (type === 'video') return 'canvas.generateVideo'
+  if (type === 'audio') return 'canvas.generateAudio'
+  if (type === 'videoCompose') return 'canvas.composeVideo'
+  if (type === 'superResolution') return 'canvas.upscaleVideo'
+  if (type === 'muxAudioVideo') return 'canvas.muxAudioVideo'
+  if (type === 'mjImage') return null
+  return 'canvas.generateImage'
+}
+
+/* Node wrappers bridge store updates into node components. */
 
 function TextNodeWrapper({
   id,
@@ -188,6 +240,7 @@ function TextNodeWrapper({
   selected?: boolean
 }): JSX.Element {
   const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
+  const runContext = useCanvasRunContext()
   const handleChange = useCallback(
     (nodeId: string, patch: Partial<TextNodeData>) =>
       updateNodeData(nodeId, patch),
@@ -204,6 +257,7 @@ function TextNodeWrapper({
       selected={selected ?? false}
       onChange={handleChange}
       onRename={handleRename}
+      onPolish={(nodeId) => runContext?.runNode(nodeId)}
     />
   )
 }
@@ -218,9 +272,16 @@ function ImageNodeWrapper({
   selected?: boolean
 }): JSX.Element {
   const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
+  const runContext = useCanvasRunContext()
   const handleChange = useCallback(
     (nodeId: string, patch: Partial<ImageNodeData>) =>
       updateNodeData(nodeId, patch),
+    [updateNodeData],
+  )
+  const handleApplyImageEdit = useCallback(
+    (intent: ImageEditIntent) => {
+      updateNodeData(intent.nodeId, { orientation: intent.orientation })
+    },
     [updateNodeData],
   )
   return (
@@ -230,6 +291,8 @@ function ImageNodeWrapper({
       {...(data.url ? { assetSafeUrl: data.url } : {})}
       selected={selected ?? false}
       onChange={handleChange}
+      onRun={(nodeId) => runContext?.runNode(nodeId)}
+      onApplyImageEdit={handleApplyImageEdit}
     />
   )
 }
@@ -244,6 +307,7 @@ function VideoNodeWrapper({
   selected?: boolean
 }): JSX.Element {
   const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
+  const runContext = useCanvasRunContext()
   const handleChange = useCallback(
     (nodeId: string, patch: Partial<VideoNodeData>) =>
       updateNodeData(nodeId, patch),
@@ -256,40 +320,12 @@ function VideoNodeWrapper({
       {...(data.url ? { assetSafeUrl: data.url } : {})}
       selected={selected ?? false}
       onChange={handleChange}
+      onRun={(nodeId) => runContext?.runNode(nodeId)}
     />
   )
 }
 
-function createMigratedNodeWrapper(type: NodeType) {
-  return function MigratedNodeWrapper({
-    id,
-    data,
-    selected,
-  }: {
-    id: string
-    data: CanvasNodeData
-    selected?: boolean
-  }): JSX.Element {
-    const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
-    const handleChange = useCallback(
-      (nodeId: string, patch: Partial<CanvasNodeData>) =>
-        updateNodeData(nodeId, patch),
-      [updateNodeData],
-    )
-
-    return (
-      <MigratedNode
-        id={id}
-        type={type}
-        data={data}
-        selected={selected ?? false}
-        onChange={handleChange}
-      />
-    )
-  }
-}
-
-/* 閳光偓閳光偓閳光偓 Node types閿涘牊膩閸ф楠囩敮鎼佸櫤閿涘矂浼╅崗宥囩矋娴犺泛鍞村В蹇旑偧濞撳弶鐓嬮崚娑樼紦閺傛澘绱╅悽顭掔礆 閳光偓閳光偓閳光偓 */
+/* React Flow node type registry */
 
 const nodeTypes: NodeTypes = {
   text: TextNodeWrapper,
@@ -297,23 +333,37 @@ const nodeTypes: NodeTypes = {
   video: VideoNodeWrapper,
   imageConfigV2: ImageConfigV2Node,
   videoConfigV2: VideoConfigV2Node,
-  character: createMigratedNodeWrapper('character'),
-  scene: createMigratedNodeWrapper('scene'),
-  audio: createMigratedNodeWrapper('audio'),
-  videoCompose: createMigratedNodeWrapper('videoCompose'),
-  superResolution: createMigratedNodeWrapper('superResolution'),
-  muxAudioVideo: createMigratedNodeWrapper('muxAudioVideo'),
-  mjImage: createMigratedNodeWrapper('mjImage'),
+  character: CharacterNode,
+  scene: SceneNode,
+  audio: AudioNode,
+  videoCompose: VideoComposeNode,
+  superResolution: SuperResolutionNode,
+  muxAudioVideo: MuxAudioVideoNode,
+  mjImage: MjImageNode,
 }
 
-/* 閳光偓閳光偓閳光偓 Store 閳?ReactFlow 閺勭姴鐨?閳光偓閳光偓閳光偓 */
+const edgeTypes: EdgeTypes = {
+  promptOrder: PromptOrderEdge,
+  imageOrder: ImageOrderEdge,
+  imageRole: ImageRoleEdge,
+  outputLink: DeletableBezierEdge,
+  reference: DeletableBezierEdge,
+  default: DeletableBezierEdge,
+}
 
-function mapStoreNodes(storeNodes: CanvasStoreNode[]): Node[] {
+/* Store <-> React Flow mappers */
+
+function edgeTypeForRenderer(data: CanvasEdgeData | undefined): keyof typeof edgeTypes {
+  return data?.edgeType ?? 'default'
+}
+
+function mapStoreNodes(storeNodes: CanvasStoreNode[], relatedNodeIds: ReadonlySet<string> = new Set()): Node[] {
   return storeNodes.map((n) => ({
     id: n.id,
     type: n.type,
     position: n.position,
     data: n.data as unknown as Record<string, unknown>,
+    ...(relatedNodeIds.has(n.id) ? { className: 'cc-flow-node-related' } : {}),
   }))
 }
 
@@ -322,12 +372,12 @@ function mapStoreEdges(storeEdges: CanvasStoreEdge[]): Edge[] {
     id: e.id,
     source: e.source,
     target: e.target,
-    type: 'default',
+    type: edgeTypeForRenderer(e.data),
     data: e.data as unknown as Record<string, unknown>,
   }))
 }
 
-/** 閺傛媽濡悙褰掔帛鐠併倓缍呯純顔间焊缁?*/
+/* Default positions for newly-created node types. */
 const NODE_OFFSETS: Record<NodeType, { x: number; y: number }> = {
   text: { x: 160, y: 120 },
   image: { x: 540, y: 120 },
@@ -349,85 +399,75 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
 }
 
-/* 閳光偓閳光偓閳光偓 Context menu node options 閳光偓閳光偓閳光偓 */
+const NODE_OPTION_ICONS: Record<NodeType, TablerIcon> = {
+  text: IconTypography,
+  image: IconPhoto,
+  video: IconVideo,
+  character: IconFileText,
+  scene: IconPhoto,
+  audio: IconMovie,
+  imageConfigV2: IconPhotoPlus,
+  videoConfigV2: IconMovie,
+  videoCompose: IconMovie,
+  superResolution: IconMovie,
+  muxAudioVideo: IconMovie,
+  mjImage: IconPhotoPlus,
+}
 
-const CONTEXT_MENU_NODE_OPTIONS: {
-  type: NodeType
-  label: string
-  icon: TablerIcon
-}[] = [
-  { type: 'text', label: 'Text', icon: IconFileText },
-  { type: 'character', label: 'Character', icon: IconFileText },
-  { type: 'scene', label: 'Scene', icon: IconPhoto },
-  { type: 'image', label: 'Image', icon: IconPhoto },
-  { type: 'mjImage', label: 'MJ Image', icon: IconPhotoPlus },
-  { type: 'imageConfigV2', label: 'Image V2', icon: IconPhotoPlus },
-  { type: 'audio', label: 'Audio', icon: IconMovie },
-  { type: 'video', label: 'Video', icon: IconVideo },
-  { type: 'videoConfigV2', label: 'Video V2', icon: IconMovie },
-  { type: 'videoCompose', label: 'Video Compose', icon: IconMovie },
-  { type: 'superResolution', label: 'Super Resolution', icon: IconMovie },
-  { type: 'muxAudioVideo', label: 'Mux Audio Video', icon: IconMovie },
-]
+const ADDABLE_NODE_OPTIONS = getAddableNodeDefinitions().map((definition) => ({
+  type: definition.type,
+  label: definition.label,
+  icon: NODE_OPTION_ICONS[definition.type],
+  category: definition.category,
+}))
 
-/* 閳光偓閳光偓閳光偓 Quick tools閿涘牆涔忔笟褏娲块幒銉﹀潑閸旂姵瀵滈柦顕嗙礆 閳光偓閳光偓閳光偓 */
+const QUICK_TOOLS = ADDABLE_NODE_OPTIONS
+  .filter((option) => ['text', 'image', 'imageConfigV2', 'video', 'videoConfigV2'].includes(option.type))
+  .map((option) => ({
+    ...option,
+    label: option.label.replace(' Node', '').replace('Image V2', 'Image V2').replace('Video V2', 'Video V2'),
+  }))
 
-const QUICK_TOOLS: { type: NodeType; label: string; icon: TablerIcon }[] = [
-  { type: 'text', label: 'Text', icon: IconTypography },
-  { type: 'image', label: 'Image', icon: IconPhoto },
-  { type: 'imageConfigV2', label: 'Image V2', icon: IconPhotoPlus },
-  { type: 'video', label: 'Video', icon: IconVideo },
-  { type: 'videoConfigV2', label: 'Video V2', icon: IconMovie },
-]
-
-/* 閳光偓閳光偓閳光偓 Extra node types閿涘牆鐫嶅鈧懣婊冨礋娑擃厼鍨庣猾璇插灙鐞涱煉绱?閳光偓閳光偓閳光偓 */
-
-const EXTRA_NODE_TYPES: {
-  type: NodeType
-  label: string
-  icon: TablerIcon
-  category: string
-}[] = [
-  { type: 'text', label: 'Text Node', icon: IconTypography, category: 'Base' },
-  { type: 'character', label: 'Character Node', icon: IconFileText, category: 'Context' },
-  { type: 'scene', label: 'Scene Node', icon: IconPhoto, category: 'Context' },
-  { type: 'image', label: 'Image Node', icon: IconPhoto, category: 'Base' },
-  { type: 'audio', label: 'Audio Node', icon: IconMovie, category: 'Base' },
-  { type: 'video', label: 'Video Node', icon: IconVideo, category: 'Base' },
-  { type: 'mjImage', label: 'MJ Image', icon: IconPhotoPlus, category: 'AI Generation' },
-  { type: 'imageConfigV2', label: 'Image V2', icon: IconPhotoPlus, category: 'AI Generation' },
-  { type: 'videoConfigV2', label: 'Video V2', icon: IconMovie, category: 'AI Generation' },
-  { type: 'videoCompose', label: 'Video Compose', icon: IconMovie, category: 'Post Tools' },
-  { type: 'superResolution', label: 'Super Resolution', icon: IconMovie, category: 'Post Tools' },
-  { type: 'muxAudioVideo', label: 'Mux Audio Video', icon: IconMovie, category: 'Post Tools' },
-]
-
-/* 閳光偓閳光偓閳光偓 Default workflow ID 閳光偓閳光偓閳光偓 */
+/* Default workflow metadata */
 
 const DEFAULT_WORKFLOW_ID = 'default'
 const DEFAULT_WORKFLOW_NAME = 'Untitled workflow'
 
-/* 閳光偓閳光偓閳光偓 Save status type 閳光偓閳光偓閳光偓 */
+/* Save status type */
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
-/* 閳光偓閳光偓閳光偓 CanvasPageInner閿涘牆绻€妞よ婀?ReactFlowProvider 閸愬拑绱?閳光偓閳光偓閳光偓 */
+interface CanvasRunContextValue {
+  runNode(nodeId: string): void
+}
+
+const CanvasRunContext = createContext<CanvasRunContextValue | null>(null)
+
+function useCanvasRunContext(): CanvasRunContextValue | null {
+  return useContext(CanvasRunContext)
+}
+
+/* Canvas body mounted inside ReactFlowProvider. */
 
 function CanvasPageInner(): JSX.Element {
-  /* 閳光偓閳光偓 ReactFlow hooks 閳光偓閳光偓 */
-  const { screenToFlowPosition, fitView } = useReactFlow()
+  /* React Flow hooks */
+  const { screenToFlowPosition, fitView, zoomIn, zoomOut } = useReactFlow()
 
-  /* 閳光偓閳光偓 Toolbar state 閳光偓閳光偓 */
+  /* Toolbar and panel state */
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+  const [showWorkflowPanel, setShowWorkflowPanel] = useState(false)
   const [showAssetPanel, setShowAssetPanel] = useState(false)
+  const [showCharacterPanel, setShowCharacterPanel] = useState(false)
+  const [showStylePanel, setShowStylePanel] = useState(false)
   const [showJobPanel, setShowJobPanel] = useState(false)
   const [showChatBox, setShowChatBox] = useState(false)
   const [showCommandPalette, setShowCommandPalette] = useState(false)
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false)
   const [interactionMode, setInteractionMode] = useState<'select' | 'pan'>('select')
   const themePreference = useThemeStore((s) => s.preference)
   const setThemePreference = useThemeStore((s) => s.setPreference)
 
-  /* 閳光偓閳光偓 Context menu state 閳光偓閳光偓 */
+  /* Context menu state */
   const [contextMenu, setContextMenu] = useState<{
     type: 'pane' | 'node'
     x: number
@@ -435,26 +475,34 @@ function CanvasPageInner(): JSX.Element {
     nodeId?: string
   } | null>(null)
 
-  /* 閳光偓閳光偓 Save/Load state 閳光偓閳光偓 */
-  const [innerSearchParams] = useSearchParams()
+  /* Save, load, and feedback state */
+  const [innerSearchParams, setInnerSearchParams] = useSearchParams()
   const [currentWorkflowId, setCurrentWorkflowId] = useState(innerSearchParams.get('id') || DEFAULT_WORKFLOW_ID)
   const [workflowName, setWorkflowName] = useState(DEFAULT_WORKFLOW_NAME)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [dropFeedback, setDropFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null)
   const [snippetFeedback, setSnippetFeedback] = useState<string | null>(null)
+  const [generationRecoveryFeedback, setGenerationRecoveryFeedback] = useState<string | null>(null)
   const [connectionFeedback, setConnectionFeedback] = useState<ConnectionValidationFeedback | null>(null)
+  const [focusedRelatedNodeId, setFocusedRelatedNodeId] = useState<string | null>(null)
   const [snippets, setSnippets] = useState<CanvasSnippetView[]>([])
+  const [assetCategories, setAssetCategories] = useState<AssetCategory[]>([])
   const [selectedSnippetId, setSelectedSnippetId] = useState<string>('')
   const [showProjectManager, setShowProjectManager] = useState(false)
+  const importWorkflowInputRef = useRef<HTMLInputElement | null>(null)
   const isDirtyRef = useRef(false)
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const isMacLikePlatform = useMemo(() => (
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.userAgent)
+  ), [])
+  const deleteShortcutLabel = isMacLikePlatform ? 'Backspace' : 'Delete'
 
-  /* 閳光偓閳光偓 Store selectors閿涘牅绮庨悽銊ょ艾閹俱倝鏀?闁插秴浠?UI 閸滃本瀵旀稊鍛閸ョ偠鐨熼敍?閳光偓閳光偓 */
+  /* Store selectors used by toolbar controls */
   const pastLen = useStore(canvasStore, (s) => s.past.length)
   const futureLen = useStore(canvasStore, (s) => s.future.length)
 
-  /* 閳光偓閳光偓 ReactFlow 娴ｆ粈璐熺€圭偞妞傞悩鑸碘偓浣告暜娑撯偓閺夈儲绨?閳光偓閳光偓 */
+  /* React Flow local state mirrors the durable store snapshot. */
   const initialNodes = useMemo<Node[]>(
     () => mapStoreNodes(canvasStore.getState().nodes),
     [],
@@ -469,26 +517,30 @@ function CanvasPageInner(): JSX.Element {
     () => rfNodes.filter((node) => node.selected).map((node) => node.id),
     [rfNodes],
   )
+  const focusedNodeId = focusedRelatedNodeId ?? (selectedNodeIds.length === 1 ? selectedNodeIds[0] : null)
+  const relatedNodeIds = useMemo(
+    () => (focusedNodeId ? computeRelatedNodeIds(focusedNodeId, rfEdges) : new Set<string>()),
+    [focusedNodeId, rfEdges],
+  )
+  const displayNodes = useMemo(
+    () => rfNodes.map((node) => ({
+      ...node,
+      ...(relatedNodeIds.has(node.id) ? { className: 'cc-flow-node-related' } : {}),
+    })),
+    [relatedNodeIds, rfNodes],
+  )
   const selectedSnippet = useMemo(
     () => snippets.find((snippet) => snippet.id === selectedSnippetId) ?? snippets[0] ?? null,
     [selectedSnippetId, snippets],
   )
+  const skipNextPersistRef = useRef(false)
+  const manualRunJobsRef = useRef(new Map<string, { nodeId: string; jobType: JobType }>())
 
   const syncReactFlowFromStore = useCallback(() => {
+    skipNextPersistRef.current = true
     const state = canvasStore.getState()
-    setRfNodes(state.nodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      position: n.position,
-      data: n.data as unknown as Record<string, unknown>,
-    })))
-    setRfEdges(state.edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      type: 'default' as const,
-      data: e.data as unknown as Record<string, unknown>,
-    })))
+    setRfNodes(mapStoreNodes(state.nodes))
+    setRfEdges(mapStoreEdges(state.edges))
   }, [setRfNodes, setRfEdges])
 
   const loadSnippets = useCallback(async () => {
@@ -516,9 +568,19 @@ function CanvasPageInner(): JSX.Element {
     if (restoredNodes.length > 0) {
       try {
         const jobs = await window.comicCanvas.listJobs({ limit: 100 })
+        const recoveredTasks = buildGenerationTaskStatusList(restoredNodes, jobs)
         restoredNodes = reconcileCanvasNodesWithJobs(restoredNodes, jobs)
+        if (recoveredTasks.length > 0) {
+          const completed = recoveredTasks.filter((task) => task.status === 'completed').length
+          const active = recoveredTasks.filter((task) => task.phase === 'active').length
+          const failed = recoveredTasks.filter((task) => task.status === 'failed').length
+          setGenerationRecoveryFeedback(`Recovered ${recoveredTasks.length} generation task(s): ${completed} completed, ${active} active, ${failed} failed`)
+        } else {
+          setGenerationRecoveryFeedback(null)
+        }
       } catch {
         // Job reconciliation is best-effort; graph loading must remain available offline.
+        setGenerationRecoveryFeedback(null)
       }
     }
 
@@ -531,35 +593,69 @@ function CanvasPageInner(): JSX.Element {
         data: e.data,
       })),
     )
-    setRfNodes(restoredNodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      position: n.position,
-      data: n.data as unknown as Record<string, unknown>,
-    })))
-    setRfEdges(snapshot.edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      type: 'default' as const,
-      data: e.data as unknown as Record<string, unknown>,
-    })))
+    syncReactFlowFromStore()
     if (snapshot.viewport) {
       canvasStore.getState().setViewport(snapshot.viewport)
     }
-  }, [setRfNodes, setRfEdges])
+  }, [syncReactFlowFromStore])
 
   const planExecutionController = useMemo(
     () =>
       createCanvasPlanExecutionController({
         store: canvasStore,
-        runNode: (nodeId) => window.comicCanvas.runCanvasNode({ workflowId: currentWorkflowId, nodeId }),
+        runNode: async (nodeId) => {
+          const result = await window.comicCanvas.runCanvasNode({ workflowId: currentWorkflowId, nodeId })
+          if ('errorClass' in result) {
+            throw new Error(result.message)
+          }
+          return result
+        },
       }),
     [currentWorkflowId],
   )
 
-  /* 閳光偓閳光偓 Debounced 閹镐椒绠欓崠鏍у煂 store 閳光偓閳光偓 */
-  const skipNextPersistRef = useRef(false)
+  const handleRunNode = useCallback(async (nodeId: string) => {
+    const node = canvasStore.getState().nodes.find((candidate) => candidate.id === nodeId)
+    if (!node) return
+
+    const jobType = jobTypeForNodeType(node.type)
+    if (!jobType) return
+    canvasStore.getState().updateNodeData(
+      nodeId,
+      jobType === 'canvas.polishText'
+        ? { polishStatus: 'pending' }
+        : { status: 'pending', assetId: null } as Partial<CanvasNodeData>
+    )
+    syncReactFlowFromStore()
+
+    try {
+      const result = await window.comicCanvas.runCanvasNode({ workflowId: currentWorkflowId, nodeId })
+      if ('errorClass' in result) {
+        canvasStore.getState().updateNodeData(nodeId, terminalFailureToNodePatch(jobType, {
+          errorClass: result.errorClass,
+          message: result.message,
+          retryable: result.retryable,
+        }))
+        syncReactFlowFromStore()
+        return
+      }
+
+      manualRunJobsRef.current.set(result.jobId, { nodeId, jobType })
+    } catch {
+      // The preload/main boundary can fail before a durable ticket exists; surface it on the node.
+      canvasStore.getState().updateNodeData(nodeId, terminalFailureToNodePatch(jobType, {
+        errorClass: 'run_node_enqueue_failed',
+        message: 'Run request failed',
+        retryable: false,
+      }))
+      syncReactFlowFromStore()
+    }
+  }, [currentWorkflowId, syncReactFlowFromStore])
+
+  const canvasRunContextValue = useMemo<CanvasRunContextValue>(
+    () => ({ runNode: (nodeId) => { void handleRunNode(nodeId) } }),
+    [handleRunNode],
+  )
 
   const persistToStore = useCallback(
     debounce((nodes: Node[], edges: Edge[]) => {
@@ -580,7 +676,6 @@ function CanvasPageInner(): JSX.Element {
           id: e.id,
           source: e.source,
           target: e.target,
-          // 娣囨繄鏆€瀹稿弶婀佹潏瑙勬殶閹诡噯绱欓崥?edgeType閿涘绱濋柆鍨帳鐟曞棛娲婃稉?default
           data: (e.data as unknown as CanvasEdgeData) ?? { edgeType: 'default' as const, createdAt: Date.now() },
         })),
       )
@@ -599,12 +694,46 @@ function CanvasPageInner(): JSX.Element {
   }, [loadSnippets])
 
   useEffect(() => {
+    let cancelled = false
+    async function loadAssetCategories(): Promise<void> {
+      try {
+        const categories = await window.comicCanvas.getAssetCategories()
+        if (!cancelled) {
+          setAssetCategories(categories)
+        }
+      } catch {
+        if (!cancelled) {
+          setAssetCategories([])
+        }
+      }
+    }
+
+    void loadAssetCategories()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     const unsubscribeCompleted = window.comicCanvas.onJobCompleted((event) => {
       planExecutionController.notifyJobCompleted(event)
+      const manualJob = manualRunJobsRef.current.get(event.jobId)
+      if (manualJob) {
+        manualRunJobsRef.current.delete(event.jobId)
+        const patch = terminalResultToNodePatch(event.result)
+        if (patch) {
+          canvasStore.getState().updateNodeData(manualJob.nodeId, patch)
+        }
+      }
       syncReactFlowFromStore()
     })
     const unsubscribeFailed = window.comicCanvas.onJobFailed((event) => {
       planExecutionController.notifyJobFailed(event)
+      const manualJob = manualRunJobsRef.current.get(event.jobId)
+      if (manualJob) {
+        manualRunJobsRef.current.delete(event.jobId)
+        canvasStore.getState().updateNodeData(manualJob.nodeId, terminalFailureToNodePatch(manualJob.jobType, event.error))
+      }
       syncReactFlowFromStore()
     })
 
@@ -614,7 +743,7 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [planExecutionController, syncReactFlowFromStore])
 
-  /* 閳光偓閳光偓 Save graph handler 閳光偓閳光偓 */
+  /* Save graph handler */
   const handleSave = useCallback(async () => {
     try {
       setSaveStatus('saving')
@@ -651,24 +780,27 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [currentWorkflowId])
 
-  /* 閳光偓閳光偓 Ctrl+S / Cmd+S keyboard shortcut 閳光偓閳光偓 */
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault()
-        void handleSave().catch(() => undefined)
-      }
+  const handleExportWorkflow = useCallback(async () => {
+    try {
+      await handleSave()
+      const exported = await window.comicCanvas.exportWorkflow({ workflowId: currentWorkflowId })
+      downloadWorkflowJson(exported, `${exported.name || currentWorkflowId}.json`)
+      setSnippetFeedback(`Exported ${exported.name}`)
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+      saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 2400)
+    } catch {
+      setSnippetFeedback('Export failed')
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+      saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3000)
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleSave])
+  }, [currentWorkflowId, handleSave])
 
   useEffect(() => installDirtyBeforeUnloadGuard({
     target: window,
     isDirty: () => isDirtyRef.current,
   }), [])
 
-  /* 閳光偓閳光偓 Debounced auto-save (2s after changes) 閳光偓閳光偓 */
+  /* Debounced autosave after local graph changes */
   useEffect(() => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current)
     autoSaveTimerRef.current = setTimeout(() => {
@@ -681,7 +813,7 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [rfNodes, rfEdges, handleSave])
 
-  /* 閳光偓閳光偓 Load graph helper (reusable for initial load and workflow switch) 閳光偓閳光偓 */
+  /* Load graph helper reused by initial load and workflow switch. */
   const loadGraphForWorkflow = useCallback(async (workflowId: string) => {
     try {
       const snapshot = await window.comicCanvas.loadGraph({
@@ -695,16 +827,47 @@ function CanvasPageInner(): JSX.Element {
         // Empty workflow - clear canvas
         canvasStore.getState().setNodes([])
         canvasStore.getState().setEdges([])
-        setRfNodes([])
-        setRfEdges([])
+        syncReactFlowFromStore()
       }
       isDirtyRef.current = false
     } catch {
       // Silently fall back to empty canvas
     }
-  }, [setRfNodes, setRfEdges])
+  }, [restoreWorkflowGraph, syncReactFlowFromStore])
 
-  /* 閳光偓閳光偓 Load graph on mount 閳光偓閳光偓 */
+  const handleImportWorkflowFile = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      const json = await file.text()
+      const result = await window.comicCanvas.importWorkflow({
+        json,
+        name: file.name.replace(/\.json$/iu, ''),
+      })
+      if ('errorClass' in result) {
+        setSnippetFeedback(`Import failed: ${result.message}`)
+        if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+        saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3600)
+        return
+      }
+
+      setCurrentWorkflowId(result.workflowId)
+      setWorkflowName(file.name.replace(/\.json$/iu, '') || DEFAULT_WORKFLOW_NAME)
+      setInnerSearchParams({ id: result.workflowId })
+      await loadGraphForWorkflow(result.workflowId)
+      setSnippetFeedback(`Imported workflow, dropped ${result.dropped.length} incompatible item(s)`)
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+      saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3600)
+    } catch {
+      setSnippetFeedback('Import failed')
+      if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
+      saveStatusTimerRef.current = setTimeout(() => setSnippetFeedback(null), 3000)
+    }
+  }, [loadGraphForWorkflow, setInnerSearchParams])
+
+  /* Initial graph load */
   useEffect(() => {
     let cancelled = false
     async function loadGraph() {
@@ -727,7 +890,7 @@ function CanvasPageInner(): JSX.Element {
     return () => { cancelled = true }
   }, [currentWorkflowId, restoreWorkflowGraph])
 
-  /* 閳光偓閳光偓 Switch workflow handler 閳光偓閳光偓 */
+  /* Dirty-safe workflow switch handler */
   const handleSwitchWorkflow = useCallback(async (workflowId: string, name: string) => {
     await guardWorkflowSwitch({
       isDirty: isDirtyRef.current,
@@ -743,7 +906,7 @@ function CanvasPageInner(): JSX.Element {
     })
   }, [handleSave, loadGraphForWorkflow])
 
-  /* 閳光偓閳光偓 Cleanup timers 閳光偓閳光偓 */
+  /* Timer cleanup */
   useEffect(() => {
     return () => {
       if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current)
@@ -751,7 +914,7 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [])
 
-  /* 閳光偓閳光偓 Undo/Redo閿涙矮绮?store 闁插秵鏌婇崥灞绢劄閸?ReactFlow 閳光偓閳光偓 */
+  /* Undo/redo store -> React Flow sync */
   const prevPastLen = useRef(pastLen)
   const prevFutureLen = useRef(futureLen)
 
@@ -762,14 +925,11 @@ function CanvasPageInner(): JSX.Element {
     ) {
       prevPastLen.current = pastLen
       prevFutureLen.current = futureLen
-      skipNextPersistRef.current = true
-      const state = canvasStore.getState()
-      setRfNodes(mapStoreNodes(state.nodes))
-      setRfEdges(mapStoreEdges(state.edges))
+      syncReactFlowFromStore()
     }
-  }, [pastLen, futureLen, setRfNodes, setRfEdges])
+  }, [pastLen, futureLen, syncReactFlowFromStore])
 
-  /* 閳光偓閳光偓 鐎圭偞妞傛禍瀣╂ 閳光偓閳光偓 */
+  /* Realtime terminal event invalidation and graph sync */
   useCanvasRealtime()
   const handleConnect = useCallback<OnConnect>((connection) => {
     const result = createCanvasEdge({
@@ -791,7 +951,7 @@ function CanvasPageInner(): JSX.Element {
           id: edgeId,
           source: connection.source,
           target: connection.target,
-          type: 'default',
+          type: edgeTypeForRenderer(storeEdge?.data),
           data: storeEdge?.data as unknown as Record<string, unknown>,
         },
       ])
@@ -799,8 +959,9 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [setRfEdges])
 
-  /* 閳光偓閳光偓 閹锋牗瀚跨紒鎾存将閿涙碍褰佹禍銈勭秴缂冾喖鍩?store + 閸樺棗褰?閳光偓閳光偓 */
+  /* Commit final drag positions into the durable store. */
   const handleNodeDragStop = useCallback<OnNodeDrag>((_event, node) => {
+    setFocusedRelatedNodeId(node.id)
     canvasStore.setState((prev) => {
       const snapshot = {
         nodes: prev.nodes,
@@ -819,7 +980,15 @@ function CanvasPageInner(): JSX.Element {
     })
   }, [])
 
-  /* 閳光偓閳光偓 閹垮秳缍旈崶鐐剁殶 閳光偓閳光偓 */
+  const handleNodeMouseEnter = useCallback((_event: React.MouseEvent, node: Node) => {
+    setFocusedRelatedNodeId(node.id)
+  }, [])
+
+  const handleNodeMouseLeave = useCallback(() => {
+    setFocusedRelatedNodeId(null)
+  }, [])
+
+  /* Graph edit actions */
   const handleUndo = useCallback(() => {
     canvasStore.getState().undo()
   }, [])
@@ -850,7 +1019,7 @@ function CanvasPageInner(): JSX.Element {
       }
       setRfNodes((nds) => [...nds, newNode])
 
-      // 閸氬本顒為崢瀣弳 store 閸樺棗褰堕弽鍫礄閻劋绨幘銈夋敘閿?
+      // Keep React Flow local state and Zustand durable state in sync.
       canvasStore.setState((prev) => {
         const snapshot = {
           nodes: prev.nodes,
@@ -876,7 +1045,31 @@ function CanvasPageInner(): JSX.Element {
     [setRfNodes],
   )
 
-  /* 閳光偓閳光偓 Context menu handlers 閳光偓閳光偓 */
+  const handleCreateTextFromBottomInput = useCallback(
+    (content: string) => {
+      const id = handleAddNode('text')
+      canvasStore.getState().updateNodeData(id, { content, label: content.slice(0, 32) || 'Text' })
+      syncReactFlowFromStore()
+    },
+    [handleAddNode, syncReactFlowFromStore],
+  )
+
+  const handleCreateCharacterFromCategory = useCallback(
+    (category: AssetCategory | null) => {
+      const nodeType: NodeType = category?.slug === 'scene' || category?.name.includes('场景') ? 'scene' : 'character'
+      const id = handleAddNode(nodeType)
+      canvasStore.getState().updateNodeData(id, {
+        label: category?.name ?? (nodeType === 'scene' ? 'Scene' : 'Character'),
+        ...(category?.description ? { description: category.description } : {}),
+        ...(nodeType === 'scene' && category?.slug ? { category: category.slug } : {}),
+      })
+      syncReactFlowFromStore()
+      setShowCharacterPanel(false)
+    },
+    [handleAddNode, syncReactFlowFromStore],
+  )
+
+  /* Context menu handlers */
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent | MouseEvent) => {
       event.preventDefault()
@@ -901,6 +1094,11 @@ function CanvasPageInner(): JSX.Element {
     },
     [],
   )
+
+  const handleViewportMoveEnd = useCallback((_event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
+    canvasStore.getState().setViewport({ x: viewport.x, y: viewport.y, zoom: viewport.zoom })
+    isDirtyRef.current = true
+  }, [])
 
   const handleAddNodeAtContextMenu = useCallback(
     (type: NodeType) => {
@@ -932,11 +1130,16 @@ function CanvasPageInner(): JSX.Element {
     [contextMenu, handleAddNode, screenToFlowPosition, syncReactFlowFromStore],
   )
 
-  const syncStoreSnapshotToReactFlow = useCallback(() => {
-    const state = canvasStore.getState()
-    setRfNodes(mapStoreNodes(state.nodes))
-    setRfEdges(mapStoreEdges(state.edges))
-  }, [setRfNodes, setRfEdges])
+  const getAllowedConnectCreateOptions = useCallback((sourceNodeId: string | undefined) => {
+    const sourceNode = canvasStore.getState().nodes.find((node) => node.id === sourceNodeId)
+    if (!sourceNode) return []
+    return getConnectCreateNodeDefinitions(sourceNode.type).map((definition) => ({
+      type: definition.type,
+      label: definition.label,
+      icon: NODE_OPTION_ICONS[definition.type],
+      category: definition.category,
+    }))
+  }, [])
 
   const handleDuplicateSelection = useCallback(
     (nodeIds: string[]) => {
@@ -945,11 +1148,10 @@ function CanvasPageInner(): JSX.Element {
         selectedNodeIds: nodeIds,
       })
       if (result.duplicatedNodeIds.length === 0) return
-      skipNextPersistRef.current = true
-      syncStoreSnapshotToReactFlow()
+      syncReactFlowFromStore()
       setContextMenu(null)
     },
-    [syncStoreSnapshotToReactFlow],
+    [syncReactFlowFromStore],
   )
 
   const handleDeleteSelection = useCallback(
@@ -959,19 +1161,24 @@ function CanvasPageInner(): JSX.Element {
         selectedNodeIds: nodeIds,
       })
       if (result.deletedNodeIds.length === 0) return
-      skipNextPersistRef.current = true
-      syncStoreSnapshotToReactFlow()
+      syncReactFlowFromStore()
       setContextMenu(null)
     },
-    [syncStoreSnapshotToReactFlow],
+    [syncReactFlowFromStore],
   )
 
   const canvasCommands = useMemo<CanvasCommand[]>(() => [
+    ...ADDABLE_NODE_OPTIONS.map((option) => ({
+      id: `add-node-${option.type}`,
+      label: `Add ${option.label}`,
+      keywords: ['add', 'node', option.type, option.label],
+      run: () => handleAddNode(option.type),
+    })),
     {
       id: 'fit-view',
       label: 'Fit view',
       keywords: ['fit', 'zoom', 'view'],
-      run: () => fitView({ padding: 0.18, duration: 240 }),
+      run: () => { void fitView({ padding: 0.18, duration: 240 }) },
     },
     {
       id: 'select-mode',
@@ -999,37 +1206,86 @@ function CanvasPageInner(): JSX.Element {
       disabled: selectedNodeIds.length === 0,
       run: () => handleDeleteSelection(selectedNodeIds),
     },
-  ], [fitView, handleDeleteSelection, handleDuplicateSelection, selectedNodeIds])
+  ], [fitView, handleAddNode, handleDeleteSelection, handleDuplicateSelection, selectedNodeIds])
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (isEditableKeyboardTarget(e.target)) return
+  const handleCanvasShortcut = useCallback((event: KeyboardEvent) => {
+    if (isEditableKeyboardTarget(event.target)) return
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setShowCommandPalette(true)
-        return
-      }
+    const key = event.key.toLowerCase()
+    const mod = event.ctrlKey || event.metaKey
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
-        e.preventDefault()
-        handleDuplicateSelection(selectedNodeIds)
-        return
-      }
-
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedNodeIds.length === 0) return
-        e.preventDefault()
-        handleDeleteSelection(selectedNodeIds)
-      }
+    if (mod && key === 's') {
+      event.preventDefault()
+      void handleSave().catch(() => undefined)
+      return
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleDeleteSelection, handleDuplicateSelection, selectedNodeIds])
+    if (mod && key === 'z') {
+      event.preventDefault()
+      if (event.shiftKey) handleRedo()
+      else handleUndo()
+      return
+    }
+
+    if (mod && key === 'y') {
+      event.preventDefault()
+      handleRedo()
+      return
+    }
+
+    if (mod && key === '1') {
+      event.preventDefault()
+      void fitView({ padding: 0.18, duration: 240 })
+      return
+    }
+
+    if (mod && key === '2') {
+      event.preventDefault()
+      setInteractionMode('select')
+      return
+    }
+
+    if (mod && key === '3') {
+      event.preventDefault()
+      setInteractionMode('pan')
+      return
+    }
+
+    if (mod && key === 'k') {
+      event.preventDefault()
+      setShowCommandPalette(true)
+      return
+    }
+
+    if (mod && key === 'd') {
+      event.preventDefault()
+      handleDuplicateSelection(selectedNodeIds)
+      return
+    }
+
+    if (event.key === 'Delete' || (isMacLikePlatform && event.key === 'Backspace')) {
+      if (selectedNodeIds.length === 0) return
+      event.preventDefault()
+      handleDeleteSelection(selectedNodeIds)
+    }
+  }, [
+    fitView,
+    handleDeleteSelection,
+    handleDuplicateSelection,
+    handleRedo,
+    handleSave,
+    handleUndo,
+    isMacLikePlatform,
+    selectedNodeIds,
+  ])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleCanvasShortcut)
+    return () => window.removeEventListener('keydown', handleCanvasShortcut)
+  }, [handleCanvasShortcut])
 
   const handleRunAll = useCallback(() => {
-    // 妫板嫮鏆€閿涙碍婀弶銉ㄐ曢崣鎴濆弿閼哄倻鍋ｆ潻鎰攽
+    // Keep React Flow local state and Zustand durable state in sync.
   }, [])
 
   const handleSaveSnippet = useCallback(async () => {
@@ -1059,18 +1315,24 @@ function CanvasPageInner(): JSX.Element {
     }
   }, [loadSnippets, selectedNodeIds])
 
-  const handleInsertSnippet = useCallback(() => {
+  const handleInsertSnippet = useCallback(async () => {
     if (!selectedSnippet) {
       setSnippetFeedback('No snippet selected')
       return
     }
 
+    const detail = await window.comicCanvas.getCanvasSnippet({ snippetId: selectedSnippet.id })
+    if ('errorClass' in detail) {
+      setSnippetFeedback(detail.message)
+      return
+    }
+
     const snippet: CanvasSnippet = {
       schemaVersion: 1,
-      name: selectedSnippet.name,
-      createdAt: selectedSnippet.createdAt,
-      nodes: selectedSnippet.nodes,
-      edges: selectedSnippet.edges,
+      name: detail.name,
+      createdAt: detail.createdAt,
+      nodes: detail.nodes,
+      edges: detail.edges,
     }
 
     insertCanvasSnippet(snippet, canvasStore, {
@@ -1080,10 +1342,21 @@ function CanvasPageInner(): JSX.Element {
       },
     })
     syncReactFlowFromStore()
-    setSnippetFeedback(`Inserted snippet with ${selectedSnippet.nodes.length} nodes`)
+    setSnippetFeedback(`Inserted snippet with ${detail.nodes.length} nodes`)
   }, [selectedSnippet, syncReactFlowFromStore])
 
-  /* 閳光偓閳光偓 鐠у嫪楠囬幓鎺戝弳閸ョ偠鐨熼敍姘殺鐠у嫪楠囨担婊€璐熼弬鎷屽Ν閻愯鍧婇崝鐘插煂閻㈣绔?閳光偓閳光偓 */
+  const handleDeleteSnippet = useCallback(async (snippetId: string) => {
+    const result = await window.comicCanvas.deleteCanvasSnippet({ snippetId })
+    if (!result.deleted) {
+      setSnippetFeedback(result.message ?? 'Delete snippet failed')
+      return
+    }
+
+    await loadSnippets()
+    setSnippetFeedback('Deleted snippet')
+  }, [loadSnippets])
+
+  /* Local media drop and asset insertion handlers */
   const showDropFeedback = useCallback((kind: 'success' | 'error', message: string) => {
     const normalizedMessage =
       kind === 'success' && !message.startsWith('\u5df2\u5bfc\u5165')
@@ -1096,8 +1369,11 @@ function CanvasPageInner(): JSX.Element {
   }, [])
 
   const appendAssetNode = useCallback(
-    (asset: { id: string; safeUrl: string; mediaType: 'image' | 'video' | 'audio'; name: string }, flowPosition?: { x: number; y: number }) => {
-      const nodeType: Extract<NodeType, 'image' | 'video' | 'audio'> = asset.mediaType
+    (asset: { id: string; safeUrl: string; mediaType: 'image' | 'video' | 'audio'; name: string; mode?: CanvasAssetInsertMode }, flowPosition?: { x: number; y: number }) => {
+      const nodeType: NodeType =
+        asset.mediaType === 'image' && (asset.mode === 'character' || asset.mode === 'scene')
+          ? asset.mode
+          : asset.mediaType
       const currentNodes = canvasStore.getState().nodes
       const count = currentNodes.filter((n) => n.type === nodeType).length
       const position = flowPosition
@@ -1107,18 +1383,35 @@ function CanvasPageInner(): JSX.Element {
             return { x: offset.x + count * 40, y: offset.y + count * 60 }
           })()
       const id = `node-${crypto.randomUUID()}`
-      const data = {
-        ...defaultNodeData(nodeType, count + 1),
-        assetId: asset.id,
-        label: asset.name,
-        status: 'done' as const,
-        url: asset.safeUrl,
-      }
+      const data =
+        nodeType === 'image' || nodeType === 'character' || nodeType === 'scene'
+          ? buildAssetNodeInsertion({
+              asset: {
+                id: asset.id,
+                mediaType: 'image',
+                status: 'ready',
+                relativePath: asset.name,
+                safeUrl: asset.safeUrl,
+                metadata: {},
+                displayName: asset.name,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              },
+              mode: nodeType,
+              sequence: count + 1,
+            }).node.data
+          : {
+              ...defaultNodeData(nodeType, count + 1),
+              assetId: asset.id,
+              label: asset.name,
+              status: 'done' as const,
+              url: asset.safeUrl,
+            }
       const newNode: Node = {
         id,
         type: nodeType,
         position,
-        data,
+        data: data as unknown as Record<string, unknown>,
       }
       setRfNodes((nds) => [...nds, newNode])
       canvasStore.setState((prev) => {
@@ -1134,10 +1427,44 @@ function CanvasPageInner(): JSX.Element {
   )
 
   const handleInsertAsset = useCallback(
-    (asset: { id: string; url: string; type: 'image' | 'video' | 'audio'; name: string }) => {
-      appendAssetNode({ id: asset.id, safeUrl: asset.url, mediaType: asset.type, name: asset.name })
+    (asset: { id: string; url: string; type: 'image' | 'video' | 'audio'; name: string; mode?: CanvasAssetInsertMode }) => {
+      if (asset.mode === 'reference' && asset.type === 'image') {
+        const state = canvasStore.getState()
+        const targetNode = state.nodes.find(
+          (node) => selectedNodeIds.includes(node.id) && (node.type === 'video' || node.type === 'videoConfigV2')
+        )
+        if (targetNode) {
+          const patch = buildReferenceAssetPatch({
+            currentReferences: 'referenceAssets' in targetNode.data && Array.isArray(targetNode.data.referenceAssets)
+              ? targetNode.data.referenceAssets
+              : [],
+            asset: {
+              id: asset.id,
+              mediaType: 'image',
+              status: 'ready',
+              relativePath: asset.name,
+              safeUrl: asset.url,
+              metadata: {},
+              displayName: asset.name,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+          })
+          canvasStore.getState().updateNodeData(targetNode.id, patch)
+          syncReactFlowFromStore()
+          return
+        }
+      }
+
+      appendAssetNode({
+        id: asset.id,
+        safeUrl: asset.url,
+        mediaType: asset.type,
+        name: asset.name,
+        ...(asset.mode ? { mode: asset.mode } : {}),
+      })
     },
-    [appendAssetNode],
+    [appendAssetNode, selectedNodeIds, syncReactFlowFromStore],
   )
 
   const handleCanvasDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
@@ -1150,36 +1477,55 @@ function CanvasPageInner(): JSX.Element {
   const handleCanvasDrop = useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
       const files = Array.from(event.dataTransfer.files)
-      const firstFile = files[0]
-      if (!firstFile) return
+      if (files.length === 0) return
       event.preventDefault()
 
-      const plan = planLocalMediaDrop(firstFile)
-      if (!plan.ok) {
-        showDropFeedback('error', plan.reason)
+      const batchPlan = planLocalMediaDrops(files)
+      if (!batchPlan.ok) {
+        showDropFeedback('error', batchPlan.reason)
         return
       }
 
+      const basePosition = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      let insertedCount = 0
+      let failedCount = 0
       try {
-        const imported: AssetRecord = await window.comicCanvas.importAsset({
-          sourcePath: plan.sourcePath,
-          mediaType: plan.mediaType,
-        })
-        appendAssetNode({
-          id: imported.id,
-          safeUrl: imported.safeUrl,
-          mediaType: plan.mediaType,
-          name: plan.label,
-        }, screenToFlowPosition({ x: event.clientX, y: event.clientY }))
-        showDropFeedback('success', `Inserted ${plan.label}`)
-      } catch {
-        showDropFeedback('error', `Failed to insert ${plan.label}`)
+        for (const [index, plan] of batchPlan.plans.entries()) {
+          try {
+            const imported: AssetRecord = await window.comicCanvas.importAsset({
+              sourcePath: plan.sourcePath,
+              mediaType: plan.mediaType,
+            })
+            appendAssetNode(
+              {
+                id: imported.id,
+                safeUrl: imported.safeUrl,
+                mediaType: plan.mediaType,
+                name: plan.label,
+              },
+              { x: basePosition.x + index * 36, y: basePosition.y + index * 36 },
+            )
+            insertedCount += 1
+          } catch {
+            // Individual import failures should not prevent the remaining dropped media from importing.
+            failedCount += 1
+          }
+        }
+      } finally {
+        if (insertedCount > 0) {
+          const rejectedCount = batchPlan.rejected.length + failedCount
+          const suffix = rejectedCount > 0 ? `，${rejectedCount} 个文件未导入` : ''
+          showDropFeedback('success', `已导入 ${insertedCount} 个媒体文件${suffix}`)
+        } else {
+          const firstRejected = batchPlan.rejected[0]?.reason
+          showDropFeedback('error', firstRejected ?? '导入失败')
+        }
       }
     },
     [appendAssetNode, screenToFlowPosition, showDropFeedback],
   )
 
-  /* 閳光偓閳光偓 AI 鐎电鐦?Plan 鎼存梻鏁ら崶鐐剁殶 閳光偓閳光偓 */
+  /* AI plan application */
   const handleApplyPlan = useCallback(
     (p: CanvasPlan, { autoExecute }: ApplyPlanOptions) => {
       planExecutionController.applyPlan(p, { autoExecute })
@@ -1189,34 +1535,53 @@ function CanvasPageInner(): JSX.Element {
   )
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-bg-base">
-      {/* 閳光偓閳光偓 妞よ埖鐖?閳光偓閳光偓 */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-secondary bg-bg-surface px-4">
+    <CanvasRunContext.Provider value={canvasRunContextValue}>
+      <div className="flex h-screen w-screen flex-col bg-bg-base">
+      <header
+        data-testid="canvas-topbar"
+        className="flex h-14 shrink-0 items-center justify-between border-b border-border-secondary bg-bg-surface px-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
+      >
         <div className="flex items-center gap-3">
           <Link
             to="/projects"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-card text-text-secondary shadow-sm transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
             aria-label="Back to projects"
+            title="Back to projects"
           >
             <IconArrowLeft className="h-4 w-4" />
           </Link>
           <button
             onClick={() => setShowProjectManager(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[15px] font-semibold text-text-base transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[15px] font-semibold text-text-base transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
+            aria-label="Open workflow switcher"
+            title="Open workflow switcher"
           >
             {workflowName}
             <IconChevronDown className="h-3.5 w-3.5 text-text-muted" />
           </button>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-2.5 py-1 text-[11px] font-semibold text-brand">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+            Canvas project
+          </span>
           <ProjectStyleSelector workflowId={currentWorkflowId} />
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          <input
+            ref={importWorkflowInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => void handleImportWorkflowFile(event)}
+            aria-label="Workflow JSON file"
+          />
           <button
             type="button"
             onClick={handleUndo}
             disabled={pastLen === 0}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Undo"
+            title="Undo"
           >
             <IconArrowBackUp className="h-3.5 w-3.5" />
             Undo
@@ -1225,17 +1590,40 @@ function CanvasPageInner(): JSX.Element {
             type="button"
             onClick={handleRedo}
             disabled={futureLen === 0}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Redo"
+            title="Redo"
           >
             <IconArrowForwardUp className="h-3.5 w-3.5" />
             Redo
           </button>
+          <span className="h-5 w-px bg-border-secondary" />
+          <button
+            type="button"
+            onClick={() => importWorkflowInputRef.current?.click()}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
+            aria-label="Import workflow JSON"
+            title="Import workflow JSON"
+          >
+            <IconUpload className="h-3.5 w-3.5" />
+            Import
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleExportWorkflow()}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
+            aria-label="Export workflow JSON"
+            title="Export workflow JSON"
+          >
+            <IconDownload className="h-3.5 w-3.5" />
+            Export
+          </button>
           <button
             type="button"
             onClick={() => void handleSave().catch(() => undefined)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="Save"
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
+            aria-label="Save workflow"
+            title="Save workflow"
           >
             {saveStatus === 'saving' ? (
               <>
@@ -1304,27 +1692,39 @@ function CanvasPageInner(): JSX.Element {
           <button
             type="button"
             onClick={() => setShowJobPanel((v) => !v)}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-secondary px-3 text-[13px] font-medium transition-all duration-200 ease-luxury active:scale-95 ${showJobPanel ? 'bg-brand/10 text-brand' : 'bg-bg-card text-text-secondary hover:bg-bg-hover hover:text-text-base'}`}
-            aria-label="Jobs"
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary px-3 text-[13px] font-medium transition-all duration-200 ease-luxury active:scale-95 ${showJobPanel ? 'bg-brand/10 text-brand' : 'bg-bg-card text-text-secondary hover:bg-bg-hover hover:text-text-base'}`}
+            aria-label="Toggle job status"
+            title="Toggle job status"
           >
             <IconListDetails className="h-3.5 w-3.5" />
             Jobs
           </button>
+          <button
+            type="button"
+            onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
+            aria-label="Toggle theme"
+            title={themePreference === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          >
+            {themePreference === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
+          </button>
         </div>
       </header>
-
-      {/* 閳光偓閳光偓 閻㈣绔烽崠鍝勭厵 閳光偓閳光偓 */}
       <div className="relative flex-1" onDragOver={handleCanvasDragOver} onDrop={(event) => void handleCanvasDrop(event)}>
         <ReactFlow
-          nodes={rfNodes}
+          nodes={displayNodes}
           edges={rfEdges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={handleConnect}
           onNodeDragStop={handleNodeDragStop}
+          onNodeMouseEnter={handleNodeMouseEnter}
+          onNodeMouseLeave={handleNodeMouseLeave}
           onPaneContextMenu={onPaneContextMenu}
           onNodeContextMenu={onNodeContextMenu}
+          onMoveEnd={handleViewportMoveEnd}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           snapToGrid
           snapGrid={[20, 20]}
           defaultViewport={{ x: 120, y: 80, zoom: 0.75 }}
@@ -1345,7 +1745,6 @@ function CanvasPageInner(): JSX.Element {
             color="var(--color-border-secondary)"
           />
           <MiniMap position="bottom-right" pannable zoomable />
-          <Controls position="bottom-left" />
         </ReactFlow>
 
         {dropFeedback && (
@@ -1374,8 +1773,15 @@ function CanvasPageInner(): JSX.Element {
             {snippetFeedback}
           </div>
         )}
-
-        {/* 閳光偓閳光偓 閸欐娊鏁懣婊冨礋 閳光偓閳光偓 */}
+        {generationRecoveryFeedback && (
+          <div
+            role="status"
+            data-testid="generation-recovery-feedback"
+            className="pointer-events-none absolute left-1/2 top-28 z-30 -translate-x-1/2 rounded-lg border border-border-secondary bg-bg-panel px-3 py-2 text-[13px] text-text-base shadow-card"
+          >
+            {generationRecoveryFeedback}
+          </div>
+        )}
         {contextMenu && (
           <>
             <div
@@ -1395,7 +1801,7 @@ function CanvasPageInner(): JSX.Element {
                   <p className="px-3 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">
                     Add node
                   </p>
-                  {CONTEXT_MENU_NODE_OPTIONS.map((opt) => (
+                  {ADDABLE_NODE_OPTIONS.map((opt) => (
                     <button
                       key={opt.type}
                       onClick={() => handleAddNodeAtContextMenu(opt.type)}
@@ -1432,9 +1838,9 @@ function CanvasPageInner(): JSX.Element {
                     </span>
                   </button>
                   <span className="my-1 block h-px bg-border-secondary" />
-                  {CONTEXT_MENU_NODE_OPTIONS.map((opt) => (
+                  {getAllowedConnectCreateOptions(contextMenu.nodeId).map((opt) => (
                     <button
-                      key={`connect-${opt.type}`}
+                      key={opt.type}
                       onClick={() => handleCreateConnectedNodeAtContextMenu(opt.type)}
                       className="group flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
                     >
@@ -1449,20 +1855,19 @@ function CanvasPageInner(): JSX.Element {
             </div>
           </>
         )}
-
-        {/* 閳光偓閳光偓 瀹革缚鏅跺ù顔煎З瀹搞儱鍙块弽?閳光偓閳光偓 */}
-        <aside className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border border-border-primary bg-bg-panel p-1 shadow-card">
-          {/* Plus 鐏炴洖绱戦幐澶愭尦 */}
+        <aside
+          data-testid="canvas-left-toolbar"
+          className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-full border border-border-primary bg-bg-panel p-1.5 shadow-card"
+        >
           <button
             type="button"
             onClick={() => setIsAddMenuOpen((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury active:scale-90 ${isAddMenuOpen ? 'bg-brand text-bg-base' : 'text-text-secondary hover:border-brand/30 hover:bg-bg-hover hover:text-text-base'}`}
             title={isAddMenuOpen ? 'Collapse' : 'Add node'}
+            aria-label={isAddMenuOpen ? 'Close add menu' : 'Add node'}
           >
             {isAddMenuOpen ? <IconX className="h-4 w-4" /> : <IconPlus className="h-4 w-4" />}
           </button>
-
-          {/* 閸掑棝娈х痪?*/}
           <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
 
           <button
@@ -1496,7 +1901,6 @@ function CanvasPageInner(): JSX.Element {
           </button>
 
           <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
-          {/* Quick tools 閻╁瓨甯村ǎ璇插 */}
           {QUICK_TOOLS.map((tool) => (
             <button
               key={tool.type}
@@ -1508,71 +1912,97 @@ function CanvasPageInner(): JSX.Element {
               <tool.icon className="h-4 w-4" />
             </button>
           ))}
-
-          {/* 閸掑棝娈х痪?*/}
           <span className="mx-auto my-0.5 h-px w-6 bg-border-primary" />
-
-          {/* 娣囨繂鐡?*/}
           <button
             type="button"
             onClick={() => void handleSave().catch(() => undefined)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${saveStatus === 'saving' ? 'text-brand' : saveStatus === 'saved' ? 'text-green-400' : 'text-text-secondary hover:text-text-base'}`}
             title={saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save (Ctrl+S)'}
+            aria-label="Save workflow"
           >
             {saveStatus === 'saving' ? <IconLoader2 className="h-4 w-4 animate-spin" /> : saveStatus === 'saved' ? <IconCheck className="h-4 w-4" /> : <IconDeviceFloppy className="h-4 w-4" />}
           </button>
-
-          {/* 鐠у嫪楠囨惔?*/}
           <button
             type="button"
             onClick={() => setShowAssetPanel((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showAssetPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-base'}`}
             title="Asset library"
+            aria-label="Toggle asset library"
           >
             <IconFolder className="h-4 w-4" />
           </button>
-
-          {/* 鐎电鐦?*/}
+          <button
+            type="button"
+            onClick={() => setShowWorkflowPanel((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showWorkflowPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Workflow snippets"
+            aria-label="Toggle workflow panel"
+          >
+            <IconTemplate className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCharacterPanel((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showCharacterPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Character categories"
+            aria-label="Toggle character category panel"
+          >
+            <IconUsers className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowStylePanel((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showStylePanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Style library"
+            aria-label="Toggle style panel"
+          >
+            <IconPalette className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={() => setShowChatBox((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showChatBox ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
             title="Chat"
+            aria-label="Toggle chat panel"
           >
             <IconMessage className="h-4 w-4" />
           </button>
-
-          {/* 鏉╂劘顢戞禒璇插 */}
           <button
             type="button"
             onClick={() => setShowJobPanel((v) => !v)}
             className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showJobPanel ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
             title="Jobs"
-            aria-label="Jobs"
+            aria-label="Toggle job status"
           >
             <IconListDetails className="h-4 w-4" />
           </button>
-
-          {/* 娑撳顣介崚鍥ㄥ床 */}
           <button
             type="button"
             onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
             title={themePreference === 'dark' ? 'Switch to light' : 'Switch to dark'}
+            aria-label="Toggle theme"
           >
             {themePreference === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowShortcutHelp((v) => !v)}
+            className={`flex h-10 w-10 items-center justify-center rounded-full border border-transparent transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-90 ${showShortcutHelp ? 'bg-brand/10 text-brand' : 'text-text-secondary hover:text-text-base'}`}
+            title="Canvas shortcuts"
+            aria-label="Toggle shortcut help"
+          >
+            <IconHelp className="h-4 w-4" />
+          </button>
         </aside>
-
-        {/* 閳光偓閳光偓 鐏炴洖绱戝蹇氬Ν閻愮褰嶉崡鏇礄婵绮撳〒鍙夌厠閿涘苯鍨忛幑銏犲讲鐟欎焦鈧冪杽閻滄媽绻冨〒鈥冲З閻紮绱?閳光偓閳光偓 */}
         <div
           className={`absolute left-[72px] top-1/2 z-30 w-[220px] -translate-y-1/2 rounded-xl border border-border-primary bg-bg-panel p-3 shadow-pop transition-all duration-300 ease-luxury ${isAddMenuOpen ? 'translate-x-0 opacity-100' : 'pointer-events-none -translate-x-2 opacity-0'}`}
         >
-          {Array.from(new Set(EXTRA_NODE_TYPES.map((n) => n.category))).map((cat) => (
+          {Array.from(new Set(ADDABLE_NODE_OPTIONS.map((n) => n.category))).map((cat) => (
             <div key={cat}>
               <p className="px-2 py-1.5 text-[11px] font-bold uppercase text-text-muted select-none">{cat}</p>
               <div className="flex flex-col gap-0.5">
-                {EXTRA_NODE_TYPES.filter((n) => n.category === cat).map((opt) => (
+                {ADDABLE_NODE_OPTIONS.filter((n) => n.category === cat).map((opt) => (
                   <button
                     key={opt.type}
                     type="button"
@@ -1589,8 +2019,79 @@ function CanvasPageInner(): JSX.Element {
             </div>
           ))}
         </div>
-
-        {/* 閳光偓閳光偓 妞ゅ湱娲扮粻锛勬倞閸?閳光偓閳光偓 */}
+        {showShortcutHelp && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20 px-4" onClick={() => setShowShortcutHelp(false)}>
+            <section
+              className="w-full max-w-[420px] rounded-2xl border border-border-secondary bg-bg-panel p-4 shadow-pop"
+              onClick={(event) => event.stopPropagation()}
+              aria-label="Canvas shortcuts"
+            >
+              <div className="flex items-center justify-between border-b border-border-secondary pb-3">
+                <h2 className="text-[15px] font-semibold text-text-base">Canvas shortcuts</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowShortcutHelp(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base"
+                  aria-label="Close shortcut help"
+                >
+                  <IconX className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-3 grid gap-2 text-[13px] text-text-secondary">
+                {[
+                  ['Ctrl/Cmd+S', 'Save workflow'],
+                  ['Ctrl/Cmd+Z', 'Undo'],
+                  ['Ctrl/Cmd+Shift+Z / Ctrl+Y', 'Redo'],
+                  ['Ctrl/Cmd+K', 'Command palette'],
+                  ['Ctrl/Cmd+D', 'Duplicate selected nodes'],
+                  ['Ctrl/Cmd+1', 'Fit view'],
+                  ['Ctrl/Cmd+2', 'Select mode'],
+                  ['Ctrl/Cmd+3', 'Pan mode'],
+                  [deleteShortcutLabel, 'Delete selected nodes'],
+                ].map(([keys, description]) => (
+                  <div key={keys} className="flex items-center justify-between rounded-lg bg-bg-card px-3 py-2">
+                    <span>{description}</span>
+                    <kbd className="rounded-md border border-border-secondary bg-bg-input px-2 py-0.5 font-mono text-[11px] font-semibold text-text-base">
+                      {keys}
+                    </kbd>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+        <div
+          data-testid="canvas-viewport-toolbar"
+          className="absolute bottom-5 left-5 z-20 flex items-center gap-1.5 rounded-full border border-border-primary bg-bg-panel p-1.5 shadow-card"
+        >
+          <button
+            type="button"
+            onClick={() => { void fitView({ padding: 0.18, duration: 240 }) }}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
+            aria-label="Fit view"
+            title="Fit view"
+          >
+            <IconMaximize className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => { void zoomOut() }}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
+            aria-label="Zoom out"
+            title="Zoom out"
+          >
+            <IconZoomOut className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => { void zoomIn() }}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
+            aria-label="Zoom in"
+            title="Zoom in"
+          >
+            <IconZoomIn className="h-4 w-4" />
+          </button>
+        </div>
         {showProjectManager && (
           <ProjectManager
             currentWorkflowId={currentWorkflowId}
@@ -1598,8 +2099,6 @@ function CanvasPageInner(): JSX.Element {
             onClose={() => setShowProjectManager(false)}
           />
         )}
-
-        {/* 閳光偓閳光偓 鐠у嫪楠囨惔鎾绘桨閺?閳光偓閳光偓 */}
         {showAssetPanel && (
           <CanvasAssetPanel
             open={showAssetPanel}
@@ -1607,29 +2106,52 @@ function CanvasPageInner(): JSX.Element {
             onInsertAsset={handleInsertAsset}
           />
         )}
+        <WorkflowPanel
+          open={showWorkflowPanel}
+          snippets={snippets}
+          selectedSnippetId={selectedSnippetId}
+          onSelectSnippet={setSelectedSnippetId}
+          onInsertSnippet={() => void handleInsertSnippet()}
+          onSaveSnippet={() => void handleSaveSnippet()}
+          onDeleteSnippet={(snippetId) => void handleDeleteSnippet(snippetId)}
+          onClose={() => setShowWorkflowPanel(false)}
+        />
+        <CharacterLibraryPanel
+          open={showCharacterPanel}
+          categories={assetCategories}
+          onCreateCharacterNode={handleCreateCharacterFromCategory}
+          onClose={() => setShowCharacterPanel(false)}
+        />
+        <StyleLibraryPanel
+          open={showStylePanel}
+          workflowId={currentWorkflowId}
+          onClose={() => setShowStylePanel(false)}
+        />
 
         {showJobPanel && (
           <CanvasJobPanel onClose={() => setShowJobPanel(false)} />
         )}
+        <BottomInputPanel
+          agentEnabled={false}
+          onCreateTextNode={handleCreateTextFromBottomInput}
+        />
 
         <CanvasCommandPalette
           open={showCommandPalette}
           onClose={() => setShowCommandPalette(false)}
           commands={canvasCommands}
         />
-
-        {/* 閳光偓閳光偓 AI 鐎电鐦介棃銏℃緲 閳光偓閳光偓 */}
         <CanvasChatBox
           open={showChatBox}
           onToggle={() => setShowChatBox((v) => !v)}
+          agentEnabled={false}
           onApplyPlan={handleApplyPlan}
         />
       </div>
-    </div>
+      </div>
+    </CanvasRunContext.Provider>
   )
 }
-
-/* 閳光偓閳光偓閳光偓 CanvasPage閿涘牆鐢?ReactFlowProvider閿?閳光偓閳光偓閳光偓 */
 
 export default function CanvasPage(): JSX.Element {
   const [searchParams] = useSearchParams()

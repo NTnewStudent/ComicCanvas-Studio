@@ -64,6 +64,34 @@ export interface ToolRuntime {
   invoke(input: ToolInvocationInput): Promise<ToolInvocationResult>
 }
 
+export interface ToolExecutionErrorOptions {
+  code: string
+  message: string
+  retryable?: boolean
+  details?: Record<string, unknown>
+}
+
+export class ToolExecutionError extends Error {
+  readonly code: string
+  readonly retryable: boolean
+  readonly details?: Record<string, unknown>
+
+  /**
+   * Creates a structured tool-domain error preserved by ToolRuntime.
+   * @param options - Stable code, user-safe message, retry hint, and details.
+   * @see docs/api-contracts/tools-plugins.md
+   */
+  constructor(options: ToolExecutionErrorOptions) {
+    super(options.message)
+    this.name = 'ToolExecutionError'
+    this.code = options.code
+    this.retryable = options.retryable ?? false
+    if (options.details) {
+      this.details = options.details
+    }
+  }
+}
+
 function defaultPermissionDecision(tool: ToolDefinition<unknown, unknown>): ToolPermissionResult {
   const decision: PermissionDecision = tool.descriptor.permissions.some((permission) => permission.kind === 'destructive') ? 'ask' : 'allow'
 
@@ -74,8 +102,14 @@ function defaultPermissionDecision(tool: ToolDefinition<unknown, unknown>): Tool
   }
 }
 
-function toolError(errorClass: string, message: string, retryable = false): ToolError {
-  return { errorClass, message, retryable }
+function toolError(errorClass: string, message: string, retryable = false, code?: string, details?: Record<string, unknown>): ToolError {
+  return {
+    errorClass,
+    ...(code ? { code } : {}),
+    message,
+    retryable,
+    ...(details ? { details } : {})
+  }
 }
 
 function createRecord(input: ToolInvocationInput, invocationId: string, createdAt: number, status: ToolInvocationRecord['status']): ToolInvocationRecord {
@@ -217,6 +251,13 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
       }
     } catch (error) {
       // Runtime failures are reported as safe tool errors; individual tools own user-facing messages.
+      if (error instanceof ToolExecutionError) {
+        return {
+          record: createRecord(input, invocationId, createdAt, 'failed'),
+          error: toolError('tool_runtime_failed', error.message, error.retryable, error.code, error.details),
+          progress
+        }
+      }
       const message = error instanceof Error ? error.message : 'Tool execution failed.'
       return {
         record: createRecord(input, invocationId, createdAt, 'failed'),

@@ -14,6 +14,7 @@ import { useStore } from 'zustand'
 import {
   Download,
   Eye,
+  Check,
   Image as ImageIcon,
   ImagePlus,
   Loader2,
@@ -43,6 +44,13 @@ interface MentionTarget {
   id: string
   name: string
   type: string
+}
+
+interface UpstreamImageReference {
+  id: string
+  label: string
+  url: string
+  assetId: string | null
 }
 
 // 鈹€鈹€ 甯搁噺 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -86,6 +94,19 @@ function downloadImage(url: string, nodeId: string): void {
   document.body.removeChild(a)
 }
 
+/**
+ * Derives an asset ID from a safe asset URL when a generated result has not
+ * already been written into the node's selected asset field.
+ * @param url Safe renderer URL such as `cc-asset://asset/result-a`.
+ * @returns Asset ID for repository writeback, or null when the URL is not asset-backed.
+ */
+function assetIdFromSafeUrl(url: string): string | null {
+  const match = /^cc-asset:\/\/asset\/([^/?#]+)$/u.exec(url)
+  if (!match) return null
+  const value = decodeURIComponent(match[1]!)
+  return value.startsWith('asset-') ? value : `asset-${value}`
+}
+
 // 鈹€鈹€ Props 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 interface ImageConfigV2NodeProps {
@@ -106,6 +127,7 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
   const setNodeRunStatus = useStore(canvasStore, (s) => s.setNodeRunStatus)
   const getNodeRunStatus = useStore(canvasStore, (s) => s.getNodeRunStatus)
   const canvasNodes = useStore(canvasStore, (s) => s.nodes)
+  const canvasEdges = useStore(canvasStore, (s) => s.edges)
 
   const [isHovered, setIsHovered] = useState(false)
   const [isFocusModeOpen, setIsFocusModeOpen] = useState(false)
@@ -113,9 +135,13 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const titleInputRef = useRef<HTMLInputElement>(null)
 
-  const d = data as ImageNodeData
+  const storeNodeData = canvasNodes.find((node) => node.id === id)?.data as ImageNodeData | undefined
+  const d: ImageNodeData = { ...data, ...(storeNodeData ?? {}) }
   const status = getNodeRunStatus(id)
   const displayUrl = d.url ?? ''
+  const resultUrls = d.urls ?? []
+  const selectedResultIndex = d.selectedIndex ?? 0
+  const selectedResultUrl = resultUrls[selectedResultIndex] ?? displayUrl
   const generating = status === 'pending' || status === 'running'
   const hasError = status === 'error'
   const ratio = d.ratio ?? '1:1'
@@ -135,6 +161,25 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
         type: node.type,
       })),
     [canvasNodes, id],
+  )
+  const upstreamImageReferences = useMemo<UpstreamImageReference[]>(
+    () => canvasEdges
+      .filter((edge) => edge.target === id)
+      .map((edge) => canvasNodes.find((node) => node.id === edge.source))
+      .filter((node): node is NonNullable<typeof node> => {
+        return node?.type === 'image' || node?.type === 'imageConfigV2'
+      })
+      .map((node) => {
+        const nodeData = node.data as ImageNodeData
+        return {
+          id: node.id,
+          label: nodeData.label || node.id,
+          url: nodeData.url ?? '',
+          assetId: nodeData.assetId ?? null,
+        }
+      })
+      .filter((reference) => reference.url || reference.assetId),
+    [canvasEdges, canvasNodes, id],
   )
 
   useEffect(() => {
@@ -191,6 +236,25 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
     if (!displayUrl) return
     downloadImage(displayUrl, id)
   }, [displayUrl, id])
+
+  const handleResultSelect = useCallback(
+    (index: number) => {
+      const url = resultUrls[index]
+      if (!url) return
+      updateNodeData(id, { selectedIndex: index, url })
+    },
+    [id, resultUrls, updateNodeData],
+  )
+
+  const handleWriteback = useCallback(() => {
+    if (!selectedResultUrl) return
+    updateNodeData(id, {
+      assetId: assetIdFromSafeUrl(selectedResultUrl),
+      selectedIndex: selectedResultIndex,
+      status: 'done',
+      url: selectedResultUrl,
+    })
+  }, [id, selectedResultIndex, selectedResultUrl, updateNodeData])
 
   // @mention 自动连线管理
   const handleMentionSelect = useCallback(
@@ -409,6 +473,82 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
         </div>
       </div>
 
+      {(upstreamImageReferences.length > 0 || resultUrls.length > 0) && (
+        <section className="mt-2 flex w-[360px] flex-col gap-2 rounded-lg border border-border-secondary bg-bg-card/95 p-2 text-[11px] text-text-muted shadow-sm">
+          {upstreamImageReferences.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <span className="shrink-0 font-semibold text-text-secondary">参考图</span>
+              {upstreamImageReferences.map((reference) => (
+                <div
+                  key={reference.id}
+                  className="flex min-w-0 shrink-0 items-center gap-2 rounded-md border border-border-input bg-bg-input px-2 py-1"
+                >
+                  {reference.url ? (
+                    <img
+                      src={reference.url}
+                      alt={reference.label}
+                      className="h-7 w-10 rounded-sm object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <span className="flex h-7 w-10 items-center justify-center rounded-sm bg-bg-panel">
+                      <ImageIcon className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                  <span className="max-w-[120px] truncate text-text-base">{reference.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {resultUrls.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <span className="shrink-0 font-semibold text-text-secondary">结果</span>
+              {resultUrls.map((url, index) => {
+                const isSelected = selectedResultIndex === index
+                return (
+                  <button
+                    key={`${url}-${index}`}
+                    type="button"
+                    aria-label={`选择图片结果 ${index + 1}`}
+                    aria-pressed={isSelected}
+                    className={cn(
+                      'relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-border-input bg-bg-input transition hover:border-border-primary',
+                      isSelected && 'border-brand shadow-[0_0_0_1px_var(--cc-brand)]',
+                    )}
+                    onClick={() => handleResultSelect(index)}
+                  >
+                    <img
+                      src={url}
+                      alt={`图片结果 ${index + 1}`}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    {isSelected ? (
+                      <span className="absolute bottom-1 right-1 rounded-full bg-brand p-0.5 text-bg-base">
+                        <Check className="h-3 w-3" />
+                      </span>
+                    ) : null}
+                  </button>
+                )
+              })}
+              <button
+                type="button"
+                aria-label="写回生图结果资产"
+                className="nodrag ml-auto inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2.5 py-1.5 text-[12px] font-semibold text-text-secondary transition hover:border-border-primary hover:text-text-base disabled:opacity-45"
+                disabled={!selectedResultUrl}
+                onClick={handleWriteback}
+              >
+                <Download className="h-3.5 w-3.5" />
+                写回
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* 鈺愨晲鈺愨晲鈺愨晲 閫変腑 Toolbar 鈺愨晲鈺愨晲鈺愨晲 */}
       {selected && (
         <div
@@ -498,6 +638,7 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
                 onClick={handleGenerate}
                 disabled={generating}
                 data-testid="image-config-v2-generate-btn"
+                aria-label={generating ? '生成中' : (displayUrl ? '重新生成图片' : '生成图片')}
                 className="nodrag cc-btn-primary flex h-9 min-w-[112px] items-center justify-center gap-1.5 rounded-xl px-4 text-[13px] font-bold shadow-sm transition-all disabled:opacity-50"
                 title={displayUrl ? '閲嶆柊鐢熸垚' : '鐢熸垚鍥剧墖'}
               >

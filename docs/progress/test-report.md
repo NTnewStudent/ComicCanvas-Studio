@@ -2894,6 +2894,125 @@ Remaining REQ-092 snippet gaps:
 - Desktop select-save-insert and cross-project save/reopen evidence remains
   pending.
 
+## 2026-06-27 - Phase A Human Review Runbook Gate
+
+Scope:
+
+- Added `docs/progress/phase-a-human-review-runbook.md` as the execution guide
+  for manual desktop acceptance.
+- Added `docs/progress/phase-a-human-review-session-template.md` so reviewers
+  can record required row results, failures, and product deferrals without
+  leaking secrets or using Agent/MJ rows as Phase A evidence.
+- Linked the runbook from `docs/progress/human-desktop-review-checklist.md`.
+- Reconfirmed that `HDR-PHASEA-001` is the Phase A acceptance gate and remains
+  Pending until human review Pass or explicit product deferral.
+- Reconfirmed that Task 60 is blocked and Agent plan apply/run automation
+  remains disabled while `HDR-PHASEA-001` is Pending.
+- Added `docs/progress/task-60-agent-plan-apply-readiness.md` to record the
+  preflight checks, reuse points, prohibited shortcuts, and minimum future
+  verification for Task 60 when the human gate opens.
+- Reconfirmed that MJ node/component implementation is out of scope for Phase A;
+  legacy MJ graph support is limited to readable unavailable behavior.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/phase-a-human-review-runbook.test.ts tests/agent-plan-apply-gate.test.ts tests/phase-a-acceptance-gate.test.ts tests/human-desktop-review-checklist.test.ts --reporter=dot
+bun run typecheck
+git diff --check
+```
+
+Result:
+
+- RED first: the new runbook test initially depended on Markdown line wrapping
+  for long MJ/R2 rule sentences.
+- PASS after tightening assertions and adding the session template: Phase A
+  runbook/template, Task 60 gate, acceptance gate, and human checklist tests
+  passed, 4 files and 4 tests.
+
+## 2026-06-27 - Phase A Assets UI Tasks 7-9
+
+Scope:
+
+- Marked Task 7 `/assets` shell parity engineering-complete with URL-synced
+  media/search/sort/date filters, counted type tabs, upload entry, responsive
+  grid/list shells, folder/category sidebars, loading, empty, and error states.
+- Marked Task 8 upload card parity engineering-complete with file index/count,
+  current filename, busy disabled upload entry, percent complete, successful
+  import list refresh, and mixed-batch failure feedback.
+- Marked Task 9 asset card/preview/batch parity engineering-complete with image
+  thumbnails, non-image fallbacks, preview metadata, display rename, single safe
+  delete feedback, and batch safe-delete selection reset.
+- Updated `hjwall-assets-workflows-gap-analysis.md` and
+  `human-desktop-review-checklist.md` so HDR-ASSET-001 through HDR-ASSET-003
+  remain manual-review pending but have engineering evidence.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/asset-panel-ui.test.tsx tests/asset-folders-ipc.test.ts tests/asset-rename-repo.test.ts tests/hjwall-assets-workflows-inventory.test.ts tests/human-desktop-review-checklist.test.ts --reporter=dot
+bun run typecheck
+git diff --check
+bun scripts/run-vitest.mjs run tests/phase-a-acceptance-gate.test.ts tests/agent-orchestration-requirements-refresh.test.ts --reporter=dot
+```
+
+Result:
+
+- PASS: asset UI, folder IPC, rename repository, inventory, and checklist
+  regression passed, 5 files and 24 tests.
+- PASS: TypeScript strict compile completed with exit code 0 through
+  `bun run typecheck`.
+- PASS: `git diff --check` completed with exit code 0.
+- PASS: Phase A acceptance gate and Agent requirements gate passed, 2 files and
+  2 tests.
+
+Remaining gate:
+
+- Task 60 remains blocked by `HDR-PHASEA-001` until human review pass or
+  explicit product deferral; Agent plan apply/run automation was not enabled.
+- Task 60 is blocked and Agent plan apply/run automation remains disabled while
+  HDR-050 and HDR-051 stay manual-review pending.
+
+## 2026-06-27 - Phase A Assets/Workflows Review Gate
+
+Scope:
+
+- Expanded `docs/progress/human-desktop-review-checklist.md` with the Human
+  Phase A Acceptance Matrix.
+- Added `HDR-ASSET-009` for verified R2/SQLite storage review and kept
+  `HDR-PHASEA-001` as the final manual acceptance row.
+- Added `desktop/src/main/smoke/phase-a-assets-workflows-smoke.ts` and
+  `tests/phase-a-assets-workflows-smoke.test.ts`.
+- The smoke path creates a workflow project, adds canvas nodes, saves and
+  reopens the graph, imports/categorizes an image asset, inserts it into canvas
+  node data, syncs asset references so safe delete is blocked, saves/inserts a
+  snippet with remapped IDs, and completes a stub image generation job through
+  queue, worker, asset pipeline, and terminal event.
+- Updated backlog and gap analysis so Task 58 records the acceptance decision
+  without bypassing human review.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/phase-a-assets-workflows-smoke.test.ts tests/m1-smoke-path.test.ts tests/hjwall-assets-workflows-inventory.test.ts tests/human-desktop-review-checklist.test.ts --reporter=dot
+bun scripts/run-vitest.mjs run tests/phase-a-acceptance-gate.test.ts --reporter=verbose
+bun run typecheck
+git diff --check
+```
+
+Result:
+
+- RED first: `tests/phase-a-assets-workflows-smoke.test.ts` failed because the
+  Phase A smoke helper did not exist.
+- PASS after implementation: Phase A smoke, M1 smoke, inventory, and checklist
+  focused group passed, 4 files and 5 tests.
+- RED first: `tests/phase-a-acceptance-gate.test.ts` failed because backlog,
+  gap analysis, and this report did not yet record the final acceptance gate.
+- PASS after report update: `tests/phase-a-acceptance-gate.test.ts` passed,
+  1 file and 1 test.
+- Task 58 decision: Phase A is not accepted. `HDR-PHASEA-001` remains the final
+  gate and requires human review pass or explicit product deferral.
+
 ## 2026-06-27 - REQ-092 Audio Asset Import IPC Persistence Slice
 
 Scope:

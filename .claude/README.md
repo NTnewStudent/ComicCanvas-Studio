@@ -6,7 +6,7 @@ ComicCanvas Studio 的项目规则与 Agent 配置。完整项目身份与全局
 
 ```
 .claude/
-├── settings.json        # 权限 + Stop 钩子（LTM 自动捕获）
+├── settings.json        # 权限配置（LTM 自动捕获已停用）
 ├── agents/              # 4 个子 agent 定义（自包含，@name 激活）
 │   ├── orchestrator-agent.md
 │   ├── canvas-agent.md
@@ -14,8 +14,8 @@ ComicCanvas Studio 的项目规则与 Agent 配置。完整项目身份与全局
 │   └── pm-agent.md
 ├── rules/               # 规则（alwaysApply 或按 globs 自动激活）
 │   ├── coding-standards.md     # alwaysApply
-│   ├── ltm-operations.md       # alwaysApply（LTM 操作）
-│   ├── ltm-memory-format.md    # globs: ltm/**
+│   ├── ltm-operations.md       # alwaysApply（LTM 已停用）
+│   ├── ltm-memory-format.md    # 历史格式说明
 │   ├── electron-node.md        # globs: desktop/src/main|preload/**
 │   ├── agent-runtime.md        # globs: desktop/src/main/agent/**
 │   ├── canvas-engine.md        # globs: desktop/src/renderer/canvas/**
@@ -24,7 +24,7 @@ ComicCanvas Studio 的项目规则与 Agent 配置。完整项目身份与全局
 │   └── tests.md                # globs: **/*.{test,spec}.{ts,tsx}
 ├── commands/            # 斜杠命令
 │   ├── orchestrator.md / canvas.md / tooling.md / pm.md
-│   └── ltm-recall.md / ltm-checkpoint.md
+│   └── ltm-recall.md / ltm-checkpoint.md（停用提示）
 ├── skills/              # 可激活技能
 │   ├── pm-req-planner/         # EARS 需求规格化（含 assets 模板）
 │   ├── canvas-node-designer/   # 新增节点五处一致
@@ -58,6 +58,7 @@ ComicCanvas Studio 的项目规则与 Agent 配置。完整项目身份与全局
 
 `docs/progress/backlog.md`（里程碑 + REQ + 不变量）
 
-## LTM 项目记录
+## 项目记录
 
-恢复：`/ltm-recall`　保存：`/ltm-checkpoint`　自动捕获：settings.json 的 Stop 钩子
+当前项目不再使用 LTM。不要运行 `ltm/bin/ltm.py`；任务状态以 `specs/`、
+`docs/progress/`、git 状态和用户最新指令为准。

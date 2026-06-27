@@ -151,9 +151,10 @@ Claude Code 环境按其兼容目录内的 README 上岗；Codex 环境只使用
 - ❌ 媒体文件直接存本地而不上传到已配置的 S3 存储（必须通过 StorageProvider 接口上传）
 - ❌ 在代码中硬编码 S3 端点/密钥（必须通过设置页配置，密钥用 safeStorage 加密）
 
-## 项目记录（LTM）
+## 项目记录
 
-本项目沿用 hjwall 的 **LTM 项目记录模式**（`ltm/`）。恢复工作、回忆决策、记录检查点的操作见 `ltm/README.md`。
+当前项目不再使用 LTM。不要运行 `ltm/bin/ltm.py` 做恢复、检查进度或保存
+checkpoint；任务状态以 `specs/`、`docs/progress/`、git 状态和用户最新指令为准。
 
 ## Command Output
 

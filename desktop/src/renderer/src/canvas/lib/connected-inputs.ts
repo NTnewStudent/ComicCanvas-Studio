@@ -5,7 +5,7 @@
 
 import { composeFinalPrompt } from '../../../../../../shared/composed-prompt'
 import type { AssetRef, GraphSnapshot } from '../../../../../../shared/composed-prompt'
-import type { TextNodeData } from '../../../../../../shared/nodes'
+import type { CanvasEdgeData, NodeType, TextNodeData } from '../../../../../../shared/nodes'
 import type { CanvasSnapshot } from '../store/canvas.store'
 
 /** Upstream text input rendered above a generation prompt preview. */
@@ -18,6 +18,32 @@ export interface ConnectedInputItem {
   label: string
   /** Text content contributed by the upstream node. */
   content: string
+  /** Compact prompt-order chip label. */
+  chipLabel: string
+}
+
+/** Compact edge chip rendered in connected-input summaries. */
+export interface ConnectedInputChip {
+  /** Stable edge identifier. */
+  edgeId: string
+  /** Source canvas node identifier. */
+  sourceNodeId: string
+  /** Source node type. */
+  sourceType: NodeType
+  /** Compact label such as P1 or I1. */
+  label: string
+}
+
+/** Referenced media asset rendered as a compact chip/list item. */
+export interface ConnectedReferenceAsset {
+  /** Referenced canvas node identifier. */
+  nodeId: string
+  /** Referenced asset identifier. */
+  assetId: string
+  /** Media kind. */
+  mediaType: 'image' | 'video'
+  /** User-facing node label when available. */
+  label: string
 }
 
 /** Read model for the connected inputs panel. */
@@ -30,6 +56,26 @@ export interface ConnectedInputsView {
   referenceImages: AssetRef[]
   /** Video asset references returned by the shared prompt composer. */
   referenceVideos: AssetRef[]
+  /** Prompt-order chips for connected text inputs. */
+  promptChips: ConnectedInputChip[]
+  /** Image-order chips for connected image inputs. */
+  imageChips: ConnectedInputChip[]
+  /** Image/video reference assets with display labels. */
+  referenceAssets: ConnectedReferenceAsset[]
+}
+
+function explicitOrder(data: CanvasEdgeData, fallback: number): number {
+  if (typeof data.promptOrder === 'number' && Number.isFinite(data.promptOrder)) return data.promptOrder
+  if (typeof data.imageOrder === 'number' && Number.isFinite(data.imageOrder)) return data.imageOrder
+  return fallback
+}
+
+function displayLabelForNode(data: unknown, fallback: string): string {
+  if (typeof data === 'object' && data !== null && 'label' in data) {
+    const label = (data as { label?: unknown }).label
+    if (typeof label === 'string' && label.trim().length > 0) return label
+  }
+  return fallback
 }
 
 /**
@@ -47,10 +93,13 @@ export function buildConnectedInputsView(
   const graph = toGraphSnapshot(snapshot)
   const composed = composeFinalPrompt(graph, nodeId)
   const nodeById = new Map(snapshot.nodes.map((node) => [node.id, node]))
+  const incomingEdges = snapshot.edges.filter((edge) => edge.target === nodeId)
 
-  const items = snapshot.edges
-    .filter((edge) => edge.target === nodeId)
+  const promptEdges = incomingEdges
+    .filter((edge) => edge.data.edgeType === 'promptOrder')
     .sort((left, right) => left.data.createdAt - right.data.createdAt)
+
+  const items = promptEdges
     .flatMap((edge): ConnectedInputItem[] => {
       const node = nodeById.get(edge.source)
       if (node?.type !== 'text') {
@@ -63,17 +112,68 @@ export function buildConnectedInputsView(
           nodeId: node.id,
           order: 0,
           label: data.label,
-          content: data.content
+          content: data.content,
+          chipLabel: ''
         }
       ]
     })
-    .map((item, index) => ({ ...item, order: index + 1 }))
+    .map((item, index) => {
+      const order = explicitOrder(promptEdges[index]?.data ?? { edgeType: 'promptOrder', createdAt: 0 }, index + 1)
+      return { ...item, order, chipLabel: `P${order}` }
+    })
+
+  const promptChips = promptEdges.map((edge, index): ConnectedInputChip => {
+    const source = nodeById.get(edge.source)
+    const order = explicitOrder(edge.data, index + 1)
+    return {
+      edgeId: edge.id,
+      sourceNodeId: edge.source,
+      sourceType: source?.type ?? 'text',
+      label: `P${order}`
+    }
+  })
+
+  const imageChips = incomingEdges
+    .filter((edge) => edge.data.edgeType === 'imageOrder')
+    .sort((left, right) => {
+      const leftOrder = explicitOrder(left.data, left.data.createdAt)
+      const rightOrder = explicitOrder(right.data, right.data.createdAt)
+      return leftOrder - rightOrder
+    })
+    .map((edge, index): ConnectedInputChip => {
+      const source = nodeById.get(edge.source)
+      const order = explicitOrder(edge.data, index + 1)
+      return {
+        edgeId: edge.id,
+        sourceNodeId: edge.source,
+        sourceType: source?.type ?? 'image',
+        label: `I${order}`
+      }
+    })
+
+  const referenceAssets: ConnectedReferenceAsset[] = [
+    ...composed.referenceImages.map((asset) => ({
+      nodeId: asset.nodeId,
+      assetId: asset.assetId,
+      mediaType: 'image' as const,
+      label: displayLabelForNode(nodeById.get(asset.nodeId)?.data, asset.nodeId)
+    })),
+    ...composed.referenceVideos.map((asset) => ({
+      nodeId: asset.nodeId,
+      assetId: asset.assetId,
+      mediaType: 'video' as const,
+      label: displayLabelForNode(nodeById.get(asset.nodeId)?.data, asset.nodeId)
+    }))
+  ]
 
   return {
     items,
     finalPrompt: composed.composedPrompt,
     referenceImages: composed.referenceImages,
-    referenceVideos: composed.referenceVideos
+    referenceVideos: composed.referenceVideos,
+    promptChips,
+    imageChips,
+    referenceAssets
   }
 }
 

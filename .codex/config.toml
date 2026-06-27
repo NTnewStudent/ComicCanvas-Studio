@@ -9,18 +9,9 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 [features]
 multi_agent = true
-hooks = true
+hooks = false
 
 [agents]
 max_threads = 6
 max_depth = 1
 job_max_runtime_seconds = 1800
-
-[[hooks.Stop]]
-
-[[hooks.Stop.hooks]]
-type = "command"
-command = "python ltm/bin/ltm.py capture-turn"
-command_windows = "python ltm/bin/ltm.py capture-turn"
-timeout = 30
-statusMessage = "Capturing LTM turn"

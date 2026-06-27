@@ -267,8 +267,9 @@ and persisted local paths must be relative.
 
 ### INV-6: User-Flow Completeness
 
-A feature is only complete when current automated tests and a real desktop flow
-prove the user can perform it.
+A feature reaches engineering-complete when implementation review and current
+automated tests pass. Final product acceptance additionally requires a human
+desktop review proving the user can perform the intended flow.
 
 **Validates:** Requirement 9.
 
@@ -283,16 +284,16 @@ prove the user can perform it.
 | Assets | Unit/integration/UI | Import, classify, folder move, tombstone, insert-to-canvas, safe URL rendering. |
 | Jobs | Unit/integration | Enqueue-only responses, terminal exactly-once events, one-shot reconciliation. |
 | Agent | Unit/integration | NL to sanitized plan, applyPlan one undo snapshot, PlanRunner serial execution. |
-| Desktop | Real app | Launch Electron, create workflow, add/connect nodes, import asset, select style, apply Agent plan, save/reopen. |
+| Desktop | Human review | A human reviewer launches Electron, creates a workflow, adds/connects nodes, imports an asset, selects style, applies an Agent plan, and saves/reopens according to the review checklist. |
 
 ## Migration And Cutover
 
 | Phase | Work | Reversible |
 | :--- | :--- | :--- |
 | P0 | Create inventory and mark current claims as unverified until evidence exists. | Yes |
-| P1 | Stabilize existing canvas startup and M2-M5 flows under real desktop launch. | Yes |
+| P1 | Stabilize existing canvas startup and prepare human desktop review checklists for M2-M5 flows. | Yes |
 | P2 | Expand shared node/edge contracts for accepted hjwall node set. | Partly |
 | P3 | Implement style preset contract/repo/IPC/UI/prompt integration. | Yes |
 | P4 | Complete asset drag/drop/import/insert and reference integrity flows. | Yes |
 | P5 | Add semantic nodes and composition/enhancement vertical slices. | Partly |
-| P6 | Upgrade Agent plan vocabulary and end-to-end desktop acceptance suite. | Yes |
+| P6 | Upgrade Agent plan vocabulary and end-to-end human desktop review suite. | Yes |

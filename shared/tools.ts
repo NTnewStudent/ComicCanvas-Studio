@@ -61,8 +61,10 @@ export interface ToolInvocationRecord {
 
 export interface ToolError {
   errorClass: string
+  code?: string
   message: string
   retryable: boolean
+  details?: Record<string, unknown>
 }
 
 export interface PluginManifest {

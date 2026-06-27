@@ -33,6 +33,35 @@ const nodes: CanvasStoreNode[] = [
     }
   },
   {
+    id: 'image-ordered',
+    type: 'image',
+    position: { x: 0, y: 360 },
+    data: {
+      label: 'Ordered image',
+      promptOverride: '',
+      modelId: 'stub-image',
+      orientation: 'landscape',
+      assetId: 'asset-image-2',
+      status: 'done'
+    }
+  },
+  {
+    id: 'video-ref',
+    type: 'video',
+    position: { x: 0, y: 480 },
+    data: {
+      label: 'Reference video',
+      promptOverride: '',
+      modelId: 'stub-video',
+      orientation: 'landscape',
+      durationSeconds: 5,
+      firstFrameAssetId: null,
+      lastFrameAssetId: null,
+      assetId: 'asset-video-1',
+      status: 'done'
+    }
+  },
+  {
     id: 'target-video',
     type: 'video',
     position: { x: 360, y: 0 },
@@ -51,9 +80,11 @@ const nodes: CanvasStoreNode[] = [
 ]
 
 const edges: CanvasStoreEdge[] = [
-  { id: 'late', source: 'text-late', target: 'target-video', data: { edgeType: 'promptOrder', createdAt: 20 } },
-  { id: 'early', source: 'text-early', target: 'target-video', data: { edgeType: 'promptOrder', createdAt: 10 } },
-  { id: 'image', source: 'image-ref', target: 'target-video', data: { edgeType: 'imageRole', createdAt: 15 } }
+  { id: 'late', source: 'text-late', target: 'target-video', data: { edgeType: 'promptOrder', promptOrder: 2, createdAt: 20 } },
+  { id: 'early', source: 'text-early', target: 'target-video', data: { edgeType: 'promptOrder', promptOrder: 1, createdAt: 10 } },
+  { id: 'image', source: 'image-ref', target: 'target-video', data: { edgeType: 'imageRole', createdAt: 15 } },
+  { id: 'image-ordered', source: 'image-ordered', target: 'target-video', data: { edgeType: 'imageOrder', imageOrder: 1, createdAt: 25 } },
+  { id: 'video-ref', source: 'video-ref', target: 'target-video', data: { edgeType: 'reference', createdAt: 30 } }
 ]
 
 function toGraphSnapshot(): GraphSnapshot {
@@ -75,20 +106,30 @@ describe('M2 ConnectedInputsPanel', () => {
     expect(view.items.map((item) => item.content)).toEqual(['first beat', 'second beat'])
     expect(view.finalPrompt).toBe(shared.composedPrompt)
     expect(view.referenceImages).toEqual(shared.referenceImages)
+    expect(view.promptChips.map((chip) => chip.label)).toEqual(['P1', 'P2'])
+    expect(view.imageChips.map((chip) => chip.label)).toEqual(['I1'])
+    expect(view.referenceVideos).toEqual(shared.referenceVideos)
   })
 
   it('renders upstream text cards and final prompt preview', () => {
-    render(<ConnectedInputsPanel nodes={nodes} edges={edges} nodeId="target-video" />)
+    render(<ConnectedInputsPanel nodes={nodes} edges={edges} nodeId="target-video" compact />)
     const shared = composeFinalPrompt(toGraphSnapshot(), 'target-video')
 
     expect(screen.getByText('已连接的输入')).toBeInTheDocument()
-    expect(screen.getByText('#1')).toBeInTheDocument()
+    expect(screen.getAllByText('P1')).toHaveLength(2)
     expect(screen.getByText('Early beat')).toBeInTheDocument()
     expect(screen.getByText('first beat')).toBeInTheDocument()
-    expect(screen.getByText('#2')).toBeInTheDocument()
+    expect(screen.getAllByText('P2')).toHaveLength(2)
     expect(screen.getByText('Late beat')).toBeInTheDocument()
     expect(screen.getByText('second beat')).toBeInTheDocument()
+    expect(screen.getByText('I1')).toBeInTheDocument()
+    expect(screen.getByText('asset-image-1')).toBeInTheDocument()
+    expect(screen.getByText('asset-image-2')).toBeInTheDocument()
+    expect(screen.getByText('asset-video-1')).toBeInTheDocument()
+    expect(screen.getByLabelText('引用素材')).toHaveTextContent('图片 2')
+    expect(screen.getByLabelText('引用素材')).toHaveTextContent('视频 1')
     expect(screen.getByLabelText('最终提示词预览').textContent).toBe(shared.composedPrompt)
+    expect(screen.getByLabelText('已连接的输入')).toHaveAttribute('data-compact', 'true')
   })
 
   it('does not mount when there are no upstream text nodes', () => {

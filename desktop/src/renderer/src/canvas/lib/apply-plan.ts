@@ -25,7 +25,7 @@ const NODE_TYPES = new Set<NodeType>([
   'muxAudioVideo',
   'mjImage'
 ])
-const EDGE_TYPES = new Set<EdgeType>(['promptOrder', 'imageRole', 'default'])
+const EDGE_TYPES = new Set<EdgeType>(['promptOrder', 'imageOrder', 'imageRole', 'outputLink', 'reference', 'default'])
 const IMAGE_ROLES = new Set<ImageRole>(['first_frame', 'last_frame', 'reference'])
 const RUN_ACTIONS = new Set<RunAction>([
   'imageRun',
@@ -134,6 +134,7 @@ function defaultData(node: PlanNode): CanvasNodeData {
     const resolution = node.data.resolution === '720p' || node.data.resolution === '4k' ? node.data.resolution : '1080p'
     return {
       label: node.title,
+      inputVideoId: typeof node.data.inputVideoId === 'string' ? node.data.inputVideoId : '',
       scene,
       resolution,
       fps: typeof node.data.fps === 'number' && Number.isFinite(node.data.fps) ? node.data.fps : 30,

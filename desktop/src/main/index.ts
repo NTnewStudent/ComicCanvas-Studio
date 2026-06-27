@@ -5,7 +5,7 @@
 
 import { join } from 'node:path'
 
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 
 import { createMainProcessRuntime, type MainProcessRuntime } from './runtime'
 
@@ -66,6 +66,7 @@ app.whenReady()
       ipcMain,
       dbPath: join(userData, 'comiccanvas.sqlite'),
       assetRoot: join(userData, 'assets'),
+      storageSafeStorage: safeStorage,
       getWindows: () => BrowserWindow.getAllWindows()
     })
 

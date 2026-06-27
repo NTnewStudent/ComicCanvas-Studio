@@ -59,6 +59,19 @@ describe('sanitizePlan', () => {
     expect(sanitizePlan(cloneSafePlan())).toEqual(safePlan)
   })
 
+  it('preserves outputLink and reference semantic edge types for renderer parity', () => {
+    const plan = cloneSafePlan()
+    plan.edges = [
+      { source: 'text-1', target: 'image-1', edgeType: 'outputLink' },
+      { source: 'image-1', target: 'video-1', edgeType: 'reference' },
+    ]
+
+    const sanitized = sanitizePlan(plan)
+
+    expect(sanitized.edges).toEqual(plan.edges)
+    expect(sanitized.dropped).toEqual([])
+  })
+
   it('preserves migrated semantic and tool nodes with legal connections', () => {
     const plan: CanvasPlan = {
       kind: 'plan',

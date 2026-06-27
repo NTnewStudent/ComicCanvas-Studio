@@ -19,14 +19,14 @@ This directory is the **Qoder-native** configuration layer. Source files under `
 ├── rules/
 │   ├── project-identity.md      # always-apply
 │   ├── coding-standards.md      # always-apply
-│   ├── ltm-operations.md        # always-apply
+│   ├── ltm-operations.md        # always-apply，LTM 已停用
 │   ├── electron-node.md         # glob: desktop/src/main/**, desktop/src/preload/**
 │   ├── agent-runtime.md         # glob: desktop/src/main/agent/**
 │   ├── canvas-engine.md         # glob: desktop/src/renderer/canvas/**
 │   ├── tool-contracts.md        # glob: desktop/src/main/tools/**
 │   ├── data-persistence.md      # glob: desktop/src/main/db/**
 │   ├── tests.md                 # glob: **/*.test.ts, **/*.spec.ts, etc.
-│   └── ltm-memory-format.md     # glob: ltm/**
+│   └── ltm-memory-format.md     # 历史格式说明
 ├── skills/
 │   ├── canvas-node-designer/
 │   │   └── SKILL.md
@@ -67,7 +67,7 @@ Executable command-policy rules. **Always-apply** rules are injected into every 
 |---|---|
 | `project-identity.md` | Project identity, architecture, agent roles, core contracts, global prohibitions |
 | `coding-standards.md` | General TypeScript / architecture coding standards, naming conventions, mandatory annotations |
-| `ltm-operations.md` | LTM project memory operations: recall, checkpoints, maintenance commands |
+| `ltm-operations.md` | LTM disabled notice; use specs, progress docs, git status, and user instructions |
 
 ### Glob-Matched
 
@@ -79,7 +79,7 @@ Executable command-policy rules. **Always-apply** rules are injected into every 
 | `tool-contracts.md` | `desktop/src/main/tools/**` | Tool interface contracts, canvas tool set, execution rules and prohibitions |
 | `data-persistence.md` | `desktop/src/main/db/**` | SQLite / Drizzle ORM, repository layer, core tables, asset fields |
 | `tests.md` | `**/*.test.ts`, `**/*.spec.ts`, `**/*.test.tsx`, `**/*.spec.tsx` | Property-based tests, unit tests, IPC integration tests, prohibitions |
-| `ltm-memory-format.md` | `ltm/**` | LTM record formats: events, checkpoints, sessions, secret redaction rules |
+| `ltm-memory-format.md` | `ltm/**` | Historical LTM record formats |
 
 ---
 
@@ -101,9 +101,7 @@ Configured in `settings.json`.
 
 | Hook | Trigger | Command | Purpose |
 |---|---|---|---|
-| LTM capture-turn | **Stop** (end of every agent turn) | `python ltm/bin/ltm.py capture-turn` | Automatically persist conversation context to LTM for session continuity |
-
-> **Windows note:** Check `ltm/config.json` for `python_cmd` — it may be `python` or `py`.
+| LTM capture-turn | **Stop** | disabled | LTM is no longer used for session continuity |
 
 ---
 
@@ -119,7 +117,7 @@ Each Qoder configuration file was derived from existing Kiro / Codex / Claude so
 | `agents/pm-agent.md` | `.kiro/steering/agents/agent-pm.md` | `.codex/agents/pm-agent.toml` | `.claude/agents/pm-agent.md` |
 | `rules/*` | `.kiro/steering/rules/*` | — | `.claude/rules/*` |
 | `skills/*` | `.kiro/steering/skills/*` | — | `.claude/skills/*` |
-| `settings.json` | `.kiro/hooks/ltm-capture-on-stop.json` | `.codex/config.toml` (stop hook) | `.claude/settings.json` (stop hook) |
+| `settings.json` | `.kiro/hooks/ltm-capture-on-stop.json` | `.codex/config.toml` | `.claude/settings.json` |
 
 ---
 
@@ -131,7 +129,7 @@ Before starting any Qoder session on ComicCanvas Studio:
 - [ ] Read `global/design/DESIGN.md` before any renderer / UI task
 - [ ] Read `shared/` contracts (`connection-matrix.ts`, `plan.ts`, `nodes.ts`, `ipc.ts`) before cross-module work
 - [ ] Check `docs/api-contracts/` before opening new IPC channels or service interfaces
-- [ ] Run LTM recall (`python ltm/bin/ltm.py files --limit 10`) if resuming prior work
+- [ ] Check `docs/progress/`, `specs/`, and git status if resuming prior work
 - [ ] Follow coding standards enforced by always-apply rules (`project-identity`, `coding-standards`, `ltm-operations`)
 
 ---

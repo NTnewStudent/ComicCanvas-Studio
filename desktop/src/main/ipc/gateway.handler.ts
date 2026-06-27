@@ -6,6 +6,7 @@
 import type { GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayType } from '../../../../shared/gateway'
 import type { IpcResponseMap } from '../../../../shared/ipc'
 import type { JobTicket } from '../../../../shared/jobs'
+import { buildModelCatalog } from '../../../../shared/workflow-node-definitions'
 import { createSafeErrorEnvelope } from './safe-error'
 import type { IpcRegistrar } from './types'
 
@@ -37,6 +38,13 @@ function createDefaultGateway(): GatewayConfigView {
     modelMap: { text: 'stub-text', image: 'stub-image', video: 'stub-video' },
     enabled: true,
     keyRef: 'local-stub'
+  }
+}
+
+function ensureDefaultGateway(): void {
+  if (gatewayConfigs.size === 0) {
+    const stub = createDefaultGateway()
+    gatewayConfigs.set(stub.id, stub)
   }
 }
 
@@ -106,10 +114,7 @@ function reloadGateways(reloader: GatewayReloader | undefined, gatewayId?: strin
  * @see docs/api-contracts/gateway-providers.md
  */
 export function registerGatewayHandlers(ipcMain: IpcRegistrar, options: GatewayHandlerOptions = {}): void {
-  if (gatewayConfigs.size === 0) {
-    const stub = createDefaultGateway()
-    gatewayConfigs.set(stub.id, stub)
-  }
+  ensureDefaultGateway()
 
   ipcMain.handle('gateway.list', () => Array.from(gatewayConfigs.values()))
   ipcMain.handle('gateway.save', (_event, request) => {
@@ -136,6 +141,18 @@ export function registerGatewayHandlers(ipcMain: IpcRegistrar, options: GatewayH
 
     return reloadGateways(options.reloader, gatewayId)
   })
+  ipcMain.handle('gateway.models', () => buildModelCatalog(Array.from(gatewayConfigs.values())))
+}
+
+/**
+ * Returns the current renderer-safe model catalog from gateway configuration.
+ * @returns Model catalog grouped by channel without secret references.
+ * @throws Error never intentionally.
+ * @see docs/api-contracts/gateway-providers.md
+ */
+export function getGatewayModelCatalog(): IpcResponseMap['gateway.models'] {
+  ensureDefaultGateway()
+  return buildModelCatalog(Array.from(gatewayConfigs.values()))
 }
 
 export { createSafeErrorEnvelope }

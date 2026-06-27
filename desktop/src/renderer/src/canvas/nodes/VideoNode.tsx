@@ -4,12 +4,15 @@
  * @see docs/api-contracts/assets-files.md
  */
 
-import { Clapperboard, Film, Image as ImageIcon, Loader2, Sparkles, XCircle } from 'lucide-react'
+import { Clapperboard, Film, FolderOpen, Image as ImageIcon, Loader2, Pencil, Save, Sparkles, XCircle } from 'lucide-react'
 import { Handle, NodeResizer, Position } from '@xyflow/react'
 import React, { useState } from 'react'
 
 import type { Orientation, VideoNodeData } from '../../../../../../shared/nodes'
 import { ConnectedInputsPanel } from '../components/ConnectedInputsPanel'
+import { MediaInputControls } from '../components/MediaInputControls'
+import MentionTextarea from '../components/MentionTextarea'
+import { NodeAssetPickerModal, type NodeAssetOption } from '../components/NodeAssetPickerModal'
 import {
   getOrientationPreviewStyle,
   NODE_MIN_HEIGHT,
@@ -50,10 +53,16 @@ export interface VideoNodeProps {
   modelOptions?: VideoModelOption[]
   /** Upstream image assets available for first and last frame selection. */
   frameOptions?: VideoFrameOption[]
+  /** Video assets that can be bound directly to this node. */
+  assetOptions?: NodeAssetOption[]
   /** Called when the renderer edits node data. */
   onChange?: (id: string, patch: Partial<VideoNodeData>) => void
   /** Called when the user requests asynchronous generation for this node. */
   onRun?: (id: string) => void
+  /** Called when the user opens the asset edit surface for the bound video asset. */
+  onEditAsset?: (assetId: string) => void
+  /** Called when the user writes the current generated output back to the asset library. */
+  onWriteOutputAsset?: (id: string, assetId: string) => void
 }
 
 const orientationLabels: Record<Orientation, string> = {
@@ -87,15 +96,24 @@ function VideoNodeComponent({
   assetSafeUrl,
   modelOptions = [{ id: data.modelId, label: data.modelId }],
   frameOptions = [],
+  assetOptions = [],
   onChange,
-  onRun
+  onRun,
+  onEditAsset,
+  onWriteOutputAsset
 }: VideoNodeProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false)
   const isGenerating = data.status === 'pending' || data.status === 'running'
   const canPreview = data.status === 'done' && data.assetId !== null && typeof assetSafeUrl === 'string'
 
   function update(patch: Partial<VideoNodeData>): void {
     onChange?.(id, patch)
+  }
+
+  function bindAsset(asset: NodeAssetOption): void {
+    update({ assetId: asset.assetId, url: asset.safeUrl, status: 'done' })
+    setIsAssetPickerOpen(false)
   }
 
   return (
@@ -197,14 +215,62 @@ function VideoNodeComponent({
           <div className="mt-3 flex flex-col gap-3 border-t border-border-secondary pt-3">
             <ConnectedInputsPanel nodeId={id} />
 
+            <MediaInputControls
+              mediaType="video"
+              label="视频素材"
+              selectedAssetId={data.assetId}
+              selectedSafeUrl={data.url ?? assetSafeUrl}
+              options={assetOptions}
+              compact
+              onSelect={bindAsset}
+              onClear={() => update({ assetId: null, url: '' })}
+            />
+
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                aria-label="从资产库选择视频"
+                className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base"
+                onClick={() => setIsAssetPickerOpen(true)}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                资产库
+              </button>
+              <button
+                type="button"
+                aria-label="编辑视频资产"
+                className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base disabled:opacity-45"
+                disabled={!data.assetId}
+                onClick={() => {
+                  if (data.assetId) onEditAsset?.(data.assetId)
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                编辑
+              </button>
+              <button
+                type="button"
+                aria-label="写回视频输出资产"
+                className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base disabled:opacity-45"
+                disabled={!data.assetId || data.status !== 'done'}
+                onClick={() => {
+                  if (data.assetId) onWriteOutputAsset?.(id, data.assetId)
+                }}
+              >
+                <Save className="h-3.5 w-3.5" />
+                写回
+              </button>
+            </div>
+
             <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
               Prompt 覆盖
-              <textarea
-                aria-label="Prompt 覆盖"
-                className="min-h-24 resize-none rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] leading-relaxed text-text-base outline-none focus:ring-1 focus:ring-brand"
+              <MentionTextarea
+                ariaLabel="Prompt 覆盖"
                 value={data.promptOverride}
-                onChange={(event) => update({ promptOverride: event.target.value })}
+                onChange={(value) => update({ promptOverride: value })}
                 placeholder="描述动作、镜头路径、时序和情绪。"
+                rows={4}
+                className="nodrag nowheel"
               />
             </label>
 
@@ -312,6 +378,15 @@ function VideoNodeComponent({
           </div>
         )}
       </section>
+
+      {isAssetPickerOpen ? (
+        <NodeAssetPickerModal
+          mediaType="video"
+          options={assetOptions}
+          onClose={() => setIsAssetPickerOpen(false)}
+          onSelect={bindAsset}
+        />
+      ) : null}
 
       {/* 输入/输出连接点 */}
       <Handle type="target" position={Position.Left} className="cc-handle" />

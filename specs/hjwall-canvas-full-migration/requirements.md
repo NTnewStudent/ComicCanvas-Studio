@@ -19,7 +19,7 @@ Scope:
 - Style presets and style prompt injection.
 - Asset library and in-canvas asset picking/placement.
 - Agent orchestration over the canvas through declarative CanvasPlan.
-- Verification from both automated tests and real desktop user flows.
+- Verification from automated tests plus human review of desktop user flows.
 
 Non-goals:
 
@@ -46,9 +46,10 @@ Non-goals:
   text, metadata, cover, ordering, enabled state, and reference assets.
 - **Snippet**: A reusable selected subgraph saved from the canvas and later
   inserted with new IDs while preserving relative layout and internal edges.
-- **Real Desktop Flow**: A manual or automated Electron run that verifies the
-  feature in the packaged/development desktop shell, not only isolated unit
-  tests.
+- **Human Desktop Review**: A human reviewer runs the packaged/development
+  Electron shell and records whether the intended user flow passes, fails, or
+  needs follow-up. Codex may prepare implementation, tests, and review
+  checklists, but human review is the acceptance authority for desktop flows.
 
 ## Requirements
 
@@ -234,12 +235,14 @@ assembled demos.
 
 #### Acceptance Criteria
 
-1. FOR EACH REQ in this spec THE task file SHALL name automated tests and real
-   desktop checks required before marking it complete.
+1. FOR EACH REQ in this spec THE task file SHALL name automated tests and human
+   desktop review checks required before final acceptance.
 2. WHEN a feature is marked complete THE evidence SHALL include current test
-   output, inspected implementation files, and a user-flow result.
-3. IF automated tests pass but the desktop UI is blank, inaccessible, or cannot
-   complete the user flow THEN the requirement SHALL remain incomplete.
+   output, inspected implementation files, and either a passed human review
+   result or an explicit pending-human-review note.
+3. IF automated tests pass but human review finds the desktop UI blank,
+   inaccessible, or unable to complete the user flow THEN final acceptance SHALL
+   remain blocked until a follow-up fix is verified.
 4. WHEN reference projects exist in the workspace THE repo hygiene check SHALL
    keep them out of commits.
 5. FOR ALL new exported functions/classes and IPC/API handlers THE code SHALL
@@ -286,8 +289,8 @@ paths.
 
 ### INV-6: User-Flow Completeness
 
-*For any* requirement marked complete, THE evidence SHALL prove the user can
-perform the intended workflow in the desktop app, not only that a helper unit
-test passes.
+*For any* requirement marked accepted, THE evidence SHALL include automated
+verification and a human desktop review result proving the user can perform the
+intended workflow in the desktop app.
 
 **Validates:** Requirement 9.

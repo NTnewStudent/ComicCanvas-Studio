@@ -51,6 +51,40 @@ describe('composeFinalPrompt', () => {
     expect(result.referenceVideos).toEqual([])
   })
 
+  it('uses text content, not rich HTML, as deterministic prompt contribution', () => {
+    const graph: GraphSnapshot = {
+      nodes: [
+        {
+          id: 'text-rich',
+          type: 'text',
+          data: {
+            label: 'Rich beat',
+            content: 'plain prompt beat',
+            html: '<p><strong>styled prompt beat</strong></p>',
+            polishStatus: 'done'
+          }
+        },
+        {
+          id: 'target',
+          type: 'image',
+          data: {
+            label: 'Target image',
+            promptOverride: '',
+            modelId: 'stub-image',
+            orientation: 'landscape',
+            assetId: null,
+            status: 'idle'
+          }
+        }
+      ],
+      edges: [
+        { id: 'text-rich-target', source: 'text-rich', target: 'target', data: { edgeType: 'promptOrder', createdAt: 10 } }
+      ]
+    }
+
+    expect(composeFinalPrompt(graph, 'target').composedPrompt).toBe('plain prompt beat')
+  })
+
   it('includes migrated semantic context nodes and mjImage references in deterministic order', () => {
     const graph: GraphSnapshot = {
       nodes: [

@@ -118,3 +118,23 @@
 ### Property 5: Plan 安全
 *For any* CanvasPlan，节点类型 ∈ 白名单、每条边 ∈ 矩阵、无可执行代码字符串；违规项被剔除并记入 `dropped`。
 **Validates: Requirements 1.3, 2.1, 2.2, 3.3**
+
+## Phase A Requirements Refresh
+
+### REQ-A59: Agent vocabulary after assets/workflows parity
+
+**User Story:** 作为产品和工程维护者，我希望 Agent 后续只使用已经迁移并通过 Phase A 门禁管理的画布词汇，避免 Agent 自动化绕过手动画布和人工审核。
+
+#### Acceptance Criteria
+
+1. WHEN Agent orchestration is reopened after the Phase A acceptance gate, THE CanvasPlan vocabulary SHALL equal the migrated production node set: text, image, video, imageConfigV2, videoConfigV2, character, scene, audio, videoCompose, superResolution, muxAudioVideo.
+2. THE Agent SHALL treat MJ is legacy-known but unavailable for local planning, add paths, run steps, and URL refresh.
+3. FOR ALL Agent-produced edges, THE edge vocabulary SHALL be promptOrder, imageOrder, imageRole, outputLink, reference, default and SHALL still pass the shared connection matrix or graph validation before persistence.
+4. WHEN user intent is underspecified, unsafe, references unavailable assets/styles/models, or asks for unavailable MJ behavior, THE Agent SHALL use clarify branches instead of inventing hidden defaults.
+5. WHEN sanitization drops unsupported nodes, illegal edges, executable strings, unavailable run actions, or unavailable legacy MJ behavior, THE Agent SHALL preserve dropped warnings for renderer display and audit.
+6. WHILE `HDR-PHASEA-001` is Pending, THE implementation SHALL NOT enable Agent plan apply/run automation over the migrated workflow vocabulary. Task 60 may start only after human review pass or explicit product deferral.
+
+### Property 6: Phase A gated Agent vocabulary
+
+For any future Agent-generated CanvasPlan, every node type SHALL be in the migrated production node set, every edge type SHALL be in the migrated edge vocabulary, MJ is legacy-known but unavailable, clarify branches SHALL be used for underspecified or unavailable requests, and dropped warnings SHALL preserve every removed unsafe or unsupported record.
+**Validates: REQ-A59**

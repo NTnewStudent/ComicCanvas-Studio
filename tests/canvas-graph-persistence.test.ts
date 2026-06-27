@@ -7,10 +7,17 @@ import { describe, expect, it } from 'vitest'
 import type { CanvasGraphSnapshot } from '../shared/graph'
 import type { NodeType } from '../shared/nodes'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
+import { createAssetRepository } from '../desktop/src/main/db/repositories/asset.repo'
 import { createWorkflowRepository } from '../desktop/src/main/db/repositories/workflow.repo'
 import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
 
 type Handler = (_event: unknown, request: unknown) => unknown
+
+interface WorkflowImportResult {
+  workflowId: string
+  graphVersion: string
+  dropped: string[]
+}
 
 function createFakeIpcMain(): { handlers: Map<string, Handler>; ipcMain: { handle(channel: string, handler: Handler): void } } {
   const handlers = new Map<string, Handler>()
@@ -23,6 +30,26 @@ function createFakeIpcMain(): { handlers: Map<string, Handler>; ipcMain: { handl
       }
     }
   }
+}
+
+function expectWorkflowImportResult(value: unknown): WorkflowImportResult {
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'workflowId' in value &&
+    'graphVersion' in value &&
+    'dropped' in value &&
+    typeof value.workflowId === 'string' &&
+    typeof value.graphVersion === 'string' &&
+    Array.isArray(value.dropped)
+  ) {
+    return value as WorkflowImportResult
+  }
+  throw new Error('expected workflow import result')
+}
+
+function defaultGraphForTest(): CanvasGraphSnapshot {
+  return { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
 }
 
 const firstGraph: CanvasGraphSnapshot = {
@@ -135,7 +162,7 @@ const migratedGraph: CanvasGraphSnapshot = {
       id: 'legacy-1',
       type: 'legacyNode' as NodeType,
       position: { x: 1720, y: 180 },
-      data: { label: 'Legacy unsupported node', status: 'idle' } as CanvasGraphSnapshot['nodes'][number]['data']
+      data: { label: 'Legacy unsupported node', status: 'idle' }
     }
   ],
   edges: [
@@ -174,7 +201,7 @@ describe('M2 canvas graph save/load IPC', () => {
       })
 
       const firstSaveResult = await first.handlers.get('canvas.saveGraph')?.({}, { projectId: 'project-1', graph: firstGraph })
-      expect(firstSaveResult).toEqual({ graphVersion: 'version-0' })
+      expect(firstSaveResult).toMatchObject({ graphVersion: 'version-0', warnings: [] })
 
       const latest = createFakeIpcMain()
       registerCanvasHandlers(latest.ipcMain, {
@@ -184,7 +211,10 @@ describe('M2 canvas graph save/load IPC', () => {
         currentUserId: 'test-user'
       })
       const saveResult = await latest.handlers.get('canvas.saveGraph')?.({}, { projectId: 'project-1', graph })
-      expect(saveResult).toEqual({ graphVersion: 'version-1' })
+      expect(saveResult).toMatchObject({
+        graphVersion: 'version-1',
+        warnings: [{ code: 'invalid_edge', severity: 'warning' }]
+      })
 
       const second = createFakeIpcMain()
       registerCanvasHandlers(second.ipcMain, { workflows, clock: () => 300, idFactory: () => 'version-2' })
@@ -222,8 +252,15 @@ describe('M2 canvas graph save/load IPC', () => {
         currentUserId: 'test-user'
       })
 
-      const saveResult = await ipc.handlers.get('canvas.saveGraph')?.({}, { projectId: 'project-migrated', graph: migratedGraph })
-      expect(saveResult).toEqual({ graphVersion: 'version-migrated' })
+      const saveResult = await ipc.handlers.get('canvas.saveGraph')?.({}, { projectId: 'project-migrated', graph: migratedGraph }) as {
+        graphVersion: string
+        warnings: Array<{ code: string; severity: string }>
+      }
+      expect(saveResult.graphVersion).toBe('version-migrated')
+      expect(saveResult.warnings).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: 'unsupported_node_type', severity: 'warning' }),
+        expect.objectContaining({ code: 'invalid_edge', severity: 'warning' })
+      ]))
 
       const loaded = await ipc.handlers.get('canvas.loadGraph')?.({}, { projectId: 'project-migrated' }) as CanvasGraphSnapshot
 
@@ -292,9 +329,9 @@ describe('M2 canvas graph save/load IPC', () => {
         name: 'Export me'
       })
       expect(exported.graph.nodes.map((node) => node.type)).not.toContain('legacyNode')
-      expect(JSON.stringify(exported)).not.toMatch(/([A-Za-z]:\\|file:\/\/|\/Users\/|\/tmp\/)/u)
+      expect(JSON.stringify(exported)).not.toMatch(/([A-Za-z]:\\|file:\/\/|\/Users\/|\/tmp\/|apiKey|secret|sk-[A-Za-z0-9_-]{4,})/u)
 
-      const imported = await ipc.handlers.get('canvas.importWorkflow')?.({}, {
+      const imported = expectWorkflowImportResult(await ipc.handlers.get('canvas.importWorkflow')?.({}, {
         name: 'Imported copy',
         json: JSON.stringify({
           ...exported,
@@ -315,12 +352,10 @@ describe('M2 canvas graph save/load IPC', () => {
             ]
           }
         })
-      }) as { workflowId: string; graphVersion: string; dropped: string[] }
+      }))
 
-      expect(imported).toMatchObject({
-        workflowId: expect.stringMatching(/^wf-import-/u),
-        graphVersion: expect.stringMatching(/^version-/u)
-      })
+      expect(imported.workflowId).toMatch(/^wf-import-/u)
+      expect(imported.graphVersion).toMatch(/^version-/u)
       expect(imported.dropped).toEqual(expect.arrayContaining([
         'node:legacy-import:unsupported_type',
         'edge:edge-import-invalid:invalid_connection'
@@ -329,9 +364,22 @@ describe('M2 canvas graph save/load IPC', () => {
       const loaded = await ipc.handlers.get('canvas.loadGraph')?.({}, { projectId: imported.workflowId }) as CanvasGraphSnapshot
       expect(loaded.nodes.map((node) => node.type)).toEqual(exported.graph.nodes.map((node) => node.type))
       expect(loaded.edges.map((edge) => edge.id)).toEqual(exported.graph.edges.map((edge) => edge.id))
+      expect(workflows.getSummary(imported.workflowId)).toMatchObject({
+        scope: 'draft',
+        published: false
+      })
 
       const invalidJson = await ipc.handlers.get('canvas.importWorkflow')?.({}, { json: '{bad json' })
       expect(invalidJson).toEqual({
+        errorClass: 'invalid_workflow_json',
+        message: 'Workflow import JSON is invalid.',
+        retryable: false
+      })
+
+      const invalidSchema = await ipc.handlers.get('canvas.importWorkflow')?.({}, {
+        json: JSON.stringify({ schemaVersion: 2, name: 'Bad schema', graph: defaultGraphForTest() })
+      })
+      expect(invalidSchema).toEqual({
         errorClass: 'invalid_workflow_json',
         message: 'Workflow import JSON is invalid.',
         retryable: false
@@ -366,6 +414,247 @@ describe('M2 canvas graph save/load IPC', () => {
         message: 'Workflow import JSON cannot contain absolute file paths.',
         retryable: false
       })
+
+      const secretPayload = await ipc.handlers.get('canvas.importWorkflow')?.({}, {
+        json: JSON.stringify({
+          schemaVersion: 1,
+          name: 'Unsafe secret',
+          graph: {
+            nodes: [{
+              id: 'text-secret',
+              type: 'text',
+              position: { x: 0, y: 0 },
+              data: { label: 'Secret', content: 'use sk-live-secret in prompt', apiKey: 'sk-live-secret' }
+            }],
+            edges: [],
+            viewport: { x: 0, y: 0, zoom: 1 }
+          }
+        })
+      })
+      expect(secretPayload).toEqual({
+        errorClass: 'unsafe_workflow_json',
+        message: 'Workflow import JSON cannot contain secrets.',
+        retryable: false
+      })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('lists workflow versions with debug metadata and restores one as a new latest graph version', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-workflow-restore-'))
+    const dbPath = join(tempDir, 'workflow-restore.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const workflows = createWorkflowRepository(db)
+      workflows.create({ id: 'project-restore', name: 'Restore me', createdAt: 100, updatedAt: 100 })
+
+      const ipc = createFakeIpcMain()
+      let now = 400
+      let id = 0
+      registerCanvasHandlers(ipc.ipcMain, {
+        workflows,
+        clock: () => now++,
+        idFactory: () => `version-restore-${id++}`,
+        currentUserId: 'test-user'
+      })
+
+      await ipc.handlers.get('canvas.saveGraph')?.({}, { projectId: 'project-restore', graph: firstGraph })
+      await ipc.handlers.get('canvas.saveGraph')?.({}, { projectId: 'project-restore', graph: migratedGraph })
+
+      const versions = await ipc.handlers.get('canvas.listWorkflowVersions')?.({}, {
+        workflowId: 'project-restore',
+        limit: 10
+      }) as Array<{
+        id: string
+        checksum: string
+        nodeCount: number
+        edgeCount: number
+        warningSummary: { unsupportedNodes: number; invalidEdges: number }
+      }>
+
+      expect(versions).toHaveLength(2)
+      expect(versions[0]).toMatchObject({
+        id: 'version-restore-1',
+        nodeCount: 11,
+        edgeCount: 9,
+        warningSummary: { unsupportedNodes: 1, invalidEdges: 2 }
+      })
+      expect(versions[0]?.checksum).toMatch(/^[a-f0-9]{64}$/u)
+
+      const restored = await ipc.handlers.get('canvas.restoreWorkflowVersion')?.({}, {
+        workflowId: 'project-restore',
+        versionId: 'version-restore-0'
+      })
+
+      expect(restored).toMatchObject({
+        workflowId: 'project-restore',
+        graphVersion: 'version-restore-2',
+        restoredFromVersionId: 'version-restore-0',
+        warningSummary: { unsupportedNodes: 0, invalidEdges: 0 }
+      })
+
+      const loaded = await ipc.handlers.get('canvas.loadGraph')?.({}, { projectId: 'project-restore' }) as CanvasGraphSnapshot
+      expect(loaded).toEqual(firstGraph)
+      expect(workflows.listVersions('project-restore')[0]).toMatchObject({
+        id: 'version-restore-2',
+        restoreSourceVersionId: 'version-restore-0'
+      })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('syncs saved canvas asset references so safe delete is blocked', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-graph-asset-references-'))
+    const dbPath = join(tempDir, 'graph-asset-references.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const workflows = createWorkflowRepository(db)
+      const assets = createAssetRepository(db)
+      workflows.create({ id: 'project-references', name: 'References', createdAt: 100, updatedAt: 100 })
+      assets.create({
+        id: 'asset-character',
+        mediaType: 'image',
+        status: 'ready',
+        relativePath: 'imported/image/character.png',
+        safeUrl: 'cc-asset://asset/asset-character',
+        metadata: { width: 512, height: 512, orientation: 'square' },
+        createdAt: 100,
+        updatedAt: 100
+      })
+
+      const ipc = createFakeIpcMain()
+      registerCanvasHandlers(ipc.ipcMain, {
+        workflows,
+        assets,
+        clock: () => 240,
+        idFactory: () => 'version-references',
+        currentUserId: 'test-user'
+      })
+
+      await ipc.handlers.get('canvas.saveGraph')?.({}, {
+        projectId: 'project-references',
+        graph: {
+          nodes: [{
+            id: 'character-node',
+            type: 'character',
+            position: { x: 0, y: 0 },
+            data: { label: 'Hero', description: '', assetId: 'asset-character', url: 'cc-asset://asset/asset-character', tags: [] }
+          }],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 }
+        }
+      })
+
+      expect(assets.trashAsset({ assetId: 'asset-character', mode: 'safe' }, 250)).toMatchObject({
+        status: 'rejected',
+        blockingReferences: [{ assetId: 'asset-character', refType: 'node', refId: 'character-node' }]
+      })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('persists lenient draft validation warnings and blocks strict run validation', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-graph-validation-'))
+    const dbPath = join(tempDir, 'graph-validation.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const workflows = createWorkflowRepository(db)
+      workflows.create({ id: 'project-validation', name: 'Validation', createdAt: 100, updatedAt: 100 })
+      const invalidReferenceGraph: CanvasGraphSnapshot = {
+        nodes: [
+          {
+            id: 'image-invalid',
+            type: 'image',
+            position: { x: 0, y: 0 },
+            data: {
+              label: 'Invalid image',
+              promptOverride: 'missing refs',
+              modelId: 'missing-model',
+              orientation: 'landscape',
+              assetId: 'asset-missing',
+              status: 'idle',
+              stylePresetId: 'style-missing'
+            }
+          }
+        ],
+        edges: [],
+        viewport: { x: 0, y: 0, zoom: 1 }
+      }
+      const enqueued: unknown[] = []
+      const ipc = createFakeIpcMain()
+      registerCanvasHandlers(ipc.ipcMain, {
+        workflows,
+        assets: createAssetRepository(db),
+        styles: {
+          list: () => [],
+          getProjectDefault: () => null
+        },
+        graphStore: {
+          getGraph: () => invalidReferenceGraph
+        },
+        queue: {
+          enqueue(input) {
+            enqueued.push(input)
+            return { jobId: 'job-should-not-run', status: 'pending', createdAt: 1 }
+          }
+        },
+        availableModelIds: ['stub-image'],
+        clock: () => 260,
+        idFactory: () => 'version-validation',
+        currentUserId: 'test-user'
+      })
+
+      const saved = await ipc.handlers.get('canvas.saveGraph')?.({}, {
+        projectId: 'project-validation',
+        graph: invalidReferenceGraph
+      }) as { graphVersion: string; warnings: Array<{ code: string }> }
+
+      expect(saved.graphVersion).toBe('version-validation')
+      expect(saved.warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining([
+        'unavailable_model',
+        'unavailable_style',
+        'unavailable_asset'
+      ]))
+      expect(workflows.listVersions('project-validation')[0]).toMatchObject({
+        id: 'version-validation',
+        warningSummary: {
+          unavailableModels: 1,
+          unavailableStyles: 1,
+          unavailableAssets: 1
+        }
+      })
+
+      const strictValidation = await ipc.handlers.get('canvas.validateGraph')?.({}, {
+        workflowId: 'project-validation',
+        graph: invalidReferenceGraph,
+        mode: 'strict'
+      }) as { valid: boolean; issues: Array<{ severity: string }> }
+
+      expect(strictValidation.valid).toBe(false)
+      expect(strictValidation.issues.every((issue) => issue.severity === 'error')).toBe(true)
+
+      const runResult = await ipc.handlers.get('canvas.runNode')?.({}, {
+        workflowId: 'project-validation',
+        nodeId: 'image-invalid'
+      })
+
+      expect(runResult).toMatchObject({
+        errorClass: 'workflow_validation_failed',
+        retryable: false
+      })
+      expect(enqueued).toEqual([])
     } finally {
       db.close()
       rmSync(tempDir, { recursive: true, force: true })

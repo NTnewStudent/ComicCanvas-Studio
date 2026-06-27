@@ -5,6 +5,7 @@
 
 import { canConnect } from './connection-matrix'
 import type { CanvasEdgeData, CanvasNodeData, NodeType } from './nodes'
+import type { GraphValidationIssue } from './graph-validation'
 
 const CANVAS_NODE_TYPES = new Set<NodeType>([
   'text',
@@ -85,6 +86,8 @@ export interface CanvasSaveGraphRequest {
 export interface CanvasSaveGraphResponse {
   /** New graph version identifier. */
   graphVersion: string
+  /** Lenient validation warnings persisted with the graph version. */
+  warnings?: GraphValidationIssue[]
 }
 
 /** Request for loading the latest project graph. */

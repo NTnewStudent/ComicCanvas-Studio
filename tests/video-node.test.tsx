@@ -49,6 +49,12 @@ function renderVideoNode(overrides: VideoNodeRenderOverrides = {}) {
             { assetId: 'last-asset', label: 'Closing panel', safeUrl: 'cc-asset://asset/last-asset' }
           ]
         }
+        assetOptions={
+          overrides.assetOptions ?? [
+            { assetId: 'asset-video-a', label: 'Motion draft', safeUrl: 'cc-asset://asset/asset-video-a' },
+            { assetId: 'asset-video-b', label: 'Final shot', safeUrl: 'cc-asset://asset/asset-video-b' }
+          ]
+        }
         onChange={overrides.onChange ?? onChange}
         onRun={overrides.onRun ?? onRun}
       />
@@ -129,5 +135,35 @@ describe('M2 VideoNode', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成视频' }))
 
     expect(onRun).toHaveBeenCalledWith('video-1')
+  })
+
+  it('binds safe video assets, exposes edit entry, and writes generated output back', () => {
+    const onEditAsset = vi.fn()
+    const onWriteOutputAsset = vi.fn()
+    const { onChange } = renderVideoNode({
+      data: { status: 'done', assetId: 'asset-video-generated', url: 'cc-asset://asset/asset-video-generated' },
+      assetSafeUrl: 'cc-asset://asset/asset-video-generated',
+      onEditAsset,
+      onWriteOutputAsset
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '配置视频节点' }))
+    fireEvent.click(screen.getByRole('button', { name: '从资产库选择视频' }))
+
+    expect(screen.getByRole('dialog', { name: '选择视频资产' })).toBeInTheDocument()
+    expect(screen.getByTestId('video-asset-option-asset-video-a')).toHaveAttribute('src', 'cc-asset://asset/asset-video-a')
+
+    fireEvent.click(screen.getByRole('button', { name: '选择视频资产 Motion draft' }))
+    expect(onChange).toHaveBeenLastCalledWith('video-1', {
+      assetId: 'asset-video-a',
+      url: 'cc-asset://asset/asset-video-a',
+      status: 'done'
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑视频资产' }))
+    expect(onEditAsset).toHaveBeenCalledWith('asset-video-generated')
+
+    fireEvent.click(screen.getByRole('button', { name: '写回视频输出资产' }))
+    expect(onWriteOutputAsset).toHaveBeenCalledWith('video-1', 'asset-video-generated')
   })
 })

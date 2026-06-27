@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildGenerationTaskStatusList,
   reconcileCanvasNodesWithJobs,
+  terminalFailureToNodePatch,
+  terminalResultToNodePatch,
   type ReconciledCanvasNode,
 } from '../desktop/src/renderer/src/canvas/lib/job-reconciliation'
 import type { JobRecord } from '../shared/jobs'
@@ -46,7 +49,7 @@ describe('REQ-096 canvas job reconciliation', () => {
     })
   })
 
-  it('marks failed jobs as node errors and pending or processing jobs as pending', () => {
+  it('marks failed jobs as node errors with recoverable messages and pending or processing jobs as pending', () => {
     const failedNode = { ...baseNode, id: 'failed-node' }
     const processingNode = { ...baseNode, id: 'processing-node' }
 
@@ -55,7 +58,10 @@ describe('REQ-096 canvas job reconciliation', () => {
       job({ id: 'processing-job', targetId: 'processing-node', status: 'processing', progress: 30 }),
     ])
 
-    expect(nodes.find((node) => node.id === 'failed-node')?.data).toMatchObject({ status: 'error' })
+    expect(nodes.find((node) => node.id === 'failed-node')?.data).toMatchObject({
+      status: 'error',
+      error: 'boom',
+    })
     expect(nodes.find((node) => node.id === 'processing-node')?.data).toMatchObject({
       status: 'pending',
       assetId: null,
@@ -77,7 +83,7 @@ describe('REQ-096 canvas job reconciliation', () => {
     })
   })
 
-  it('restores typed migrated jobs from completed report metadata', () => {
+  it('restores typed non-MJ migrated jobs from completed report metadata', () => {
     const composeNode: ReconciledCanvasNode = {
       id: 'compose-node',
       type: 'videoCompose',
@@ -91,23 +97,19 @@ describe('REQ-096 canvas job reconciliation', () => {
         status: 'pending',
       },
     }
-    const mjNode: ReconciledCanvasNode = {
-      id: 'mj-node',
-      type: 'mjImage',
+    const sceneNode: ReconciledCanvasNode = {
+      id: 'scene-node',
+      type: 'scene',
       position: { x: 320, y: 0 },
       data: {
-        label: 'MJ',
-        prompt: 'hero shot',
-        modelId: 'mj-v6',
-        ratio: '16:9',
-        urls: [],
-        selectedIndex: 0,
+        label: 'Hangar',
+        description: 'rainy hangar',
         assetId: null,
         status: 'pending',
       },
     }
 
-    const nodes = reconcileCanvasNodesWithJobs([composeNode, mjNode], [
+    const nodes = reconcileCanvasNodesWithJobs([composeNode, sceneNode], [
       job({
         id: 'compose-job',
         type: 'canvas.composeVideo',
@@ -119,18 +121,12 @@ describe('REQ-096 canvas job reconciliation', () => {
         },
       }),
       job({
-        id: 'mj-job',
+        id: 'scene-job',
         type: 'canvas.generateImage',
-        targetId: 'mj-node',
+        targetId: 'scene-node',
         result: {
-          kind: 'report',
-          summary: 'multi image',
-          data: {
-            assetId: 'asset-mj-selected',
-            url: 'cc-asset://asset/asset-mj-selected',
-            urls: ['cc-asset://asset/mj-1', 'cc-asset://asset/mj-2'],
-            selectedIndex: 1,
-          },
+          kind: 'asset',
+          assetId: 'asset-scene-ready',
         },
       }),
     ])
@@ -140,12 +136,9 @@ describe('REQ-096 canvas job reconciliation', () => {
       assetId: 'asset-compose',
       url: 'cc-asset://asset/asset-compose',
     })
-    expect(nodes.find((node) => node.id === 'mj-node')?.data).toMatchObject({
+    expect(nodes.find((node) => node.id === 'scene-node')?.data).toMatchObject({
       status: 'done',
-      assetId: 'asset-mj-selected',
-      url: 'cc-asset://asset/asset-mj-selected',
-      urls: ['cc-asset://asset/mj-1', 'cc-asset://asset/mj-2'],
-      selectedIndex: 1,
+      assetId: 'asset-scene-ready',
     })
   })
 
@@ -180,5 +173,119 @@ describe('REQ-096 canvas job reconciliation', () => {
       assetId: 'asset-audio-ready',
       url: 'cc-asset://asset/asset-audio-ready',
     })
+  })
+
+  it('restores completed, active, and failed text polish jobs without asset fields', () => {
+    const textNode: ReconciledCanvasNode = {
+      id: 'text-node',
+      type: 'text',
+      position: { x: 0, y: 0 },
+      data: {
+        label: 'Opening beat',
+        content: 'rough line',
+        polishStatus: 'pending',
+      },
+    }
+
+    const completed = reconcileCanvasNodesWithJobs([textNode], [
+      job({
+        id: 'text-job-completed',
+        type: 'canvas.polishText',
+        targetId: 'text-node',
+        result: { kind: 'text', text: 'polished line' },
+      }),
+    ])
+    expect(completed.at(0)?.data).toMatchObject({
+      content: 'polished line',
+      html: '<p>polished line</p>',
+      polishStatus: 'done',
+    })
+    expect(completed.at(0)?.data).not.toHaveProperty('assetId')
+
+    const processing = reconcileCanvasNodesWithJobs([textNode], [
+      job({
+        id: 'text-job-processing',
+        type: 'canvas.polishText',
+        targetId: 'text-node',
+        status: 'processing',
+        progress: 35,
+      }),
+    ])
+    expect(processing.at(0)?.data).toMatchObject({ polishStatus: 'running' })
+    expect(processing.at(0)?.data).not.toHaveProperty('assetId')
+
+    const failed = reconcileCanvasNodesWithJobs([textNode], [
+      job({
+        id: 'text-job-failed',
+        type: 'canvas.polishText',
+        targetId: 'text-node',
+        status: 'failed',
+        error: { errorClass: 'provider', message: 'polish failed', retryable: false },
+      }),
+    ])
+    expect(failed.at(0)?.data).toMatchObject({
+      polishStatus: 'error',
+      error: 'polish failed',
+    })
+  })
+
+  it('maps text polish terminal events to reusable node patches', () => {
+    expect(terminalResultToNodePatch({ kind: 'text', text: 'clean rewrite' })).toEqual({
+      content: 'clean rewrite',
+      html: '<p>clean rewrite</p>',
+      polishStatus: 'done',
+    })
+    expect(terminalFailureToNodePatch('canvas.polishText', { errorClass: 'provider', message: 'timeout', retryable: false })).toEqual({
+      polishStatus: 'error',
+      error: 'timeout',
+    })
+  })
+
+  it('builds a recoverable generation task list for non-MJ canvas jobs', () => {
+    const imageNode: ReconciledCanvasNode = {
+      ...baseNode,
+      id: 'image-node',
+      type: 'image',
+    }
+    const characterNode: ReconciledCanvasNode = {
+      id: 'character-node',
+      type: 'character',
+      position: { x: 120, y: 0 },
+      data: { label: 'Mika', description: 'pilot', assetId: null, status: 'idle' },
+    }
+    const muxNode: ReconciledCanvasNode = {
+      id: 'mux-node',
+      type: 'muxAudioVideo',
+      position: { x: 240, y: 0 },
+      data: { label: 'Mux', modelId: 'mux-local', assetId: null, status: 'idle' },
+    }
+    const mjNode: ReconciledCanvasNode = {
+      id: 'mj-node',
+      type: 'mjImage',
+      position: { x: 360, y: 0 },
+      data: { label: 'Legacy MJ', prompt: '', modelId: 'stub-mj', ratio: '16:9', urls: [], selectedIndex: 0, assetId: null, status: 'idle' },
+    }
+    const textNode: ReconciledCanvasNode = {
+      id: 'text-node',
+      type: 'text',
+      position: { x: 480, y: 0 },
+      data: { label: 'Beat', content: 'rough line' },
+    }
+
+    const tasks = buildGenerationTaskStatusList([imageNode, characterNode, muxNode, mjNode, textNode], [
+      job({ id: 'image-job', targetId: 'image-node', status: 'completed', updatedAt: 20 }),
+      job({ id: 'character-job', targetId: 'character-node', type: 'canvas.generateImage', status: 'processing', progress: 35, updatedAt: 30 }),
+      job({ id: 'mux-job', targetId: 'mux-node', type: 'canvas.muxAudioVideo', status: 'failed', progress: 100, error: { errorClass: 'mux', message: 'mux failed', retryable: false }, updatedAt: 40 }),
+      job({ id: 'mj-job', targetId: 'mj-node', type: 'canvas.generateImage', status: 'completed', updatedAt: 50 }),
+      job({ id: 'text-job', targetId: 'text-node', type: 'canvas.polishText', status: 'completed', updatedAt: 60, result: { kind: 'text', text: 'polished line' } }),
+    ])
+
+    expect(tasks.map((task) => task.nodeId)).toEqual(['image-node', 'character-node', 'mux-node', 'text-node'])
+    expect(tasks).toEqual([
+      expect.objectContaining({ nodeId: 'image-node', nodeType: 'image', jobId: 'image-job', status: 'completed', phase: 'terminal' }),
+      expect.objectContaining({ nodeId: 'character-node', nodeType: 'character', jobId: 'character-job', status: 'processing', phase: 'active', progress: 35 }),
+      expect.objectContaining({ nodeId: 'mux-node', nodeType: 'muxAudioVideo', jobId: 'mux-job', status: 'failed', phase: 'terminal', errorMessage: 'mux failed' }),
+      expect.objectContaining({ nodeId: 'text-node', nodeType: 'text', jobId: 'text-job', jobType: 'canvas.polishText', status: 'completed', phase: 'terminal' }),
+    ])
   })
 })

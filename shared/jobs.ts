@@ -6,6 +6,7 @@
 export type JobType =
   | 'canvas.generateImage'
   | 'canvas.generateVideo'
+  | 'canvas.polishText'
   | 'canvas.generateAudio'
   | 'canvas.composeVideo'
   | 'canvas.upscaleVideo'

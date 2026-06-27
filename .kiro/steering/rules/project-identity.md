@@ -118,18 +118,10 @@ type RunAction = 'imageRun' | 'videoRun' | 'textPolish'
 
 ---
 
-## LTM 项目记录
+## 项目记录
 
-```bash
-# 回忆上次工作
-python ltm/bin/ltm.py files --limit 10
-python ltm/bin/ltm.py sessions --limit 5
-
-# 保存检查点
-python ltm/bin/ltm.py checkpoint --from-json <path>
-
-# Windows 上查 ltm/config.json 的 python_cmd（可能是 python 或 py）
-```
+当前项目不再使用 LTM。不要运行 `ltm/bin/ltm.py` 做恢复、检查进度或保存
+checkpoint；任务状态以 `specs/`、`docs/progress/`、git 状态和用户最新指令为准。
 
 ---
 

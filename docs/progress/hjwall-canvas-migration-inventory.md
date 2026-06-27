@@ -7,8 +7,8 @@ Canonical spec: `specs/hjwall-canvas-full-migration/`
 This inventory records user-visible hjwall canvas capabilities that must be
 re-implemented or explicitly adapted in ComicCanvas. It is intentionally
 evidence-based: historical backlog rows marked complete are not treated as
-completion proof until current implementation, tests, and real desktop flow
-evidence agree.
+completion proof until current implementation, tests, and human desktop review
+agree.
 
 ## Reference Boundaries
 
@@ -33,12 +33,12 @@ No source files from `hjwall/` are to be copied into ComicCanvas.
 | :--- | :--- | :--- |
 | `shared/nodes.ts` | Current node union includes `text`, `image`, `video`, `imageConfigV2`, `videoConfigV2`. | Missing production semantic nodes: character, scene, audio, videoCompose, superResolution, muxAudioVideo, mjImage. |
 | `shared/connection-matrix.ts` | Matrix only covers current narrow node set. | Must expand before migrated node UI/runtime can be truthful. |
-| `desktop/src/renderer/src/canvas/CanvasPage.tsx` | Has toolbar, context menu, asset panel, chat box, save/load, and project manager wiring. | Needs revalidation in real desktop and missing drag/drop/snippet/command-palette parity. |
+| `desktop/src/renderer/src/canvas/CanvasPage.tsx` | Has toolbar, context menu, asset panel, chat box, save/load, and project manager wiring. | Needs human desktop review and missing drag/drop/snippet/command-palette parity. |
 | `desktop/src/renderer/src/canvas/nodes/` | Has text/image/video plus image/video config V2 components. | Existing V2 nodes include frontend-only style stub behavior that must be replaced by real style contracts. |
 | `desktop/src/main/db/schema.ts` | Has workflows, workflow_versions, assets, asset_folders, asset_references, jobs, chat_messages. | Good foundation; style preset table/contract is missing. |
 | `desktop/src/main/ipc/canvas.handler.ts` | Has save/load/applyPlan/runPlan/list/create/rename/delete workflow handlers. | Needs project lifecycle hardening, import/export, run dispatch expansion, and complete JSDoc/contract audit. |
 | `desktop/src/main/ipc/asset.handler.ts` | Has import/list/move/trash/folder handlers. | Needs metadata extraction, reference wiring, desktop insert flow verification. |
-| Tests under `tests/` | Broad M1-M5 unit/component coverage exists. | Passing isolated tests is not enough; real desktop flows still required. |
+| Tests under `tests/` | Broad M1-M5 unit/component coverage exists. | Passing isolated tests is not enough; human desktop review is still required for final acceptance. |
 | `docs/progress/hjwall-migration-report.md` | Records known limits: stub ChatBox, @mention edge validation gap, fixed autosave interval, native module ABI issue. | These are follow-up tasks, not completed migration evidence. |
 
 ## Capability Inventory
@@ -76,11 +76,12 @@ No source files from `hjwall/` are to be copied into ComicCanvas.
 | INV-RUN-002 | One-shot job reconciliation after reopen. | Partial: event-driven hooks exist; full flow not verified. | Add explicit reconciliation tests for missed events. | REQ-096 |
 | INV-AGENT-001 | Natural language to full comic-drama CanvasPlan. | Partial: orchestrator and Plan flow exist for narrow nodes. | Expand plan vocabulary and clarify behavior for migrated nodes/style/assets. | REQ-097 |
 | INV-AGENT-002 | Plan apply and serial run over migrated nodes. | Partial: applyPlan and PlanRunner exist. | Expand run-step mapping and dropped warnings. | REQ-097 |
-| INV-QA-001 | Real desktop acceptance for full comic-drama path. | Not completed in current evidence. | Launch app, verify project/canvas/asset/style/agent flows from user perspective. | REQ-098 |
+| INV-QA-001 | Human desktop review for full comic-drama path. | Not completed in current evidence. | Human reviewer launches app and verifies project/canvas/asset/style/agent flows from user perspective. | REQ-098 |
 
 ## Immediate Execution Order
 
-1. Reverify desktop startup and fix black/blank screen if present.
+1. Prepare the human desktop review gate and fix black/blank screen issues
+   found by review.
 2. Run current automated gates to establish a fresh baseline.
 3. Implement the first missing user-critical slice: media drag/drop plus asset
    insert-to-canvas, because it exercises canvas, assets, IPC, and real user
@@ -97,5 +98,5 @@ No source files from `hjwall/` are to be copied into ComicCanvas.
   than current runtime evidence.
 - Existing docs have mixed encodings in older files; new specs should remain
   UTF-8 and canonical.
-- Renderer startup must be verified before claiming any UI migration complete.
+- Renderer startup must pass human review before claiming final UI acceptance.
 - Reference projects in the workspace must remain excluded from commits.
