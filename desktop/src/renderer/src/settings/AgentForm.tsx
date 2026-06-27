@@ -25,6 +25,8 @@ const toolOptions = [
 const permissionOptions: Array<{ value: ToolPermissionKind; label: string }> = [
   { value: 'canvas.read', label: '画布读取' },
   { value: 'canvas.write', label: '画布写入' },
+  { value: 'file.read', label: '文件读取' },
+  { value: 'network', label: '网络访问' },
   { value: 'provider.spend', label: '供应商消费' },
   { value: 'diagnostics', label: '诊断' },
   { value: 'destructive', label: '破坏性操作' }

@@ -24,6 +24,19 @@ function graphFixture(): CanvasGraphSnapshot {
         },
       },
       {
+        id: 'image-config-1',
+        type: 'imageConfigV2',
+        position: { x: 320, y: 240 },
+        data: {
+          label: 'Image config',
+          promptOverride: 'storm castle',
+          modelId: 'stub-image',
+          orientation: 'landscape',
+          assetId: null,
+          status: 'idle',
+        },
+      },
+      {
         id: 'video-1',
         type: 'video',
         position: { x: 640, y: 0 },
@@ -111,7 +124,7 @@ describe('Task 53 tool descriptors and structured errors', () => {
 
     const result = await runtime.invoke({
       toolId: 'canvas.runNode',
-      input: { nodeId: 'image-1' },
+      input: { nodeId: 'image-config-1' },
       actor,
       traceId: 'trace-job-failure',
     })
@@ -122,7 +135,7 @@ describe('Task 53 tool descriptors and structured errors', () => {
       code: 'job_enqueue_failed',
       message: 'Failed to enqueue canvas job.',
       retryable: true,
-      details: { nodeId: 'image-1', cause: 'sqlite busy' },
+      details: { nodeId: 'image-config-1', cause: 'sqlite busy' },
     })
   })
 })

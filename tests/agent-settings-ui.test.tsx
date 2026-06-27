@@ -99,6 +99,8 @@ describe('M5 custom Agent settings UI', () => {
     fireEvent.change(screen.getByRole('combobox', { name: '默认入口' }), { target: { value: 'workflowEvent' } })
     fireEvent.click(screen.getByRole('checkbox', { name: '触发后自动运行' }))
     fireEvent.click(screen.getByRole('checkbox', { name: '画布写入' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '文件读取' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '网络访问' }))
     fireEvent.click(screen.getByRole('checkbox', { name: '供应商消费' }))
     fireEvent.click(screen.getByRole('checkbox', { name: '破坏性操作前需确认' }))
     fireEvent.change(screen.getByRole('spinbutton', { name: '最大轮次' }), { target: { value: '7' } })
@@ -115,7 +117,7 @@ describe('M5 custom Agent settings UI', () => {
         instructions: 'Plan text-image-video panels.',
         allowedTools: ['canvas.queryGraph'],
         allowedSkills: ['storyboard', 'shot-list'],
-        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'provider.spend'], requireAskForDestructive: false },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'file.read', 'network', 'provider.spend'], requireAskForDestructive: false },
         triggerPolicy: { allowedTriggers: ['manual', 'mention', 'workflowEvent'], defaultTrigger: 'workflowEvent', autoRun: true },
         maxTurns: 7,
         effort: 'medium',

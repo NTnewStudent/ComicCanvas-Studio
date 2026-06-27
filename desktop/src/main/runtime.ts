@@ -12,7 +12,9 @@ import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type Orche
 import { createGatewayAgentPlanner } from './agent/gateway-loop-model'
 import { createAgentRegistry } from './agent/registry'
 import { createIpcCanvasPlanEventBus } from './ipc/canvas-plan-fanout'
+import { createAssetCloudUrlService } from './assets/asset-cloud-url'
 import { createAssetPipeline } from './assets/pipeline'
+import { createWorkflowAssetResolver } from './assets/workflow-asset-resolver'
 import { applyMigrations, openDatabaseAtPath } from './db/migrate'
 import { createAgentRepository } from './db/repositories/agent.repo'
 import { createAgentRunRepository } from './db/repositories/agent-run.repo'
@@ -31,7 +33,7 @@ import { getGatewayModelCatalog, registerGatewayHandlers } from './ipc/gateway.h
 import { registerJobHandlers } from './ipc/job.handler'
 import { registerStyleHandlers } from './ipc/style.handler'
 import { registerToolHandlers } from './ipc/tool.handler'
-import { registerStorageHandlers } from './ipc/storage.handler'
+import { getCurrentStorageConfig, registerStorageHandlers } from './ipc/storage.handler'
 import { createIpcJobEventBus } from './jobs/ipc-fanout'
 import { createJobQueue } from './jobs/queue'
 import { createJobWorker, type JobWorker } from './jobs/worker'
@@ -39,6 +41,8 @@ import { createGatewayConfigReloader } from './providers/gateway-reloader'
 import { createGatewayRegistry } from './providers/registry'
 import { createStubProvider } from './providers/stub.provider'
 import { runImageNodeSmokePath } from './smoke/m1-smoke'
+import { storageFactory } from './storage/storage-factory'
+import { createAssetTools } from './tools/asset'
 import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
 import { createToolRuntime } from './tools/runtime'
 import type { SafeStorageAdapter } from './security/key-vault'
@@ -116,6 +120,12 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   gateways.set('stub-main', createStubProvider({ id: 'stub-main' }))
   const reloader = createGatewayConfigReloader({ registry: gateways })
   const agentRegistry = createAgentRegistry({ agents, clock })
+  const assetCloudUrls = createAssetCloudUrlService({
+    assetRoot: options.assetRoot,
+    assets,
+    getStorageConfig: getCurrentStorageConfig,
+    createStorageProvider: (config) => storageFactory.create(config)
+  })
   const graphStore: CanvasGraphStore = {
     getGraph(workflowId = 'default') {
       return workflows.getLatestVersion(workflowId)?.graph ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
@@ -161,11 +171,17 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     }
   }
   const toolRuntime = createToolRuntime({
-    tools: createCanvasTools({
-      graphStore,
-      queue: autoQueue,
-      clock
-    }),
+    tools: [
+      ...createCanvasTools({
+        graphStore,
+        queue: autoQueue,
+        clock
+      }),
+      ...createAssetTools({
+        assets,
+        cloudUrls: assetCloudUrls
+      })
+    ],
     clock
   })
   const planner = options.planner ?? (options.agentPlannerMode === 'gateway'
@@ -238,6 +254,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     assets,
     graphStore,
     styles,
+    assetUrlResolver: createWorkflowAssetResolver({
+      getStorageConfig: getCurrentStorageConfig,
+      createStorageProvider: (config) => storageFactory.create(config),
+      cloudUrlService: assetCloudUrls
+    }),
     modelCatalog: getGatewayModelCatalog
   })
   registerJobHandlers(options.ipcMain, {

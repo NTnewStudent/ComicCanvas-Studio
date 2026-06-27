@@ -43,7 +43,7 @@ const builtinAgents: AgentDefinition[] = [
       includeKnowledge: false,
       maxContextTokens: 8000
     },
-    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'provider.spend'], requireAskForDestructive: true },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'file.read', 'network', 'provider.spend'], requireAskForDestructive: true },
     triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
     maxTurns: 8,
     effort: 'high',

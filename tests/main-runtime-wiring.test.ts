@@ -129,9 +129,12 @@ describe('main process runtime wiring', () => {
           'canvas.runNode',
           'asset.get',
           'gateway.list',
-          'job.get'
+          'job.get',
+          'tool.list'
         ])
       )
+      const toolList = await handlers.get('tool.list')?.({}, {}) as Array<{ id: string }>
+      expect(toolList.map((tool) => tool.id)).toContain('asset.ensureCloudUrl')
 
       const chatTicket = await handlers.get('canvas.chatSend')?.({}, { message: '生成一个图片节点，内容是：宇宙飞船', agentId: 'orchestrator' })
       expect(chatTicket).toMatchObject({ jobId: 'job-1', status: 'pending' })
