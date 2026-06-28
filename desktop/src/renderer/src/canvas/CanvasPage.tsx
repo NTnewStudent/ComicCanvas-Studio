@@ -2268,7 +2268,6 @@ function CanvasPageInner(): JSX.Element {
         <CanvasChatBox
           open={showChatBox}
           onToggle={() => setShowChatBox((v) => !v)}
-          agentEnabled={false}
           onApplyPlan={handleApplyPlan}
         />
       </div>
