@@ -74,6 +74,7 @@ Generated from current `createCanvasTools` descriptors.
 | `canvas.layoutSelection` | Apply deterministic grid layout to selected nodes. | `canvas.layoutSelection.input` | `canvas.layoutSelection.output` | serial-write | `canvas.write` |
 | `canvas.deleteNode` | Delete one node and incident edges. | `canvas.deleteNode.input` | `canvas.deleteNode.output` | serial-write | `destructive`, `canvas.write` |
 | `canvas.runNode` | Enqueue the node's shared run action and return a job ticket. | `canvas.runNode.input` | `canvas.runNode.output` | serial-write | `provider.spend` |
+| `asset.ensureCloudUrl` | Upload a local asset to configured COS/S3-compatible storage when needed, or refresh an existing cloud URL. | `asset.ensureCloudUrl.input` | `asset.ensureCloudUrl.output` | readonly-or-upload | `file.read`, `network` |
 
 ### Schema Notes
 
@@ -83,11 +84,22 @@ Generated from current `createCanvasTools` descriptors.
   duplicate edges with `ToolError.code = "invalid_edge"`.
 - `canvas.runNode` rejects unavailable node definitions before enqueueing.
   MJ is unavailable in local Phase A.
+- `canvas.runNode` dispatches generation config nodes by node type:
+  `imageConfigV2` enqueues `canvas.generateImage`, while `videoConfigV2`
+  enqueues `canvas.generateVideo`.
+- `canvas.runNode` resolves reference assets through the workflow asset
+  resolver before enqueue. For video jobs, first-frame, last-frame, and
+  reference image inputs SHALL be provider-readable cloud URLs when storage is
+  configured, with local safe URL fallback only when cloud storage is absent or
+  rejected by the host guard.
 - `canvas.runNode` may return retryable `job_enqueue_failed` if the durable
   queue cannot persist the job.
 - Graph save/load/version/import/export, snippets, workflows, styles, jobs,
   assets, and media edit/drop flows are currently IPC/service-backed
   equivalents documented in `docs/api-contracts/tools-plugins.md`.
+- `asset.ensureCloudUrl` returns `{ assetId, url, source, action, s3Key? }`.
+  When no storage provider is configured it returns the local safe URL with
+  `source = "local"` and `action = "local_fallback"`.
 
 ### Permission Model
 
@@ -96,8 +108,10 @@ Generated from current `createCanvasTools` descriptors.
 - `destructive`: delete graph items; current built-in cleanup tools allow this
   for orchestrator graph edits, while future user-facing Agents may ask.
 - `provider.spend`: enqueue gateway/provider-backed work.
+- `file.read`: read app-controlled asset bytes for cloud upload.
 - `file.write`: reserved for future file/media export tools; current Phase A
   Canvas tools do not require it.
+- `network`: call configured storage/provider endpoints.
 - Sub-agent effective tools must be a subset of the parent Agent's tools.
 
 ### Unsupported Or Manual-Only Actions
