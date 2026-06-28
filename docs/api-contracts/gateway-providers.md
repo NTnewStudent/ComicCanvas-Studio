@@ -141,6 +141,42 @@ Rules:
 - Responses SHALL include capability flags for UI and Agent planning, and SHALL NOT include `keyRef`, plaintext secrets, auth headers, or disabled gateway models.
 - Canvas graph validation MAY consume the current catalog `availableModelIds` so stale model IDs become lenient save warnings and strict run errors.
 
+### `gateway.fetchModels`
+
+Request:
+
+```ts
+interface GatewayFetchModelsRequest {
+  gatewayId?: string
+  baseUrl?: string
+  auth?: GatewayAuthInput
+}
+```
+
+Response:
+
+```ts
+interface GatewayFetchModelsResponse {
+  gatewayId?: string
+  models: Array<{
+    id: string
+    ownedBy?: string
+    created?: number
+  }>
+}
+```
+
+Rules:
+
+- `gateway.fetchModels` SHALL call the OpenAI-compatible `GET /models`
+  endpoint derived from the form or saved gateway `baseUrl`.
+- Responses SHALL normalize OpenAI-compatible `data[].id`, `owned_by`, and
+  `created` fields into renderer-safe model records sorted by model ID.
+- Duplicate model IDs SHALL be collapsed before returning to the renderer.
+- The renderer MAY let users drag fetched model IDs into text, image, and video
+  channel slots; saved output remains the existing `GatewayModelMap` contract.
+- Responses SHALL NOT include plaintext secrets, auth headers, or key refs.
+
 ## Errors
 
 | Error class | Meaning |

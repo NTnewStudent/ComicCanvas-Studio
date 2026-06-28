@@ -27,6 +27,7 @@ export interface ComicCanvasApi {
   testGateway(input: IpcRequestMap['gateway.test']): Promise<IpcResponseMap['gateway.test']>
   reloadGateways(input: IpcRequestMap['gateway.reload']): Promise<IpcResponseMap['gateway.reload']>
   listGatewayModels(input?: IpcRequestMap['gateway.models']): Promise<IpcResponseMap['gateway.models']>
+  fetchGatewayModels(input: IpcRequestMap['gateway.fetchModels']): Promise<IpcResponseMap['gateway.fetchModels']>
   listStyles(input?: IpcRequestMap['style.list']): Promise<IpcResponseMap['style.list']>
   saveStyle(input: IpcRequestMap['style.save']): Promise<IpcResponseMap['style.save']>
   deleteStyle(input: IpcRequestMap['style.delete']): Promise<IpcResponseMap['style.delete']>
@@ -111,6 +112,7 @@ function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, reques
 function invokeMain<TChannel extends 'gateway.test'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.models'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'gateway.fetchModels'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -325,6 +327,14 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/gateway-providers.md
    */
   listGatewayModels: (input = {}) => invokeMain('gateway.models', input),
+  /**
+   * Fetches model IDs from an OpenAI-compatible gateway `/models` endpoint.
+   * @param input - Existing gateway or form-level base URL/auth data.
+   * @returns Renderer-safe fetched model records.
+   * @throws Error when the main process rejects the model fetch request.
+   * @see docs/api-contracts/gateway-providers.md
+   */
+  fetchGatewayModels: (input) => invokeMain('gateway.fetchModels', input),
   /**
    * Lists style presets visible to renderer style selectors.
    * @param input - Optional disabled preset inclusion flag.

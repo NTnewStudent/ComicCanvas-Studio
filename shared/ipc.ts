@@ -30,7 +30,7 @@ import type {
   AssetTrashRequest,
   AssetTrashResponse
 } from './assets'
-import type { GatewayConfigInput, GatewayConfigView } from './gateway'
+import type { GatewayConfigInput, GatewayConfigView, GatewayFetchModelsRequest, GatewayFetchModelsResponse } from './gateway'
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
 import type { CanvasPlan, PlanRunStep } from './plan'
 import type { AgentDefinition, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
@@ -98,6 +98,7 @@ export type GatewayIpcChannel =
   | 'gateway.test'
   | 'gateway.reload'
   | 'gateway.models'
+  | 'gateway.fetchModels'
   | 'gateway.changed'
 
 export type StyleIpcChannel =
@@ -373,6 +374,7 @@ export interface IpcRequestMap {
   'gateway.test': { gatewayId: string; channel: 'text' | 'image' | 'video' }
   'gateway.reload': { gatewayId?: string }
   'gateway.models': Record<string, never>
+  'gateway.fetchModels': GatewayFetchModelsRequest
   'style.list': { includeDisabled?: boolean }
   'style.save': StylePresetSaveInput
   'style.delete': { stylePresetId: string }
@@ -454,6 +456,7 @@ export interface IpcResponseMap {
   'gateway.test': JobTicket
   'gateway.reload': { reloadedGatewayIds: string[] }
   'gateway.models': WorkflowModelCatalog
+  'gateway.fetchModels': GatewayFetchModelsResponse
   'style.list': StylePresetView[]
   'style.save': StylePresetView
   'style.delete': { stylePresetId: string; deleted: true }

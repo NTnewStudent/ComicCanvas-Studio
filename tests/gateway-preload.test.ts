@@ -13,6 +13,8 @@ describe('M3 gateway preload bridge', () => {
     expect(source).toContain("invokeMain('gateway.test'")
     expect(source).toContain('reloadGateways')
     expect(source).toContain("invokeMain('gateway.reload'")
+    expect(source).toContain('fetchGatewayModels')
+    expect(source).toContain("invokeMain('gateway.fetchModels'")
     expect(source).toContain('sendCanvasChat')
     expect(source).toContain("invokeMain('canvas.chatSend'")
     expect(source).toContain('getCanvasPlan')

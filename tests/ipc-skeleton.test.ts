@@ -103,6 +103,7 @@ describe('M1 IPC skeleton', () => {
       'canvasSnippet.list',
       'canvasSnippet.save',
       'gateway.delete',
+      'gateway.fetchModels',
       'gateway.list',
       'gateway.models',
       'gateway.reload',

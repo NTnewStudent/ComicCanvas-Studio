@@ -50,6 +50,13 @@ function createApi(overrides: Partial<GatewaySettingsApi> = {}): GatewaySettings
     ),
     deleteGateway: vi.fn().mockResolvedValue({ gatewayId: 'gw-video', deleted: true }),
     testGateway: vi.fn().mockResolvedValue({ jobId: 'job-gateway-gw-openai', status: 'pending', createdAt: 1 }),
+    fetchGatewayModels: vi.fn().mockResolvedValue({
+      models: [
+        { id: 'gpt-4.1-mini' },
+        { id: 'gpt-image-1' },
+        { id: 'wan-video-1' },
+      ],
+    }),
     ...overrides
   }
 }
@@ -160,6 +167,52 @@ describe('M3 Gateway settings UI', () => {
       capabilities: ['text', 'image'],
       modelMap: { text: 'gpt-4.1-mini', image: 'gpt-image-2' },
       enabled: true
+    })
+  })
+
+  it('fetches OpenAI-compatible models and drag-routes one into a channel', async () => {
+    const onSubmit = vi.fn()
+    const fetchModels = vi.fn().mockResolvedValue({
+      models: [
+        { id: 'gpt-4.1-mini' },
+        { id: 'gpt-image-1' },
+        { id: 'wan-video-1' },
+      ],
+    })
+
+    render(<GatewayForm onSubmit={onSubmit} onCancel={vi.fn()} fetchModels={fetchModels} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: '网关名称' }), { target: { value: '统一网关' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '基础 URL' }), { target: { value: 'https://api.openai.example/v1' } })
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'sk-test' } })
+    fireEvent.click(screen.getByRole('button', { name: '获取模型列表' }))
+
+    await screen.findByText('已获取 3 个模型，拖到下方分类即可。')
+    const dataTransfer = {
+      data: '',
+      setData(_type: string, value: string) {
+        this.data = value
+      },
+      getData() {
+        return this.data
+      },
+    }
+    fireEvent.dragStart(screen.getByRole('button', { name: '模型 wan-video-1' }), { dataTransfer })
+    fireEvent.drop(screen.getByRole('textbox', { name: '视频模型键' }).previousElementSibling as HTMLElement, { dataTransfer })
+    fireEvent.click(screen.getByRole('button', { name: '保存网关' }))
+
+    expect(fetchModels).toHaveBeenCalledWith({
+      baseUrl: 'https://api.openai.example/v1',
+      auth: { mode: 'apiKey', secret: 'sk-test' },
+    })
+    expect(onSubmit).toHaveBeenCalledWith({
+      name: '统一网关',
+      type: 'openai_compat',
+      baseUrl: 'https://api.openai.example/v1',
+      auth: { mode: 'apiKey', secret: 'sk-test' },
+      capabilities: ['text', 'image', 'video'],
+      modelMap: { video: 'wan-video-1' },
+      enabled: true,
     })
   })
 })

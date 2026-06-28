@@ -3,7 +3,7 @@
  * @see docs/api-contracts/gateway-providers.md
  */
 
-import type { GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayType } from '../../../../shared/gateway'
+import type { GatewayAuthInput, GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayFetchedModel, GatewayFetchModelsRequest, GatewayType } from '../../../../shared/gateway'
 import type { IpcResponseMap } from '../../../../shared/ipc'
 import type { JobTicket } from '../../../../shared/jobs'
 import { buildModelCatalog } from '../../../../shared/workflow-node-definitions'
@@ -105,6 +105,78 @@ function reloadGateways(reloader: GatewayReloader | undefined, gatewayId?: strin
   return reloader.reload(configs)
 }
 
+function modelsEndpoint(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/u, '')}/models`
+}
+
+function apiKeyFromAuth(auth: GatewayAuthInput | undefined): string | null {
+  return auth?.mode === 'apiKey' && auth.secret.trim().length > 0 ? auth.secret.trim() : null
+}
+
+function readModelRecord(value: unknown): GatewayFetchedModel | null {
+  if (typeof value !== 'object' || value === null || !('id' in value) || typeof value.id !== 'string' || value.id.trim().length === 0) {
+    return null
+  }
+
+  const record = value as Record<string, unknown>
+  const id = value.id.trim()
+  const model: GatewayFetchedModel = { id }
+  if (typeof record.owned_by === 'string' && record.owned_by.length > 0) model.ownedBy = record.owned_by
+  if (typeof record.ownedBy === 'string' && record.ownedBy.length > 0) model.ownedBy = record.ownedBy
+  if (typeof record.created === 'number') model.created = record.created
+  return model
+}
+
+function parseModelsResponse(body: unknown): GatewayFetchedModel[] {
+  const data = typeof body === 'object' && body !== null && 'data' in body ? (body as { data?: unknown }).data : body
+  if (!Array.isArray(data)) {
+    return []
+  }
+
+  const models = data.map(readModelRecord).filter((item): item is GatewayFetchedModel => item !== null)
+  const unique = new Map<string, GatewayFetchedModel>()
+  for (const model of models) {
+    if (!unique.has(model.id)) {
+      unique.set(model.id, model)
+    }
+  }
+
+  return Array.from(unique.values()).sort((left, right) => left.id.localeCompare(right.id))
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
+async function fetchGatewayModels(request: GatewayFetchModelsRequest): Promise<IpcResponseMap['gateway.fetchModels']> {
+  const saved = request.gatewayId ? gatewayConfigs.get(request.gatewayId) : undefined
+  const baseUrl = request.baseUrl?.trim() || saved?.baseUrl
+  if (!baseUrl) {
+    throw new Error('gateway_base_url_required')
+  }
+
+  const apiKey = apiKeyFromAuth(request.auth)
+  const headers: Record<string, string> = {}
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`
+  }
+
+  const response = await fetch(modelsEndpoint(baseUrl), { headers })
+  const body = await readJson(response)
+  if (!response.ok) {
+    throw new Error(`gateway_models_request_failed:${response.status}`)
+  }
+
+  return {
+    ...(saved ? { gatewayId: saved.id } : {}),
+    models: parseModelsResponse(body)
+  }
+}
+
 /**
  * Registers gateway invoke handlers.
  * @param ipcMain - Electron-compatible IPC registrar.
@@ -142,6 +214,7 @@ export function registerGatewayHandlers(ipcMain: IpcRegistrar, options: GatewayH
     return reloadGateways(options.reloader, gatewayId)
   })
   ipcMain.handle('gateway.models', () => buildModelCatalog(Array.from(gatewayConfigs.values())))
+  ipcMain.handle('gateway.fetchModels', (_event, request) => fetchGatewayModels(request as GatewayFetchModelsRequest))
 }
 
 /**

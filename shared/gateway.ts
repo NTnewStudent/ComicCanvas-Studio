@@ -44,6 +44,34 @@ export interface GatewayConfigInput {
   enabled: boolean
 }
 
+/** Request used by settings UI to fetch OpenAI-compatible model IDs. */
+export interface GatewayFetchModelsRequest {
+  /** Existing gateway ID whose saved base URL should be used when `baseUrl` is omitted. */
+  gatewayId?: string
+  /** OpenAI-compatible base URL, usually ending in `/v1`. */
+  baseUrl?: string
+  /** Optional auth material supplied by the settings form. */
+  auth?: GatewayAuthInput
+}
+
+/** Renderer-safe model list fetched from a gateway's OpenAI-compatible `/models` endpoint. */
+export interface GatewayFetchedModel {
+  /** Provider model identifier, for example `gpt-4.1-mini`. */
+  id: string
+  /** Optional provider owner metadata from OpenAI-compatible responses. */
+  ownedBy?: string
+  /** Optional provider creation timestamp from OpenAI-compatible responses. */
+  created?: number
+}
+
+/** Response returned by `gateway.fetchModels`. */
+export interface GatewayFetchModelsResponse {
+  /** Existing gateway ID when the request targeted a saved gateway. */
+  gatewayId?: string
+  /** Sorted unique model records safe for renderer display. */
+  models: GatewayFetchedModel[]
+}
+
 export interface GatewayReference extends AssetRef {
   role?: 'reference' | 'first_frame' | 'last_frame' | 'style'
   /** Cloud URL (set when asset was imported/uploaded to S3; fallback to local safeUrl when no cloud) */
