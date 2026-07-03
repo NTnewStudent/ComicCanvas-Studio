@@ -4,12 +4,13 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { AtSign, Bot, Loader2, Send } from 'lucide-react'
+import { AtSign, Bot, Loader2, Send, Square, Trash2 } from 'lucide-react'
 
-import type { AgentDefinition } from '../../../../../shared/agents'
+import type { AgentDefinition, AgentResponse } from '../../../../../shared/agents'
 import type { IpcEventMap, IpcRequestMap, IpcResponseMap } from '../../../../../shared/ipc'
 import type { CanvasPlan } from '../../../../../shared/plan'
 import { cn } from '../lib/cn'
+import { formatAgentTraceSummary } from './agent-trace-summary'
 import { AgentMentionPopover } from './AgentMentionPopover'
 import { PlanCard, type ApplyPlanOptions } from './PlanCard'
 import { useMentionTrigger } from './useMentionTrigger'
@@ -21,8 +22,16 @@ export interface ChatPanelApi {
   getCanvasPlan: (input: IpcRequestMap['canvas.chatGetPlan']) => Promise<IpcResponseMap['canvas.chatGetPlan']>
   /** @see docs/api-contracts/agents.md */
   listAgents: () => Promise<IpcResponseMap['agent.list']>
+  /** @see docs/api-contracts/agents.md */
+  getAgentRun: (input: IpcRequestMap['agent.getRun']) => Promise<IpcResponseMap['agent.getRun']>
   /** @see docs/api-contracts/canvas-plan.md */
   onCanvasPlanReady: (handler: (event: IpcEventMap['canvas.planReady']) => void) => () => void
+  /** @see docs/api-contracts/agents.md */
+  onAgentResponseReady: (handler: (event: IpcEventMap['agent.responseReady']) => void) => () => void
+  /** @see docs/api-contracts/agents.md — streaming token deltas */
+  onAgentDelta?: (handler: (event: IpcEventMap['agent.delta']) => void) => () => void
+  /** @see docs/api-contracts/jobs.md */
+  onJobProgress?: (handler: (event: IpcEventMap['job.progress']) => void) => () => void
 }
 
 export interface ChatPanelProps {
@@ -36,7 +45,24 @@ interface ChatMessage {
   content: string
 }
 
-const DEFAULT_AGENT_ID = 'orchestrator'
+const DEFAULT_AGENT_ID = 'general-purpose'
+
+/**
+ * Converts a terminal non-plan Agent response into transcript text.
+ * @param response - Agent response emitted by the v2 harness.
+ * @returns Assistant message text, or null for CanvasPlan responses.
+ */
+function agentResponseMessage(response: AgentResponse): string | null {
+  if (response.type === 'answer') {
+    return response.text
+  }
+
+  if (response.type === 'clarification') {
+    return response.question
+  }
+
+  return null
+}
 
 /**
  * Finds the first enabled orchestrator-compatible agent.
@@ -82,7 +108,12 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
   const [busy, setBusy] = useState(false)
   const [plan, setPlan] = useState<CanvasPlan | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [thinking, setThinking] = useState<string[]>([])
+  /** Partial model output accumulating while the model streams. Cleared on final responseReady. */
+  const [streamingText, setStreamingText] = useState<string>('')
   const pendingMessageIdRef = useRef<string | null>(null)
+  const pendingJobIdRef = useRef<string | null>(null)
+  const transcriptRef = useRef<HTMLDivElement>(null)
   const mentionTrigger = useMentionTrigger(input, caretIndex)
   const filteredAgents = useMemo(() => {
     const query = mentionTrigger?.query.toLowerCase() ?? ''
@@ -150,7 +181,7 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
             {
               id: `assistant-${event.planId}`,
               role: 'assistant',
-              content: nextPlan.kind === 'clarify' ? '需要澄清。' : `计划已就绪：${event.planId}`
+              content: nextPlan.kind === 'clarify' ? (nextPlan.question ?? '需要更多信息。') : `计划已就绪：${event.planId}`
             }
           ])
         })
@@ -160,17 +191,78 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
         })
         .finally(() => {
           setBusy(false)
+          setPendingMessageId(null)
+          pendingJobIdRef.current = null
         })
     })
   }, [api])
 
+  useEffect(() => {
+    return api.onAgentResponseReady((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) {
+        return
+      }
+
+      const assistantText = agentResponseMessage(event.response)
+      if (!assistantText) {
+        return
+      }
+
+      setStreamingText('')
+      setMessages((items) => [
+        ...items,
+        {
+          id: `assistant-${event.runId}`,
+          role: 'assistant',
+          content: assistantText
+        }
+      ])
+      setBusy(false)
+      setPendingMessageId(null)
+      pendingJobIdRef.current = null
+    })
+  }, [api])
+
+  // Accumulate streaming token deltas into a live partial-text display.
+  useEffect(() => {
+    if (!api.onAgentDelta) return undefined
+
+    return api.onAgentDelta((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) {
+        return
+      }
+      setStreamingText((prev) => prev + event.delta)
+    })
+  }, [api])
+
+  useEffect(() => {
+    if (!api.onJobProgress) return undefined
+
+    return api.onJobProgress((event) => {
+      if (!pendingJobIdRef.current || event.jobId !== pendingJobIdRef.current || !event.message) {
+        return
+      }
+
+      const progressMessage = event.message
+      setThinking((items) => (items.includes(progressMessage) ? items : [...items, progressMessage]))
+    })
+  }, [api])
+
+  // Keep the newest turn visible as the transcript grows.
+  useEffect(() => {
+    const element = transcriptRef.current
+    if (element) {
+      element.scrollTop = element.scrollHeight
+    }
+  }, [messages, thinking, busy])
+
   const statusText = useMemo(() => {
     if (busy && pendingMessageId) {
-      return '等待计划中...'
+      return '等待 Agent 回复...'
     }
 
     if (pendingMessageId && !plan) {
-      return '计划已排队'
+      return 'Agent 已排队'
     }
 
     if (plan) {
@@ -202,12 +294,26 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
 
     setBusy(true)
     setPlan(null)
+    setThinking([])
+    setStreamingText('')
     setMessages((items) => [...items, { id: `user-${Date.now()}`, role: 'user', content: message }])
 
     api.sendCanvasChat({ message, agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID })
       .then((ticket) => {
         setPendingMessageId(ticket.messageId)
-        setMessages((items) => [...items, { id: `assistant-${ticket.jobId}`, role: 'assistant', content: `计划已排队：${ticket.jobId}` }])
+        pendingJobIdRef.current = ticket.jobId
+        setThinking((items) => [...items, `Agent 已排队：${ticket.jobId}`])
+        void api.getAgentRun({ runId: ticket.runId })
+          .then((run) => {
+            const lines = formatAgentTraceSummary(run.trace)
+            if (lines.length === 0) return
+
+            setThinking((items) => {
+              const existing = new Set(items)
+              const next = lines.filter((line) => !existing.has(line))
+              return next.length > 0 ? [...items, ...next] : items
+            })
+          })
         setInput('')
         setCaretIndex(0)
       })
@@ -218,6 +324,21 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
       .finally(() => {
         setBusy(false)
       })
+  }
+
+  function stopRun(): void {
+    setThinking((items) => [...items, '已停止等待当前回复。'])
+    setBusy(false)
+    setPendingMessageId(null)
+    pendingMessageIdRef.current = null
+    pendingJobIdRef.current = null
+  }
+
+  function clearConversation(): void {
+    setMessages([])
+    setThinking([])
+    setPlan(null)
+    stopRun()
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -265,28 +386,40 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
             <p className="mt-1 text-[13px] text-text-secondary">{statusText}</p>
           </div>
         </div>
-        <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] text-text-secondary">
-          <input
-            type="checkbox"
-            role="switch"
-            aria-label="自动执行计划运行步骤"
-            checked={autoExecute}
-            onChange={(event) => setAutoExecute(event.currentTarget.checked)}
-            className="h-4 w-4 accent-brand"
-          />
-          自动执行
-        </label>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            aria-label="清空对话"
+            onClick={clearConversation}
+            disabled={messages.length === 0 && thinking.length === 0 && !plan}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border-secondary px-2.5 py-1 text-[12px] text-text-secondary transition-colors hover:text-text-base disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            清空
+          </button>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-[13px] text-text-secondary">
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="自动执行计划运行步骤"
+              checked={autoExecute}
+              onChange={(event) => setAutoExecute(event.currentTarget.checked)}
+              className="h-4 w-4 accent-brand"
+            />
+            自动执行
+          </label>
+        </div>
       </div>
 
-      <div className="mt-4 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-border-secondary bg-bg-input p-3">
-        {messages.length === 0 ? (
-          <p className="m-0 text-[13px] text-text-muted">让内置 Agent 起草文本、图片和视频节点。</p>
+      <div ref={transcriptRef} className="mt-4 max-h-72 space-y-2 overflow-y-auto rounded-lg border border-border-secondary bg-bg-input p-3">
+        {messages.length === 0 && thinking.length === 0 ? (
+          <p className="m-0 text-[13px] text-text-muted">让内置 Agent 起草文本、图片和视频节点，或直接提问、读取与检索项目文件。</p>
         ) : (
           messages.map((message) => (
             <p
               key={message.id}
               className={cn(
-                'm-0 rounded-lg px-3 py-2 text-[13px] leading-relaxed',
+                'm-0 rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap',
                 message.role === 'user' ? 'bg-brand/15 text-text-base' : 'bg-bg-card text-text-secondary'
               )}
             >
@@ -294,13 +427,36 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
             </p>
           ))
         )}
+
+        {thinking.length > 0 && (
+          <details className="rounded-lg border border-border-secondary bg-bg-card/60 px-3 py-2 text-[12px] text-text-muted">
+            <summary className="cursor-pointer select-none text-text-secondary">思考过程（{thinking.length}）</summary>
+            <div className="mt-2 space-y-1">
+              {thinking.map((line, index) => (
+                <p key={`think-${index}`} className="m-0 font-mono leading-relaxed">
+                  {line}
+                </p>
+              ))}
+            </div>
+          </details>
+        )}
+
+        {/* Live streaming partial text — hidden once responseReady fires */}
+        {streamingText.length > 0 && (
+          <div className="flex justify-start">
+            <div className={cn('max-w-[85%] rounded-lg px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words bg-bg-card text-text-base')}>
+              {streamingText}
+              <span className="ml-1 inline-block h-3.5 w-0.5 animate-pulse bg-brand" aria-hidden="true" />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 rounded-lg border border-border-input bg-bg-input p-3">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-pill border border-border-input bg-bg-card px-2.5 py-1 text-[12px] font-medium text-text-secondary">
             <AtSign className="h-3 w-3 text-brand" aria-hidden="true" />
-            {selectedAgent ? selectedAgent.name : 'Orchestrator'}
+            {selectedAgent ? selectedAgent.name : 'General Purpose'}
           </span>
         </div>
         <div className="relative">
@@ -331,19 +487,32 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
         </div>
         <div className="mt-3 flex items-center justify-between gap-3">
           <p className="m-0 text-[12px] text-text-muted">Enter 发送。Shift+Enter 换行。</p>
-          <button
-            type="button"
-            aria-label="发送画布消息"
-            disabled={!canSend}
-            onClick={sendMessage}
-            className={cn(
-              'inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base',
-              'transition-transform duration-200 ease-luxury hover:bg-brand-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50'
+          <div className="flex items-center gap-2">
+            {busy && (
+              <button
+                type="button"
+                aria-label="停止 Agent"
+                onClick={stopRun}
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-secondary px-3 text-[13px] font-semibold text-text-secondary transition-colors hover:text-text-base"
+              >
+                <Square className="h-4 w-4" aria-hidden="true" />
+                停止
+              </button>
             )}
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
-            发送
-          </button>
+            <button
+              type="button"
+              aria-label="发送画布消息"
+              disabled={!canSend}
+              onClick={sendMessage}
+              className={cn(
+                'inline-flex h-9 items-center gap-2 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base',
+                'transition-transform duration-200 ease-luxury hover:bg-brand-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50'
+              )}
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+              发送
+            </button>
+          </div>
         </div>
       </div>
 

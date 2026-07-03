@@ -3,14 +3,31 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
+import type { AgentNonCanvasResponse } from '../../../../shared/agents'
+
 export interface CanvasPlanReadyEvent {
   messageId: string
   planId: string
 }
 
+export interface AgentResponseReadyEvent {
+  runId: string
+  messageId: string
+  response: AgentNonCanvasResponse
+}
+
+export interface AgentDeltaEvent {
+  runId: string
+  messageId: string
+  delta: string
+}
+
 export interface CanvasPlanEventBus {
   emitPlanReady(event: CanvasPlanReadyEvent): void
+  emitResponseReady(event: AgentResponseReadyEvent): void
+  emitDelta(event: AgentDeltaEvent): void
   getPlanReadyEvents(): CanvasPlanReadyEvent[]
+  getResponseReadyEvents(): AgentResponseReadyEvent[]
 }
 
 /**
@@ -21,6 +38,7 @@ export interface CanvasPlanEventBus {
  */
 export function createCanvasPlanEventBus(): CanvasPlanEventBus {
   const readyByMessage = new Map<string, CanvasPlanReadyEvent>()
+  const responseByMessage = new Map<string, AgentResponseReadyEvent>()
 
   return {
     emitPlanReady(event) {
@@ -31,8 +49,21 @@ export function createCanvasPlanEventBus(): CanvasPlanEventBus {
 
       readyByMessage.set(event.messageId, event)
     },
+    emitResponseReady(event) {
+      if (responseByMessage.has(event.messageId)) {
+        throw new Error('agent_response_ready_duplicate')
+      }
+      responseByMessage.set(event.messageId, event)
+    },
+    emitDelta(event: AgentDeltaEvent): void {
+      // In-memory bus: no storage needed for deltas (they are fire-and-forget tokens).
+      void event
+    },
     getPlanReadyEvents() {
       return Array.from(readyByMessage.values())
+    },
+    getResponseReadyEvents() {
+      return Array.from(responseByMessage.values())
     }
   }
 }

@@ -43,4 +43,11 @@ describe('M1 Electron skeleton', () => {
     expect(mainSource).toContain("window.webContents.once('did-finish-load'")
     expect(mainSource).toContain('window.show()')
   })
+
+  it('uses port 5175 as the renderer dev-server default while still allowing PORT overrides', () => {
+    const viteConfig = readFileSync('desktop/electron.vite.config.ts', 'utf8')
+
+    expect(viteConfig).toContain('port: Number(process.env.PORT ?? 5175)')
+    expect(viteConfig).not.toContain('port: Number(process.env.PORT ?? 5173)')
+  })
 })

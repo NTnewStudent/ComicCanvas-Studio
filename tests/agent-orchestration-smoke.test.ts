@@ -130,7 +130,7 @@ describe('M4 agent orchestration smoke path', () => {
       })
 
       const ticket = runtime.chatSend({ message: '生成一个图片节点，内容是：宇宙飞船', agentId: 'orchestrator', requestedBy: 'user-1' })
-      expect(ticket).toEqual({ jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
+      expect(ticket).toEqual({ runId: 'run-1', jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
       expect(JSON.stringify(ticket)).not.toMatch(/asset|bytes|cc-asset|[A-Za-z]:\\\\/u)
       expect(runtime.getPlan('message-1')).toBeNull()
 

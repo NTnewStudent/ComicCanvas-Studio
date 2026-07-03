@@ -34,6 +34,8 @@ import { getCurrentStorageConfig } from './storage.handler'
 import { storageFactory } from '../storage/storage-factory'
 import type { WorkflowModelCatalog } from '../../../../shared/workflow-node-definitions'
 
+const DEFAULT_CHAT_AGENT_ID = 'general-purpose'
+
 function createPendingTicket(jobId: string): JobTicket {
   return {
     jobId,
@@ -590,12 +592,12 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     const agentId = isObject(request) && typeof request.agentId === 'string' ? request.agentId : undefined
 
     if (!dependencies.orchestrator) {
-      return { jobId: 'job-agent-unavailable', messageId: 'message-unavailable', status: 'pending' as const }
+      return { runId: 'run-agent-unavailable', jobId: 'job-agent-unavailable', messageId: 'message-unavailable', status: 'pending' as const }
     }
 
     return dependencies.orchestrator.chatSend({
       message,
-      ...(agentId ? { agentId } : {}),
+      agentId: agentId ?? DEFAULT_CHAT_AGENT_ID,
       requestedBy: dependencies.currentUserId ?? 'user-local'
     })
   })

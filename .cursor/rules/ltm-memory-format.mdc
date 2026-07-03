@@ -1,0 +1,21 @@
+---
+description: LTM 历史记录格式与密钥红化规则（ltm/ 目录）
+globs: ltm/**
+alwaysApply: false
+---
+
+## LTM record formats
+
+> 当前项目已停用 LTM。本规则仅供阅读 `ltm/` 历史文件时参考。
+
+### events.jsonl
+
+Each line: `{"id": "evt_NNNNNN", "ts": "ISO-8601", "type": "file_write|checkpoint|manual_note", ...}`
+
+### checkpoints.jsonl
+
+Each line: `{"id": "chk_NNNNNN", "ts": "ISO-8601", "summary": "text", "changed_files": [], ...}`
+
+### Secret redaction
+
+Check for: `sk_live_`, `sk_test_`, `AKIA`, `ghp_`, `gho_`, `-----BEGIN`, `Bearer`, base64 strings 40+ chars. Replace with `[REDACTED]`.

@@ -1,0 +1,44 @@
+import { jsx as _jsx } from "react/jsx-runtime";
+// @vitest-environment jsdom
+import '@testing-library/jest-dom/vitest';
+import { ReactFlowProvider } from '@xyflow/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AudioNode } from '../desktop/src/renderer/src/canvas/nodes/AudioNode';
+function renderInFlow(element) {
+    render(_jsx(ReactFlowProvider, { children: element }));
+}
+afterEach(() => {
+    vi.restoreAllMocks();
+    cleanup();
+});
+describe('Task 33 audio node parity', () => {
+    it('supports import/playback, duration display, mux input, and reference semantics', () => {
+        const onChange = vi.fn();
+        const onImport = vi.fn();
+        const onViewAsset = vi.fn();
+        renderInFlow(_jsx(AudioNode, { id: "audio-1", selected: true, data: {
+                label: 'Theme',
+                assetId: 'asset-audio',
+                url: 'cc-asset://asset/asset-audio',
+                durationSeconds: 42,
+                status: 'idle',
+                referenceRole: 'music'
+            }, onChange: onChange, onImport: onImport, onViewAsset: onViewAsset }));
+        expect(screen.getByRole('group', { name: '音频节点 Theme' })).toBeInTheDocument();
+        expect(screen.getByTestId('audio-node-player')).toHaveAttribute('src', 'cc-asset://asset/asset-audio');
+        expect(screen.getByText('42s')).toBeInTheDocument();
+        expect(screen.getByText('Mux 输入')).toBeInTheDocument();
+        expect(screen.getByText('音频引用：音乐')).toBeInTheDocument();
+        fireEvent.change(screen.getByRole('textbox', { name: '音频名称' }), { target: { value: 'Narration' } });
+        fireEvent.change(screen.getByRole('combobox', { name: '音频引用语义' }), { target: { value: 'voice' } });
+        fireEvent.change(screen.getByRole('textbox', { name: '音频资产 ID' }), { target: { value: 'asset-voice' } });
+        expect(onChange).toHaveBeenCalledWith('audio-1', { label: 'Narration' });
+        expect(onChange).toHaveBeenCalledWith('audio-1', { referenceRole: 'voice' });
+        expect(onChange).toHaveBeenCalledWith('audio-1', { assetId: 'asset-voice' });
+        fireEvent.click(screen.getByRole('button', { name: '导入音频资产' }));
+        fireEvent.click(screen.getByRole('button', { name: '查看音频资产' }));
+        expect(onImport).toHaveBeenCalledWith('audio-1');
+        expect(onViewAsset).toHaveBeenCalledWith('asset-audio');
+    });
+});

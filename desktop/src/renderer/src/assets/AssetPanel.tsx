@@ -737,7 +737,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
   }
 
   return (
-    <section className="flex h-full flex-col">
+    <section className="flex h-full flex-col bg-bg-base text-text-base">
       {/* ── 顶部筛选栏：胶囊类型标签 + 搜索 + 排序（对齐 hjwall AssetFilterBar） ── */}
       <div className="flex items-center justify-between px-4 py-3">
         {/* 左侧：胶囊类型标签 */}
@@ -1167,7 +1167,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                       }
                       openPreview(asset)
                     }}
-                    className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-xl border border-transparent bg-bg-elevated transition-all duration-200 ease-luxury cc-anim-fade-in-up hover:border-brand/30 hover:shadow-float hover:ring-1 hover:ring-white/20"
+                    className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-all duration-200 ease-luxury cc-anim-fade-in-up hover:border-border-primary hover:bg-bg-hover hover:shadow-float"
                     style={{ animationDelay: `${Math.min(idx, 8) * 40}ms` }}
                   >
                     {batchMode && (
@@ -1182,7 +1182,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                     )}
 
                     {/* 缩略图 */}
-                    <div className="relative z-0 h-full w-full overflow-hidden">
+                    <div className="relative z-0 h-full w-full overflow-hidden bg-bg-input">
                       {asset.mediaType === 'image' ? (
                         <img
                           src={assetDisplayUrl(asset)}
@@ -1190,7 +1190,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                           className="h-full w-full object-contain transition-transform duration-300 ease-luxury group-hover:scale-105"
                         />
                       ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-elevated transition-transform duration-300 ease-luxury group-hover:scale-105">
+                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-input transition-transform duration-300 ease-luxury group-hover:scale-105">
                           <span className="text-4xl">
                             {MEDIA_TYPE_ICONS[asset.mediaType] ?? MEDIA_TYPE_ICONS.other}
                           </span>
@@ -1202,9 +1202,9 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                     </div>
 
                     {/* Hover 遮罩 — 文件名 + 大小（对齐 hjwall AssetCard 底部滑入） */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-full bg-gradient-to-t from-black/80 to-transparent p-3 transition-all duration-300 ease-luxury group-hover:translate-y-0">
-                      <p className="truncate text-xs font-normal text-white">{asset.id}</p>
-                      <p className="text-[12px] text-white/70">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-full border-t border-border-secondary bg-bg-panel/95 p-3 shadow-card backdrop-blur-sm transition-all duration-300 ease-luxury group-hover:translate-y-0">
+                      <p className="truncate text-xs font-medium text-text-base">{asset.id}</p>
+                      <p className="text-[12px] text-text-muted">
                         {formatFileSize(asset.metadata.sizeBytes)}
                       </p>
                     </div>
@@ -1221,7 +1221,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                             void trashAsset(asset)
                           }
                         }}
-                        className="rounded-md bg-black/60 p-1.5 text-semantic-negative transition hover:bg-black/80"
+                        className="rounded-md border border-semantic-negative/40 bg-bg-panel/95 p-1.5 text-semantic-negative shadow-card transition hover:bg-bg-hover"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -1229,7 +1229,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
 
                     {/* 移动下拉（底部，hover 时可见） */}
                     <div className="absolute inset-x-0 bottom-0 z-20 hidden group-hover:block">
-                      <div className="translate-y-full bg-black/70 p-2 transition-all duration-300 ease-luxury group-hover:translate-y-0">
+                      <div className="translate-y-full border-t border-border-secondary bg-bg-panel/95 p-2 shadow-card backdrop-blur-sm transition-all duration-300 ease-luxury group-hover:translate-y-0">
                         <select
                           aria-label={`移动 ${label}`}
                           value={asset.folderId ?? '__root__'}
@@ -1240,7 +1240,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                             )
                           }
                           onClick={(e) => e.stopPropagation()}
-                          className="h-7 w-full rounded-md border border-border-secondary bg-bg-card px-2 text-[11px] text-text-base outline-none"
+                          className="h-7 w-full rounded-md border border-border-input bg-bg-input px-2 text-[11px] text-text-base outline-none focus:border-border-primary"
                         >
                           <option value="__root__">全部资产</option>
                           {folders.map((folder) => (
@@ -1266,7 +1266,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                   <div
                     key={asset.id}
                     onClick={() => openPreview(asset)}
-                    className="group flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-2 transition-all duration-200 ease-luxury hover:border-border-secondary hover:bg-bg-card hover:shadow-sm"
+                    className="group flex cursor-pointer items-center gap-3 rounded-lg border border-border-secondary bg-bg-card px-3 py-2 shadow-card transition-all duration-200 ease-luxury hover:border-border-primary hover:bg-bg-hover hover:shadow-float"
                   >
                     {/* 缩略图 */}
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-secondary bg-bg-input">
@@ -1340,15 +1340,16 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
       {/* ── 资产预览弹窗（对齐 hjwall AssetPreviewModal） ── */}
       {previewAsset && (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="asset-preview-title"
-          className="cc-anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          role="presentation"
+          className="cc-anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-bg-base/80 p-4 backdrop-blur-sm"
           onClick={() => setPreviewAsset(null)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="asset-preview-title"
             className={cn(
-              'cc-anim-fade-in-up relative max-h-[90vh] w-full overflow-hidden rounded-xl border border-border-secondary bg-bg-elevated shadow-pop',
+              'cc-anim-fade-in-up relative max-h-[90vh] w-full overflow-hidden rounded-2xl border border-border-primary bg-bg-panel text-text-base shadow-pop',
               assetPreviewModalClass(previewAsset),
             )}
             onClick={(e) => e.stopPropagation()}
@@ -1362,7 +1363,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                 type="button"
                 aria-label="关闭预览"
                 onClick={() => setPreviewAsset(null)}
-                className="rounded-md p-2 text-text-secondary transition hover:bg-bg-card hover:text-text-base"
+                className="rounded-md border border-transparent p-2 text-text-secondary transition hover:border-border-secondary hover:bg-bg-hover hover:text-text-base"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1457,7 +1458,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
             </div>
 
             {/* 预览内容 */}
-            <div className="flex max-h-[calc(90vh-3.5rem)] items-center justify-center bg-black/50 p-4">
+            <div className="flex max-h-[calc(90vh-3.5rem)] items-center justify-center bg-bg-surface p-4">
               {previewAsset.mediaType === 'image' ? (
                 <img
                   src={assetDisplayUrl(previewAsset)}

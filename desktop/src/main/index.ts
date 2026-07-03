@@ -75,6 +75,9 @@ app.whenReady()
       ipcMain,
       dbPath: join(userData, 'comiccanvas.sqlite'),
       assetRoot: join(userData, 'assets'),
+      workspaceRoot: app.getAppPath(),
+      gatewaysFile: process.env.COMIC_CANVAS_GATEWAYS_FILE ?? join(app.getAppPath(), 'local-gateways.json'),
+      agentPlannerMode: 'gateway',
       storageSafeStorage: safeStorage,
       getWindows: () => BrowserWindow.getAllWindows()
     })

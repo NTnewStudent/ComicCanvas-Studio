@@ -103,3 +103,7 @@ ltm/runtime/
 ltm/reports/
 ltm/snapshots/
 # --- /ltm-power ---
+
+# Local gateway bootstrap (contains provider API keys; never commit)
+local-gateways.json
+**/local-gateways.json

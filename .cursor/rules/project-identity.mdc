@@ -1,0 +1,88 @@
+---
+description: ComicCanvas 项目身份、核心契约、全局禁止与角色速查
+alwaysApply: true
+---
+
+# ComicCanvas Studio — 项目身份
+
+**AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，本地优先）
+
+两条核心能力：
+1. **画布**：用户手动操作 React Flow 画布，节点化生成图片 / 视频（text/image/video 三节点）
+2. **Agent**：自然语言驱动 Agent 自动「生成节点 → 连线 → 串行执行任务」
+
+产品定位以「漫剧（comic drama）制作」为主——围绕「文本 → 生图 → 生视频」组织画布与 Agent 能力。
+
+## 工程形态
+
+| 层 | 路径 | 技术栈 |
+| :--- | :--- | :--- |
+| Electron 主进程 + Agent 运行时 | `desktop/src/main/` | Node.js 20+ / TS strict |
+| 渲染层（画布 UI） | `desktop/src/renderer/` | React 18 / Vite 5 / @xyflow/react / Zustand / TanStack Query |
+| 数据持久化 | `desktop/src/main/db/` | SQLite（better-sqlite3 + Drizzle）|
+| 任务队列 + 模型适配 | `desktop/src/main/jobs/`、`providers/` | 进程内持久化队列 |
+| 共享契约 | `shared/` | 连接矩阵 / Plan / IPC |
+
+> 包管理：**Bun 1.3.14**。无 Redis/BullMQ/WebSocket；资产落 `appData/assets/`，渲染走 `cc-asset://`。
+
+## Agent 角色（Rules `@` vs Subagents `/`）
+
+| Agent | Rule（当前对话注入） | Subagent（独立上下文） | 职责 |
+| :--- | :--- | :--- | :--- |
+| orchestrator-agent | `@agent-orchestrator` | `/orchestrator-agent` | CanvasPlan 编排 |
+| canvas-agent | `@agent-canvas` | `/canvas-agent` | 画布 / 节点 / 连线 |
+| tooling-agent | `@agent-tooling` | `/tooling-agent` | 主进程 / Tool / DB |
+| pm-agent | `@agent-pm` | `/pm-agent` | 需求 / 契约 / 进度 |
+
+## 核心契约
+
+### 连接矩阵（`shared/connection-matrix.ts`，唯一真源）
+
+| 上游 | 允许下游 |
+|------|---------|
+| text | image, video |
+| image | image, video |
+| video | video |
+
+### CanvasPlan（`shared/plan.ts`）
+
+`kind: 'plan' | 'clarify'`；`runSteps.action` 白名单：`imageRun` | `videoRun` | `textPolish`。
+
+### IPC（`shared/ipc.ts`，`domain.action`）
+
+`canvas.*` / `job.*` / `settings.*` / `asset.*`
+
+## 共享真源
+
+| 文档 | 用途 |
+| :--- | :--- |
+| `docs/api-contracts/` | IPC / 服务契约 |
+| `global/design/DESIGN.md` | UI/UX design token |
+| `shared/connection-matrix.ts` | 连接矩阵 |
+| `shared/plan.ts` | CanvasPlan 类型 |
+| `specs/` | requirements / design / tasks |
+| `docs/progress/` | 迭代与测试报告 |
+
+## 全局禁止
+
+- ❌ Plan 含可执行代码 / 脚本字符串
+- ❌ 前后端各自维护连接矩阵副本
+- ❌ 生图/生视频同步阻塞（必须入队 + IPC 终态）
+- ❌ `contextIsolation: false` 或 `nodeIntegration: true`
+- ❌ TypeScript `any`
+- ❌ 未登记契约就开新 IPC
+- ❌ 密钥明文 / 写日志 / 写 LTM
+- ❌ DB 查询散落业务层
+- ❌ 渲染层轮询资产状态
+- ❌ 直接引用 hjwall / cc-haha 源码
+- ❌ 子 agent 提权 / 递归深度超 `MAX_SPAWN_DEPTH(2)`
+
+## 编码规范快查
+
+- 导出符号 JSDoc；IPC/服务 `@see docs/api-contracts/...`
+- 异常 throw/catch 行内注释；禁止吞异常
+- 纯逻辑放 `lib/`；IPC handler 薄、service 厚
+
+## 项目记录
+
+不使用 LTM。任务状态以 `specs/`、`docs/progress/`、git 与用户最新指令为准。

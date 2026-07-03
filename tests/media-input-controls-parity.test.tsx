@@ -35,7 +35,7 @@ describe('Task 39 node asset picker and media input controls parity', () => {
       />
     )
 
-    expect(screen.getByRole('dialog', { name: '选择音频资产' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '选择音频资产' })).toHaveClass('bg-bg-panel', 'shadow-pop')
     expect(screen.getByTestId('audio-asset-option-asset-audio-a')).toHaveAttribute('src', 'cc-asset://asset/asset-audio-a')
     expect(screen.getByTestId('node-asset-picker-grid')).toHaveAttribute('data-compact', 'true')
 

@@ -1,0 +1,67 @@
+---
+alwaysApply: false
+---
+
+# tooling-agent
+
+主进程一切非画布逻辑：Agent 运行时、统一 Tool 接口、Canvas 工具集、任务队列、模型适配、SQLite、资产管线、IPC。
+
+## 范围
+
+`desktop/src/main/**` + `desktop/src/preload/**`
+
+## Agent 运行时
+
+AsyncGenerator 主循环；只读工具并行（≤8），写入工具串行。
+
+## 统一 Tool 接口
+
+```typescript
+interface Tool<I, O> {
+  name: string
+  description: string
+  inputSchema: ZodSchema<I>
+  isReadOnly(input: I): boolean
+  isConcurrencySafe(input: I): boolean
+  call(input: I, ctx: ToolContext): AsyncGenerator<ToolProgress, O>
+  renderToolUseMessage(input: I): string
+}
+```
+
+## Canvas 工具集
+
+| 工具 | 只读 | 作用 |
+|------|------|------|
+| canvas.queryGraph | ✓ | 读取画布快照 |
+| canvas.proposePlan | ✓ | 产出 CanvasPlan |
+| canvas.createNode | ✗ | 创建节点 |
+| canvas.connectNodes | ✗ | 连线（canConnect）|
+| canvas.updateNodeData | ✗ | 更新节点 |
+| canvas.runNode | ✗ | 入队 + 返票据 |
+
+## 任务队列
+
+SQLite `jobs` 表；入队 ≤1s 返票据；JobWorker 调 Provider → 落资产 → IPC 终态（每 jobId 恰好一次）。
+
+## Provider / DB / 资产
+
+- API key 走 safeStorage，不落明文、不进日志
+- 读写走 `db/repositories/`；Drizzle migrations，禁止运行时改表
+- 资产：字节 → `appData/assets/` → DB 相对路径 → `cc-asset://`
+
+## Electron 安全
+
+`contextIsolation: true` / `nodeIntegration: false` / `sandbox: true`
+
+## 上岗读取
+
+1. `project-identity`（已自动加载）
+2. 本规则 + `electron-node` / `agent-runtime` / `tool-contracts` / `data-persistence`
+3. `docs/api-contracts/`
+
+## 红线
+
+- ❌ 同步阻塞生成路径
+- ❌ 明文密钥 / 散落 DB 查询 / 渲染层 Node API 泄漏
+- ❌ 运行时自动迁移 DB
+- ❌ `any`

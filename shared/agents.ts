@@ -4,6 +4,7 @@
  */
 
 import type { ToolPermissionKind } from './tools'
+import type { CanvasPlan } from './plan'
 
 export type AgentSource = 'builtin' | 'user'
 
@@ -66,6 +67,29 @@ export interface AgentRunTicket {
   jobId: string
   status: 'pending'
 }
+
+export interface AgentAnswerResponse {
+  type: 'answer'
+  summary: string
+  text: string
+  dropped: string[]
+}
+
+export interface AgentClarificationResponse {
+  type: 'clarification'
+  summary: string
+  question: string
+  missing: string[]
+  dropped: string[]
+}
+
+export interface AgentCanvasPlanResponse {
+  type: 'canvasPlan'
+  plan: CanvasPlan
+}
+
+export type AgentResponse = AgentAnswerResponse | AgentClarificationResponse | AgentCanvasPlanResponse
+export type AgentNonCanvasResponse = AgentAnswerResponse | AgentClarificationResponse
 
 export interface AgentToolApprovalInput {
   runId: string

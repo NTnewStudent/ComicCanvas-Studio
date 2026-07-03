@@ -6,7 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type { AssetChangedEvent, IpcEventChannel, IpcEventMap, IpcRequestMap, IpcResponseMap, StorageConfigInput, StorageConnectionTestResult, WorkflowSummaryView } from '../../../shared/ipc'
-import type { JobTerminalEvent } from '../../../shared/jobs'
+import type { JobProgressEvent, JobTerminalEvent } from '../../../shared/jobs'
 
 export interface ComicCanvasApi {
   health(): Promise<{ status: 'ok' | 'degraded' | 'failed'; checkedAt: number }>
@@ -57,8 +57,11 @@ export interface ComicCanvasApi {
   removeAssetCategory(input: IpcRequestMap['asset.removeCategory']): Promise<IpcResponseMap['asset.removeCategory']>
   onJobCompleted(handler: (event: Extract<JobTerminalEvent, { channel: 'job.completed' }>) => void): () => void
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
+  onJobProgress(handler: (event: JobProgressEvent) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
   onCanvasPlanReady(handler: (event: IpcEventMap['canvas.planReady']) => void): () => void
+  onAgentResponseReady(handler: (event: IpcEventMap['agent.responseReady']) => void): () => void
+  onAgentDelta(handler: (event: IpcEventMap['agent.delta']) => void): () => void
   saveGraph(input: IpcRequestMap['canvas.saveGraph']): Promise<IpcResponseMap['canvas.saveGraph']>
   validateGraph(input: IpcRequestMap['canvas.validateGraph']): Promise<IpcResponseMap['canvas.validateGraph']>
   loadGraph(input: IpcRequestMap['canvas.loadGraph']): Promise<IpcResponseMap['canvas.loadGraph']>
@@ -81,7 +84,7 @@ export interface ComicCanvasApi {
   testStorageConnection(input: StorageConfigInput): Promise<StorageConnectionTestResult>
 }
 
-type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady'>
+type SubscribableEventChannel = Extract<IpcEventChannel, 'job.progress' | 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady' | 'agent.responseReady' | 'agent.delta'>
 
 /**
  * Invokes a whitelisted main-process channel from typed preload APIs only.
@@ -564,6 +567,15 @@ const api: ComicCanvasApi = {
    */
   onJobFailed: (handler) => subscribeMain('job.failed', handler),
   /**
+   * Subscribes to job progress events for visible Agent/tool thinking summaries.
+   * @param handler - Event payload handler.
+   * @returns Unsubscribe callback.
+   * @throws Error when Electron listener registration fails.
+   * @see docs/api-contracts/jobs.md
+   * @see docs/api-contracts/agents.md
+   */
+  onJobProgress: (handler) => subscribeMain('job.progress', handler),
+  /**
    * Subscribes to asset library change events.
    * @param handler - Event payload handler.
    * @returns Unsubscribe callback.
@@ -579,6 +591,22 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/canvas-plan.md
    */
   onCanvasPlanReady: (handler) => subscribeMain('canvas.planReady', handler),
+  /**
+   * Subscribes to Agent answer/clarification readiness events after async runs complete.
+   * @param handler - Event payload handler.
+   * @returns Unsubscribe callback.
+   * @throws Error when Electron listener registration fails.
+   * @see docs/api-contracts/agents.md
+   */
+  onAgentResponseReady: (handler) => subscribeMain('agent.responseReady', handler),
+  /**
+   * Subscribes to streaming token delta events while the model generates a response.
+   * @param handler - Event payload handler receiving incremental text.
+   * @returns Unsubscribe callback.
+   * @throws Error when Electron listener registration fails.
+   * @see docs/api-contracts/agents.md
+   */
+  onAgentDelta: (handler) => subscribeMain('agent.delta', handler),
   /**
    * Persists a canvas graph snapshot for the given project.
    * @param input - Save request including project ID and graph snapshot.

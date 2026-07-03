@@ -6,6 +6,7 @@
 import type { AgentDefinition, AgentEffort, AgentTriggerKind } from '../../../../shared/agents'
 import type { ToolPermissionKind } from '../../../../shared/tools'
 import type { AgentRepository } from '../db/repositories/agent.repo'
+import { CANVAS_ORCHESTRATOR_PROMPT, CANVAS_PROMPT, GENERAL_PURPOSE_PROMPT, PM_PROMPT, TOOLING_PROMPT } from './prompts'
 
 export interface AgentRegistryOptions {
   agents: AgentRepository
@@ -28,11 +29,55 @@ export interface AgentRegistryError {
 
 const builtinAgents: AgentDefinition[] = [
   {
+    id: 'general-purpose',
+    source: 'builtin',
+    name: 'General Purpose',
+    description: 'Understands the user, answers directly, reads/searches the project, and delegates canvas work.',
+    instructions: GENERAL_PURPOSE_PROMPT,
+    allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep'],
+    allowedSkills: '*',
+    gatewayPolicy: { allowedChannels: ['text'] },
+    contextPolicy: {
+      includeCanvasGraph: true,
+      includeSelectedAssets: true,
+      includeRecentMessages: true,
+      includeKnowledge: false,
+      maxContextTokens: 8000
+    },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
+    maxTurns: 8,
+    effort: 'high',
+    enabled: true
+  },
+  {
+    id: 'canvas-orchestrator',
+    source: 'builtin',
+    name: 'Canvas Orchestrator',
+    description: 'Turns explicit canvas orchestration requirements into declarative CanvasPlan JSON.',
+    instructions: CANVAS_ORCHESTRATOR_PROMPT,
+    allowedTools: '*',
+    allowedSkills: '*',
+    gatewayPolicy: { allowedChannels: ['text', 'image', 'video'] },
+    contextPolicy: {
+      includeCanvasGraph: true,
+      includeSelectedAssets: true,
+      includeRecentMessages: true,
+      includeKnowledge: false,
+      maxContextTokens: 8000
+    },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'file.read', 'network', 'provider.spend'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
+    maxTurns: 8,
+    effort: 'high',
+    enabled: true
+  },
+  {
     id: 'orchestrator',
     source: 'builtin',
     name: 'Orchestrator',
-    description: 'Turns natural language into declarative CanvasPlan JSON.',
-    instructions: 'Analyze the user request and produce safe ComicCanvas plans.',
+    description: 'Compatibility alias for Canvas Orchestrator.',
+    instructions: CANVAS_ORCHESTRATOR_PROMPT,
     allowedTools: '*',
     allowedSkills: '*',
     gatewayPolicy: { allowedChannels: ['text', 'image', 'video'] },
@@ -54,7 +99,7 @@ const builtinAgents: AgentDefinition[] = [
     source: 'builtin',
     name: 'Canvas',
     description: 'Handles canvas nodes, edges, and graph edits.',
-    instructions: 'Use shared canvas contracts and never bypass connection matrix rules.',
+    instructions: CANVAS_PROMPT,
     allowedTools: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.createNode', 'canvas.connectNodes', 'canvas.updateNodeData'],
     allowedSkills: ['canvas-node-designer'],
     gatewayPolicy: { allowedChannels: ['text'] },
@@ -76,7 +121,7 @@ const builtinAgents: AgentDefinition[] = [
     source: 'builtin',
     name: 'Tooling',
     description: 'Coordinates tools, providers, jobs, and persistence.',
-    instructions: 'Route all side effects through typed ToolRuntime and repository boundaries.',
+    instructions: TOOLING_PROMPT,
     allowedTools: ['canvas.queryGraph', 'canvas.runNode'],
     allowedSkills: ['systematic-debugging'],
     gatewayPolicy: { allowedChannels: ['text'] },
@@ -98,7 +143,7 @@ const builtinAgents: AgentDefinition[] = [
     source: 'builtin',
     name: 'PM',
     description: 'Keeps requirements, contracts, progress, and tests aligned.',
-    instructions: 'Maintain specs, backlog, and acceptance criteria before implementation.',
+    instructions: PM_PROMPT,
     allowedTools: ['canvas.queryGraph'],
     allowedSkills: ['pm-req-planner'],
     gatewayPolicy: { allowedChannels: ['text'] },

@@ -3,7 +3,7 @@
  * @see docs/api-contracts/agents.md
  */
 
-import type { AgentDefinition, AgentTriggerKind } from '../../../../shared/agents'
+import type { AgentDefinition, AgentResponse, AgentTriggerKind } from '../../../../shared/agents'
 import type { CanvasPlan } from '../../../../shared/plan'
 import type { ToolActor, ToolDescriptor, ToolInvocationRecord, ToolPermission } from '../../../../shared/tools'
 import type { ToolInvocationResult, ToolRuntime } from '../tools/runtime'
@@ -13,6 +13,13 @@ export interface AgentContextLoopInput {
   message: string
   trigger: AgentTriggerKind
   availableTools: readonly ToolDescriptor[]
+  /** Prior conversation turns (oldest first), used so follow-up messages keep context. */
+  history?: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>
+  /**
+   * Pre-built context string from ContextBuilderService (canvas, assets, knowledge, messages).
+   * Injected into the model prompt once per run. Empty when context building is disabled.
+   */
+  additionalContext?: string
 }
 
 export interface AgentContextLoopState {
@@ -29,6 +36,11 @@ export interface AgentContextLoopState {
   tokenEstimate: number
   compactionSummary: string | null
   omittedMessages: number
+  /**
+   * Pre-built context string (canvas summary, recent messages, knowledge chunks)
+   * injected once after the system prompt. Empty string means no additional context.
+   */
+  additionalContext: string
 }
 
 export type AgentLoopMessage =
@@ -45,16 +57,19 @@ export interface AgentToolCall {
 
 export type AgentLoopStepResult =
   | { type: 'plan'; plan: CanvasPlan; message?: string }
+  | { type: 'response'; response: AgentResponse; message?: string }
   | { type: 'toolCalls'; calls: AgentToolCall[]; message?: string }
 
 export interface AgentLoopModel {
   step(state: AgentContextLoopState): Promise<AgentLoopStepResult> | AgentLoopStepResult
+  /** Optional — when present, the loop accumulates tokens per step. */
+  lastUsage?: () => { inputTokens?: number; outputTokens?: number; costUsd?: number } | undefined
 }
 
 export type AgentLoopEvent =
   | { type: 'progress'; message: string; progress: number }
   | { type: 'tool'; call: AgentToolCall; result: ToolInvocationResult }
-  | { type: 'plan'; plan: CanvasPlan }
+  | { type: 'response'; response: AgentResponse }
 
 export interface RunAgentContextLoopInput extends AgentContextLoopInput {
   model: AgentLoopModel
@@ -65,11 +80,13 @@ export interface RunAgentContextLoopInput extends AgentContextLoopInput {
 }
 
 export interface AgentContextLoopResult {
-  plan: CanvasPlan
+  response: AgentResponse
   turnsUsed: number
   droppedTools: string[]
   compactionSummary: string | null
   omittedMessages: number
+  /** Accumulated token counts across all model calls in this loop run. */
+  usage: { inputTokens: number; outputTokens: number; costUsd: number }
 }
 
 export interface AgentLoopTerminalErrorOptions {
@@ -320,8 +337,12 @@ export function createAgentContextLoop(input: AgentContextLoopInput): AgentConte
 
   const { allowedTools, droppedTools } = filterAgentTools(input.agent, input.availableTools)
   const systemPrompt = buildSystemPrompt(input.agent, input.trigger)
+  const historyMessages: AgentLoopMessage[] = (input.history ?? [])
+    .filter((entry) => entry.content.trim().length > 0)
+    .map((entry) => ({ role: entry.role, content: entry.content }))
   const messages: AgentLoopMessage[] = [
     { role: 'system', content: systemPrompt },
+    ...historyMessages,
     { role: 'user', content: input.message }
   ]
 
@@ -338,7 +359,8 @@ export function createAgentContextLoop(input: AgentContextLoopInput): AgentConte
     messages,
     tokenEstimate: estimateTokens(messages),
     compactionSummary: null,
-    omittedMessages: 0
+    omittedMessages: 0,
+    additionalContext: input.additionalContext ?? ''
   }
 }
 
@@ -360,7 +382,7 @@ function cloneAgentContextLoopState(state: AgentContextLoopState): AgentContextL
 }
 
 /**
- * Runs a cc-haha-style context loop until the model returns a CanvasPlan.
+ * Runs a cc-haha-style context loop until the model returns an AgentResponse.
  * @param input - Agent, model adapter, ToolRuntime facade, and trace metadata.
  * @returns Async events followed by the final CanvasPlan result.
  * @throws Error when the loop exceeds the configured turn limit or requests a denied tool.
@@ -370,6 +392,7 @@ export async function* runAgentContextLoop(input: RunAgentContextLoopInput): Asy
   const state = input.initialState ? cloneAgentContextLoopState(input.initialState) : createAgentContextLoop(input)
   const allowedToolIds = new Set(state.allowedTools.map((tool) => tool.id))
   const actor = input.actor ?? { type: 'agent', id: input.agent.id }
+  const accUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
 
   while (state.turnCount < state.maxTurns) {
     const compacted = compactAgentMessages(state.messages, input.agent.contextPolicy.maxContextTokens)
@@ -383,19 +406,29 @@ export async function* runAgentContextLoop(input: RunAgentContextLoopInput): Asy
     const step = await input.model.step(state)
     state.turnCount += 1
 
+    // Accumulate token usage when the model exposes it.
+    const stepUsage = input.model.lastUsage?.()
+    if (stepUsage) {
+      accUsage.inputTokens += stepUsage.inputTokens ?? 0
+      accUsage.outputTokens += stepUsage.outputTokens ?? 0
+      accUsage.costUsd += stepUsage.costUsd ?? 0
+    }
+
     if (step.message) {
       state.messages.push({ role: 'assistant', content: step.message })
     }
 
-    if (step.type === 'plan') {
+    if (step.type === 'plan' || step.type === 'response') {
+      const response: AgentResponse = step.type === 'plan' ? { type: 'canvasPlan', plan: step.plan } : step.response
       state.transition = 'completed'
-      yield { type: 'plan', plan: step.plan }
+      yield { type: 'response', response }
       return {
-        plan: step.plan,
+        response,
         turnsUsed: state.turnCount,
         droppedTools: state.droppedTools,
         compactionSummary: state.compactionSummary,
-        omittedMessages: state.omittedMessages
+        omittedMessages: state.omittedMessages,
+        usage: { ...accUsage }
       }
     }
 

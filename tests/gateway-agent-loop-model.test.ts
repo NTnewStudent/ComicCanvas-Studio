@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import type { AgentDefinition } from '../shared/agents'
+import type { AgentDefinition, AgentResponse } from '../shared/agents'
 import type { GatewayRequest, GatewayResult } from '../shared/gateway'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
@@ -67,6 +67,14 @@ function agent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 
 function textResult(text: string): GatewayResult {
   return { kind: 'text', text }
+}
+
+function expectAgentResponse(value: CanvasPlan | AgentResponse): AgentResponse {
+  if (!('type' in value)) {
+    throw new Error('expected_agent_response')
+  }
+
+  return value
 }
 
 describe('Gateway-backed Agent loop planner', () => {
@@ -137,7 +145,7 @@ describe('Gateway-backed Agent loop planner', () => {
     expect(prompts).toHaveLength(2)
     expect(prompts[0]).toContain('Allowed tools')
     expect(prompts[1]).toContain('\\"nodeCount\\":0')
-    expect(next.value).toEqual(finalPlan)
+    expect(expectAgentResponse(next.value)).toEqual({ type: 'canvasPlan', plan: finalPlan })
   })
 
   it('sanitizes unsafe model-produced CanvasPlan fields before returning', async () => {
@@ -176,8 +184,13 @@ describe('Gateway-backed Agent loop planner', () => {
       next = await result.next()
     }
 
-    expect(next.value.nodes.map((node) => node.type)).toEqual(['text', 'imageConfigV2'])
-    expect(next.value.dropped).toEqual(expect.arrayContaining(['model:raw-warning', 'node:legacy:unsupported_type']))
+    const response = expectAgentResponse(next.value)
+    expect(response.type).toBe('canvasPlan')
+    if (response.type !== 'canvasPlan') {
+      throw new Error('expected_canvas_plan_response')
+    }
+    expect(response.plan.nodes.map((node) => node.type)).toEqual(['text', 'imageConfigV2'])
+    expect(response.plan.dropped).toEqual(expect.arrayContaining(['model:raw-warning', 'node:legacy:unsupported_type']))
   })
 
   it('converts invalid model JSON into a safe clarify plan with dropped audit', async () => {
@@ -208,13 +221,16 @@ describe('Gateway-backed Agent loop planner', () => {
       next = await result.next()
     }
 
-    expect(next.value).toMatchObject({
-      kind: 'clarify',
-      nodes: [],
-      edges: [],
-      runSteps: [],
+    const response = expectAgentResponse(next.value)
+    expect(response).toMatchObject({
+      type: 'clarification',
+      missing: ['画布目标', '节点类型', '参考素材'],
       dropped: ['agent_model_json_invalid']
     })
-    expect(next.value.question).toContain('画布目标')
+    expect(response.type).toBe('clarification')
+    if (response.type !== 'clarification') {
+      throw new Error('expected_clarification_response')
+    }
+    expect(response.question).toContain('画布目标')
   })
 })

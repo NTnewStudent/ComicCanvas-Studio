@@ -33,6 +33,7 @@ Response:
 
 ```ts
 interface CanvasChatSendResponse {
+  runId: string
   jobId: string
   messageId: string
   status: 'pending'
@@ -42,8 +43,30 @@ interface CanvasChatSendResponse {
 Rules:
 
 - `canvas.chatSend` SHALL enqueue an `agent.run` job and return within one second without returning a CanvasPlan synchronously.
+- The response SHALL include `runId` so renderer UI can recover the Agent trace summary through `agent.getRun`.
 - The orchestration job SHALL run the orchestrator AsyncGenerator in the main process and emit progress/terminal job events through the local job runtime.
-- The produced CanvasPlan SHALL be retrievable only after async completion through `canvas.chatGetPlan`.
+- If the terminal `AgentResponse` is `canvasPlan`, the produced CanvasPlan SHALL be retrievable only after async completion through `canvas.chatGetPlan`.
+- If the terminal `AgentResponse` is `answer` or `clarification`, the main process SHALL emit `agent.responseReady`; no CanvasPlan SHALL be stored for that message.
+
+### `agent.responseReady`
+
+Event:
+
+```ts
+interface AgentResponseReadyEvent {
+  runId: string
+  messageId: string
+  response:
+    | { type: 'answer'; summary: string; text: string; dropped: string[] }
+    | { type: 'clarification'; summary: string; question: string; missing: string[]; dropped: string[] }
+}
+```
+
+Rules:
+
+- Renderer chat surfaces SHALL render `answer.text` or `clarification.question` directly.
+- Renderer chat surfaces SHALL NOT call `canvas.chatGetPlan` for `agent.responseReady`.
+- Ordinary questions such as greetings, date/time questions, coding help, or general knowledge answers SHALL use this event path unless the user explicitly asks to create or run a canvas workflow.
 
 ### `canvas.chatGetPlan`
 
@@ -64,7 +87,8 @@ type CanvasChatGetPlanResponse = CanvasPlan
 Rules:
 
 - `canvas.chatGetPlan` SHALL return the latest stored plan for the message ID after the agent job completes.
-- If a plan is unavailable, the handler SHALL return a safe clarify-style CanvasPlan or a stable safe error envelope; it SHALL NOT expose internal prompts or provider details.
+- If a plan is unavailable because the Agent produced an `answer` or `clarification`, callers SHALL use `agent.responseReady` / `agent.getRun` instead of polling `canvas.chatGetPlan`.
+- If a plan is unavailable because the plan job failed, the handler SHALL return a stable safe error envelope; it SHALL NOT expose internal prompts or provider details.
 
 ### `canvas.applyPlan`
 

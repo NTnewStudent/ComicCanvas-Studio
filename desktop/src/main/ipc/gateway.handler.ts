@@ -48,6 +48,21 @@ function ensureDefaultGateway(): void {
   }
 }
 
+/**
+ * Seeds gateway config views into the renderer-safe catalog (used by the model
+ * catalog and settings list). Existing IDs are overwritten. Secrets are never
+ * stored here.
+ * @param configs - Gateway config views to register.
+ * @returns void.
+ * @see docs/api-contracts/gateway-providers.md
+ */
+export function seedGatewayConfigs(configs: GatewayConfigView[]): void {
+  ensureDefaultGateway()
+  for (const config of configs) {
+    gatewayConfigs.set(config.id, config)
+  }
+}
+
 function gatewayId(input: GatewayConfigInput): string {
   return input.id ?? `gateway-${input.name.trim().toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-|-$/gu, '') || 'provider'}`
 }

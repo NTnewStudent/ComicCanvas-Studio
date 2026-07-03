@@ -96,6 +96,32 @@ interface AgentRunTicket {
 }
 ```
 
+Terminal response:
+
+```ts
+type AgentResponse =
+  | { type: 'answer'; summary: string; text: string; dropped: string[] }
+  | { type: 'clarification'; summary: string; question: string; missing: string[]; dropped: string[] }
+  | { type: 'canvasPlan'; plan: CanvasPlan }
+```
+
+Events:
+
+```ts
+interface AgentResponseReadyEvent {
+  runId: string
+  messageId: string
+  response: Exclude<AgentResponse, { type: 'canvasPlan' }>
+}
+```
+
+Rules:
+
+- `answer` is for ordinary conversation, coding/help questions, time/date questions, and general knowledge responses that do not require graph mutation.
+- `clarification` is for greetings, low-signal requests, and ambiguous tasks where the Agent needs more information before selecting tools or creating nodes.
+- `canvasPlan` is reserved for explicit canvas graph/node/workflow tasks and is delivered through the canvas plan path.
+- Non-`canvasPlan` terminal responses SHALL emit `agent.responseReady` and SHALL NOT store a CanvasPlan for `canvas.chatGetPlan`.
+
 ### `agent.approveTool`
 
 Request:
@@ -156,7 +182,14 @@ interface SpawnSubAgentResult {
 
 Rules:
 
-- Built-in agents SHALL include orchestrator, canvas, tooling, and PM roles.
+- Built-in agents SHALL include `general-purpose`, `canvas-orchestrator`, compatibility `orchestrator`, canvas, tooling, and PM roles.
+- `general-purpose` SHALL be the default conversation entry for canvas chat. Its description and instructions SHALL focus on understanding, requirement decomposition, ambiguity clarification, and delegation to local capabilities.
+- `canvas-orchestrator` SHALL own explicit canvas graph/node/workflow CanvasPlan generation. The legacy `orchestrator` ID SHALL remain a compatibility alias.
+- Agent runs SHALL analyze user intent before graph mutation or CanvasPlan output. Greetings, small talk, and low-signal requests SHALL return an `AgentResponse` clarification instead of creating graph nodes.
+- Intent analysis SHALL expose a visible progress summary with classification, complexity, execution mode, recommended agent, and local capability check. This is an auditable summary, not raw chain-of-thought.
+- `agent.getRun` trace metadata SHALL persist the structured `intentAnalysis` and `capabilityCheck` so UI surfaces can recover the Agent's visible reasoning summary after reload or job completion.
+- Simple explicit node-creation requests MAY use `executionMode: 'direct'` to produce a minimal CanvasPlan. Direct mode SHALL NOT bypass ToolRuntime, plan-apply gates, or user approval policy.
+- Requests to generate images or videos SHALL use generation config nodes (`imageConfigV2` / `videoConfigV2`) plus run steps; reference `image` and `video` nodes SHALL NOT be treated as generation nodes.
 - Built-in agents SHALL be editable through settings and persisted as overrides, but SHALL NOT be deletable.
 - Agent runs are asynchronous and return tickets.
 - Agent runs SHALL resolve the selected AgentDefinition before loop execution and SHALL reject disabled agents or triggers not allowed by the agent trigger policy.
@@ -167,7 +200,7 @@ Rules:
 - `agent.approveTool` SHALL enqueue a new `agent.run` job, execute only the preserved pending tool call through ToolRuntime, append its observation to the paused loop, and continue model/planner turns until a sanitized CanvasPlan or terminal error is produced.
 - Agent context loops SHALL compact older assistant/tool messages deterministically against the agent context token budget while preserving the system prompt, current user request, and a compacted summary boundary.
 - Agent loops that exceed `maxTurns` SHALL terminate with structured metadata including `errorClass`, `turnsUsed`, dropped tools, compaction summary, and omitted message count.
-- Gateway-backed Agent models SHALL return JSON shaped as either `toolCalls` or `CanvasPlan`; invalid JSON SHALL be converted into a safe `clarify` CanvasPlan with dropped audit metadata instead of mutating the graph.
+- Gateway-backed Agent models SHALL return JSON shaped as `toolCalls` or `AgentResponse`; invalid JSON SHALL be converted into a safe `clarification` response with dropped audit metadata instead of mutating the graph.
 - Agent-produced CanvasPlan SHALL be sanitized before application.
 - Child permissions SHALL be parent permissions intersected with target/requested policy.
 - Sub-agent spawn results SHALL include an independent trace with run ID, parent run/trace IDs, effective permissions, dropped permissions, terminal status, and timings.

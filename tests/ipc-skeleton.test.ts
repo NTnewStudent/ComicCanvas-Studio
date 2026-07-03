@@ -263,8 +263,8 @@ describe('M1 IPC skeleton', () => {
     registerCanvasHandlers(ipcMain, {
       orchestrator: {
         chatSend(input) {
-          expect(input).toEqual({ message: '生成宇宙飞船', agentId: 'orchestrator', requestedBy: 'user-local' })
-          return { jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' }
+          expect(input).toEqual({ message: '生成宇宙飞船', agentId: 'general-purpose', requestedBy: 'user-local' })
+          return { runId: 'run-agent-1', jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' }
         },
         getPlan(messageId) {
           expect(messageId).toBe('message-1')
@@ -273,7 +273,8 @@ describe('M1 IPC skeleton', () => {
       }
     })
 
-    expect(handlers.get('canvas.chatSend')?.({}, { message: '生成宇宙飞船', agentId: 'orchestrator' })).toEqual({
+    expect(handlers.get('canvas.chatSend')?.({}, { message: '生成宇宙飞船' })).toEqual({
+      runId: 'run-agent-1',
       jobId: 'job-agent-1',
       messageId: 'message-1',
       status: 'pending'

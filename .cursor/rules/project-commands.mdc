@@ -1,0 +1,38 @@
+---
+description: Shell 与 Git 命令安全策略。在运行 bun、git、终端命令或讨论提交/推送策略时应用。源自 .codex/rules/project-commands.rules。
+alwaysApply: false
+---
+
+# 项目命令安全策略
+
+源自 `.codex/rules/project-commands.rules`。在 Cursor 中执行终端命令时遵守以下策略。
+
+## 允许（无需额外确认）
+
+| 命令 | 说明 |
+| :--- | :--- |
+| `bun run test` / `build` / `lint` / `ci` | 项目 Bun 脚本 |
+| `bun x tsc --noEmit` / `bun x vitest run` | 本地工具与一次性验证 |
+| `bun install --frozen-lockfile` | 包管理 |
+| `bun scripts/verify-repo.mjs` | 仓库验证 |
+| `git status` / `git log` / `git diff` | 只读 git 检查 |
+
+## 需用户明确意图后执行
+
+| 命令 | 说明 |
+| :--- | :--- |
+| `git add` | 暂存变更 |
+| `git commit` | 提交（须用户明确要求且验证通过） |
+
+## 禁止
+
+| 命令 | 原因 |
+| :--- | :--- |
+| `git push --force` / `--force-with-lease` | 可能覆盖远程历史 |
+| `git reset --hard` | 可能销毁未保存工作 |
+| `rm -rf /` | 破坏性根删除 |
+
+## 包管理约定
+
+- 本项目使用 **Bun**，不用 `npm run` / `npx` 作为项目入口。
+- 优先 `bun run <script>` 与 `bun x <tool>`。

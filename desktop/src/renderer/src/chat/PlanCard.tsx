@@ -70,6 +70,7 @@ function planSummaryLabels(plan: CanvasPlan): string[] {
  */
 export function PlanCard({ plan, autoExecute, onAutoExecuteChange, onApplyPlan }: PlanCardProps): JSX.Element {
   const isClarify = plan.kind === 'clarify'
+  const isGeneralAnswer = isClarify && plan.summary.includes('普通问题')
 
   return (
     <article className="rounded-xl border border-border-secondary bg-bg-card p-4 shadow-card" aria-label="画布计划预览">
@@ -79,7 +80,9 @@ export function PlanCard({ plan, autoExecute, onAutoExecuteChange, onApplyPlan }
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="m-0 text-[13px] font-semibold uppercase text-text-muted">{isClarify ? '澄清请求' : '画布计划'}</p>
+            <p className="m-0 text-[13px] font-semibold uppercase text-text-muted">
+              {isGeneralAnswer ? 'Agent 回复' : isClarify ? '澄清请求' : '画布计划'}
+            </p>
             {!isClarify && (
               <span className="inline-flex items-center gap-1 rounded-pill border border-border-secondary px-2 py-0.5 text-[12px] text-semantic-success">
                 <Check className="h-3 w-3" aria-hidden="true" />

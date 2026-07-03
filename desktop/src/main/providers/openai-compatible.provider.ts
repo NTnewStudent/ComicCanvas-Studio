@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto'
 
 import type { GatewayCapability, GatewayMediaMetadata, GatewayRequest, GatewayResult, GatewayUsage } from '../../../../shared/gateway'
 import { GatewayProviderError } from './registry'
-import type { GatewayProvider } from './stub.provider'
+import type { GatewayProvider, GatewayDeltaCallback } from './stub.provider'
 
 export interface OpenAICompatibleProviderOptions {
   /** Provider ID used by the registry. */
@@ -233,6 +233,87 @@ async function invokeText(options: OpenAICompatibleProviderOptions, fetchImpl: t
 }
 
 /**
+ * Streams a chat completion via SSE, invoking onDelta for each token and
+ * returning the assembled full text with usage once the stream ends.
+ */
+async function invokeTextStreaming(
+  options: OpenAICompatibleProviderOptions,
+  fetchImpl: typeof fetch,
+  request: GatewayRequest,
+  onDelta: GatewayDeltaCallback
+): Promise<GatewayResult> {
+  const payload = { ...chatPayload(request), stream: true, stream_options: { include_usage: true } }
+  const response = await fetchImpl(`${trimTrailingSlash(options.baseUrl)}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${options.apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const errorBody = await readJson(response)
+    throw providerError('provider_request_failed', errorMessageFromBody(errorBody, `Provider request failed with ${response.status}`, options.apiKey), true)
+  }
+
+  if (!response.body) {
+    throw providerError('provider_payload_invalid', 'Provider returned no body for streaming request', false)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let fullText = ''
+  let usage: GatewayUsage | undefined
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+
+      let newlineIdx: number
+      while ((newlineIdx = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, newlineIdx).trim()
+        buf = buf.slice(newlineIdx + 1)
+
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (data === '[DONE]') break
+
+        try {
+          const chunk = JSON.parse(data) as {
+            choices?: Array<{ delta?: { content?: string } }>
+            usage?: unknown
+          }
+          // Accumulate usage from the final chunk (stream_options.include_usage).
+          if (chunk.usage) {
+            usage = parseUsage(chunk.usage) ?? usage
+          }
+          const delta = chunk.choices?.[0]?.delta?.content
+          if (typeof delta === 'string' && delta.length > 0) {
+            fullText += delta
+            onDelta(delta)
+          }
+        } catch {
+          // Skip unparseable SSE lines (comments, keepalives).
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (fullText.length === 0) {
+    throw providerError('provider_payload_invalid', 'Provider streaming response produced no text', false)
+  }
+
+  return { kind: 'text', text: fullText, ...(usage ? { usage } : {}) }
+}
+
+/**
  * Creates an OpenAI-compatible provider for text/chat and image generation.
  * @param options - Provider configuration and optional fetch dependency.
  * @returns Gateway provider implementation.
@@ -250,10 +331,13 @@ export function createOpenAICompatibleProvider(options: OpenAICompatibleProvider
       image: options.modelKeys.image ?? '',
       video: options.modelKeys.video ?? ''
     },
-    async invoke(request) {
+    async invoke(request, context) {
       assertSupported(options, request)
 
       if (request.channel === 'text') {
+        if (context?.onDelta) {
+          return invokeTextStreaming(options, fetchImpl, request, context.onDelta)
+        }
         return invokeText(options, fetchImpl, request)
       }
 

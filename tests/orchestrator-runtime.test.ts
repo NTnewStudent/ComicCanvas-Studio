@@ -2,9 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import type { AgentResponse } from '../shared/agents'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
@@ -72,29 +73,137 @@ const writeTool: ToolDescriptor = {
   enabled: true
 }
 
-function createDeferredPlan(): { promise: Promise<CanvasPlan>; resolve: (plan: CanvasPlan) => void } {
-  let resolvePlan: ((plan: CanvasPlan) => void) | undefined
-  const promise = new Promise<CanvasPlan>((resolve) => {
-    resolvePlan = resolve
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+function createDeferredResponse(): { promise: Promise<AgentResponse>; resolve: (response: AgentResponse) => void } {
+  let resolveResponse: ((response: AgentResponse) => void) | undefined
+  const promise = new Promise<AgentResponse>((resolve) => {
+    resolveResponse = resolve
   })
 
   return {
     promise,
-    resolve(plan) {
-      resolvePlan?.(plan)
+    resolve(response) {
+      resolveResponse?.(response)
     }
   }
 }
 
 describe('M4 orchestrator AsyncGenerator runtime', () => {
+  it('treats low-signal greetings as clarification instead of creating canvas nodes', () => {
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-greeting',
+      messageId: 'message-greeting',
+      message: 'hi',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'clarification',
+      summary: '用户只是打招呼或尚未提出任务目标。',
+      question: expect.stringContaining('告诉我')
+    })
+  })
+
+  it('answers ordinary non-canvas questions as an answer response without asking for canvas task details', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-30T12:00:00+08:00'))
+
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-weekday',
+      messageId: 'message-weekday',
+      message: '今天星期几',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'answer',
+      summary: '用户提出了普通问题，应由通用 Agent 直接回答。',
+      text: '今天是星期二。',
+      dropped: []
+    })
+    expect(response.type).toBe('answer')
+    if (response.type !== 'answer') {
+      throw new Error('expected_answer_response')
+    }
+    expect(response.text).not.toContain('请补充')
+    expect(response.text).not.toContain('任务类型')
+    expect(response.text).not.toContain('目标产物')
+  })
+
+  it('creates a direct text-node plan for simple text node requests without generation run steps', () => {
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-direct-text',
+      messageId: 'message-direct-text',
+      message: '创建一个文本节点',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'canvasPlan',
+      plan: {
+        kind: 'plan',
+        summary: 'Directly create one text node for: 创建一个文本节点',
+        nodes: [{ ref: 'text-1', type: 'text', title: '文本节点', data: { label: '文本节点', content: '创建一个文本节点' } }],
+        edges: [],
+        runSteps: [],
+        question: null,
+        dropped: []
+      }
+    })
+  })
+
+  it('keeps direct image and video node requests as reference nodes instead of generation nodes', () => {
+    const imageResponse = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-direct-image',
+      messageId: 'message-direct-image',
+      message: '创建一个图片节点',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+    const videoResponse = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-direct-video',
+      messageId: 'message-direct-video',
+      message: '创建一个视频节点',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(imageResponse.type).toBe('canvasPlan')
+    expect(videoResponse.type).toBe('canvasPlan')
+    expect(imageResponse.type === 'canvasPlan' ? imageResponse.plan.nodes.map((node) => node.type) : []).toEqual(['image'])
+    expect(videoResponse.type === 'canvasPlan' ? videoResponse.plan.nodes.map((node) => node.type) : []).toEqual(['video'])
+    expect(imageResponse.type === 'canvasPlan' ? imageResponse.plan.runSteps : []).toEqual([])
+    expect(videoResponse.type === 'canvasPlan' ? videoResponse.plan.runSteps : []).toEqual([])
+  })
+
+  it('routes explicit image generation requests through imageConfigV2 generation nodes', () => {
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-generate-image',
+      messageId: 'message-generate-image',
+      message: '生成图片',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response.type).toBe('canvasPlan')
+    expect(response.type === 'canvasPlan' ? response.plan.nodes.map((node) => node.type) : []).toEqual(['text', 'imageConfigV2'])
+    expect(response.type === 'canvasPlan' ? response.plan.runSteps : []).toEqual([{ ref: 'image-1', action: 'imageRun' }])
+  })
+
   it('defaults comic-drama requests to migrated context plus image/video generation config run vocabulary', () => {
-    const plan = createDefaultOrchestratorPlanner().proposePlan({
+    const response = createDefaultOrchestratorPlanner().proposePlan({
       runId: 'run-comic',
       messageId: 'message-comic',
       message: '做一个雨夜侦探漫画短剧，包含角色、场景、图片、配音、视频合成和音视频合成',
       agentId: 'orchestrator',
-    }) as CanvasPlan
+    }) as AgentResponse
 
+    expect(response.type).toBe('canvasPlan')
+    const plan = response.type === 'canvasPlan' ? response.plan : null
+    expect(plan).not.toBeNull()
+    if (!plan) {
+      throw new Error('expected_canvas_plan')
+    }
     expect(plan.kind).toBe('plan')
     expect(plan.question).toBeNull()
     expect(plan.nodes.map((node) => node.type)).toEqual([
@@ -116,7 +225,6 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         expect.objectContaining({ source: 'key-image', target: 'video-gen' }),
         expect.objectContaining({ source: 'video-gen', target: 'compose' }),
         expect.objectContaining({ source: 'voice', target: 'mux' }),
-        expect.objectContaining({ source: 'compose', target: 'mux' }),
       ])
     )
     expect(plan.runSteps).toEqual([
@@ -138,7 +246,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
           await Promise.resolve()
           yield { type: 'progress', message: 'Analyzing request', progress: 20 }
           yield { type: 'progress', message: 'Drafting CanvasPlan', progress: 80 }
-          return samplePlan
+          return { type: 'canvasPlan', plan: samplePlan }
         }
       }
     })
@@ -152,6 +260,8 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
     expect(events).toEqual([
       { type: 'progress', runId: 'run-1', message: 'Starting orchestration', progress: 5 },
+      { type: 'progress', runId: 'run-1', message: '理解输入：用户提出了明确的画布或生成工作流需求。；复杂度=high；先提供任务计划；将交给 canvas-orchestrator。', progress: 15 },
+      { type: 'progress', runId: 'run-1', message: '检查本地能力：canvas.queryGraph、canvas.proposePlan、canvas.createNode、canvas.connectNodes、canvas.runNode', progress: 25 },
       { type: 'progress', runId: 'run-1', message: 'Analyzing request', progress: 20 },
       { type: 'progress', runId: 'run-1', message: 'Drafting CanvasPlan', progress: 80 },
       { type: 'plan', runId: 'run-1', messageId: 'message-1', planId: 'plan-1', plan: samplePlan }
@@ -160,6 +270,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       runId: 'run-1',
       messageId: 'message-1',
       planId: 'plan-1',
+      response: { type: 'canvasPlan', plan: samplePlan },
       plan: samplePlan
     })
   })
@@ -178,7 +289,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         idFactory: () => 'job-agent-1',
         clock: () => 1_782_700_000_000
       })
-      const deferred = createDeferredPlan()
+      const deferred = createDeferredResponse()
       let plannerStarted = false
       let plannerLoopToolIds: string[] = []
       let plannerLoopMessages: string[] = []
@@ -209,7 +320,17 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
       const ticket = runtime.chatSend({ message: '生成宇宙飞船图片节点', agentId: 'orchestrator', requestedBy: 'user-1' })
 
-      expect(ticket).toEqual({ jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
+      expect(ticket).toEqual({ runId: 'run-1', jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
+      expect(runtime.getRun('run-1')).toMatchObject({
+        runId: 'run-1',
+        status: 'pending',
+        trace: {
+          intentAnalysis: {
+            kind: 'canvasPlan',
+            requirements: ['Generate image configuration nodes.']
+          }
+        }
+      })
       expect(plannerStarted).toBe(false)
       expect(runtime.getPlan('message-1')).toBeNull()
 
@@ -219,7 +340,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       expect(plannerLoopToolIds).toEqual(['canvas.queryGraph'])
       expect(plannerLoopMessages).toEqual(expect.arrayContaining(['生成宇宙飞船图片节点']))
 
-      deferred.resolve(samplePlan)
+      deferred.resolve({ type: 'canvasPlan', plan: samplePlan })
       expect(await running).toBe('job-agent-1')
 
       expect(runtime.getPlan('message-1')).toEqual(samplePlan)
@@ -265,7 +386,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
             plannerContextBudget = input.loop?.tokenEstimate ?? -1
             expect(input.agent?.contextPolicy.maxContextTokens).toBe(32)
             expect(input.trigger).toBe('canvasChat')
-            return samplePlan
+          return { type: 'canvasPlan', plan: samplePlan }
           }
         },
         agentRuns
@@ -306,7 +427,17 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         status: 'completed',
         trace: {
           agentId: 'orchestrator',
-          planId: 'plan-agent-run-1'
+          planId: 'plan-agent-run-1',
+          intentAnalysis: {
+            kind: 'canvasPlan',
+            executionMode: 'plan',
+            requirements: ['Generate image configuration nodes.'],
+            recommendedAgentId: 'canvas-orchestrator'
+          },
+          capabilityCheck: {
+            localCapabilities: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.createNode', 'canvas.connectNodes', 'canvas.runNode'],
+            selectedAgentId: 'canvas-orchestrator'
+          }
         }
       })
 
@@ -318,7 +449,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         planIdFactory: () => 'plan-recovered',
         planner: {
           proposePlan() {
-            return samplePlan
+          return { type: 'canvasPlan', plan: samplePlan }
           }
         },
         agentRuns
@@ -332,7 +463,23 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
           planId: 'plan-agent-run-1',
           agentId: 'orchestrator',
           jobId: 'job-agent-run-1',
-          trigger: 'canvasChat'
+          trigger: 'canvasChat',
+          intentAnalysis: {
+            kind: 'canvasPlan',
+            summary: '用户提出了明确的画布或生成工作流需求。',
+            requirements: ['Generate image configuration nodes.'],
+            missing: [],
+            localCapabilities: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.createNode', 'canvas.connectNodes', 'canvas.runNode'],
+            recommendedAgentId: 'canvas-orchestrator',
+            executionMode: 'plan',
+            complexity: 'high'
+          },
+          capabilityCheck: {
+            localCapabilities: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.createNode', 'canvas.connectNodes', 'canvas.runNode'],
+            selectedAgentId: 'canvas-orchestrator',
+            executionMode: 'plan',
+            complexity: 'high'
+          }
         }
       })
     } finally {

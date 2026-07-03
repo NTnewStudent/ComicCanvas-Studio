@@ -19,6 +19,8 @@ describe('M3 gateway preload bridge', () => {
     expect(source).toContain("invokeMain('canvas.chatSend'")
     expect(source).toContain('getCanvasPlan')
     expect(source).toContain("invokeMain('canvas.chatGetPlan'")
+    expect(source).toContain('onJobProgress')
+    expect(source).toContain("subscribeMain('job.progress'")
     expect(source).toContain('listAgents')
     expect(source).toContain("invokeMain('agent.list'")
     expect(source).toContain('saveAgent')

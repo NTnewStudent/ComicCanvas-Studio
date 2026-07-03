@@ -1,0 +1,45 @@
+---
+alwaysApply: false
+---
+
+# skill: canvas-node-designer
+
+新增画布节点类型或修改已有节点的数据模型、连接行为、渲染表现或生成动作时使用。
+
+需同时保持 shared 契约、连接矩阵、渲染层 UI、主进程 run 映射、Plan 白名单和测试六处一致。
+
+## 必须产出
+
+### 1. shared/nodes.ts
+
+- 更新 `NodeType` 与节点数据接口；导出符号 JSDoc。
+
+### 2. shared/connection-matrix.ts
+
+- 更新上游/下游允许集合；保持唯一真源；更新 PBT。
+
+### 3. 渲染层节点组件
+
+- `desktop/src/renderer/canvas/nodes/`
+- orientation 16:9 / 9:16 / 1:1；design token；事件驱动，不轮询。
+
+### 4. 主进程 run 行为（若生成内容）
+
+- 注册 runNode 步骤与 provider 映射；入队，不同步返回资产。
+
+### 5. Plan 白名单
+
+- 加入 Plan 应用白名单与 sanitizePlan 允许输出。
+
+### 6. 测试
+
+- 连接矩阵 PBT；orientation；终态事件唯一性。
+
+## 检查清单
+
+- [ ] 无连接矩阵副本
+- [ ] 生成完全异步
+- [ ] JSDoc 完整
+- [ ] sanitizer 白名单已更新
+- [ ] `docs/api-contracts/` 已登记变更
+- [ ] 测试覆盖核心不变量

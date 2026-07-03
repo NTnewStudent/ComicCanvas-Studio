@@ -33,13 +33,13 @@ const samplePlan: CanvasPlan = {
   dropped: ['edge:bad->missing:missing_node']
 }
 
-const orchestratorAgent: AgentDefinition = {
-  id: 'orchestrator',
+const generalAgent: AgentDefinition = {
+  id: 'general-purpose',
   source: 'builtin',
-  name: 'Orchestrator',
-  description: 'Turns natural language into declarative CanvasPlan JSON.',
-  instructions: 'Analyze the user request and produce safe ComicCanvas plans.',
-  allowedTools: '*',
+  name: 'General Purpose',
+  description: 'Understands user input before delegating to local capabilities.',
+  instructions: 'First understand the user message, decompose requirements, and inspect local capabilities.',
+  allowedTools: ['canvas.queryGraph'],
   allowedSkills: '*',
   gatewayPolicy: { allowedChannels: ['text', 'image', 'video'] },
   contextPolicy: {
@@ -57,7 +57,7 @@ const orchestratorAgent: AgentDefinition = {
 }
 
 const canvasAgent: AgentDefinition = {
-  ...orchestratorAgent,
+  ...generalAgent,
   id: 'canvas',
   name: 'Canvas',
   description: 'Handles canvas nodes, edges, and graph edits.',
@@ -68,13 +68,32 @@ const canvasAgent: AgentDefinition = {
 
 function createApi(overrides: Partial<ChatPanelApi> = {}): ChatPanelApi {
   return {
-    sendCanvasChat: vi.fn().mockResolvedValue({ jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' }),
+    sendCanvasChat: vi.fn().mockResolvedValue({ runId: 'run-agent-1', jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' }),
     getCanvasPlan: vi.fn().mockResolvedValue(samplePlan),
-    listAgents: vi.fn().mockResolvedValue([orchestratorAgent, canvasAgent]),
+    getAgentRun: vi.fn().mockResolvedValue({
+      runId: 'run-agent-1',
+      status: 'pending',
+      trace: {
+        intentAnalysis: {
+          summary: '用户提出了明确的画布或生成工作流需求。',
+          requirements: ['生成一个宇宙飞船图片节点'],
+          missing: [],
+          executionMode: 'plan',
+          complexity: 'high',
+          recommendedAgentId: 'canvas-orchestrator',
+        },
+        capabilityCheck: {
+          localCapabilities: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.createNode'],
+          selectedAgentId: 'canvas-orchestrator',
+        },
+      },
+    }),
+    listAgents: vi.fn().mockResolvedValue([generalAgent, canvasAgent]),
     onCanvasPlanReady: vi.fn().mockImplementation((handler: (event: { messageId: string; planId: string }) => void) => {
       setTimeout(() => handler({ messageId: 'message-1', planId: 'plan-1' }), 0)
       return vi.fn()
     }),
+    onAgentResponseReady: vi.fn().mockReturnValue(vi.fn()),
     ...overrides
   }
 }
@@ -151,9 +170,14 @@ describe('M4 Chat UI', () => {
 
     fireEvent.keyDown(textbox, { key: 'Enter' })
 
-    await waitFor(() => expect(api.sendCanvasChat).toHaveBeenCalledWith({ message: '生成一个宇宙飞船图片节点', agentId: 'orchestrator' }))
+    await waitFor(() => expect(api.sendCanvasChat).toHaveBeenCalledWith({ message: '生成一个宇宙飞船图片节点', agentId: 'general-purpose' }))
     expect(textbox).toHaveValue('')
-    expect(screen.getByText('计划已排队：job-agent-1')).toBeInTheDocument()
+    expect(screen.getByText('Agent 已排队：job-agent-1')).toBeInTheDocument()
+    await waitFor(() => expect(api.getAgentRun).toHaveBeenCalledWith({ runId: 'run-agent-1' }))
+    expect(await screen.findByText('理解输入：用户提出了明确的画布或生成工作流需求。')).toBeInTheDocument()
+    expect(await screen.findByText('拆解需求：生成一个宇宙飞船图片节点')).toBeInTheDocument()
+    expect(await screen.findByText('检查本地能力：canvas.queryGraph、canvas.proposePlan、canvas.createNode')).toBeInTheDocument()
+    expect(await screen.findByText('执行模式：plan；推荐 Agent：canvas-orchestrator。')).toBeInTheDocument()
     await waitFor(() => expect(api.getCanvasPlan).toHaveBeenCalledWith({ messageId: 'message-1' }))
     expect(await screen.findByText('生成宇宙飞船首帧并转成短视频。')).toBeInTheDocument()
   })
@@ -199,6 +223,37 @@ describe('M4 Chat UI', () => {
     expect(screen.queryByRole('button', { name: '应用计划' })).not.toBeInTheDocument()
   })
 
+  it('renders ordinary Agent answers from responseReady without fetching a CanvasPlan', async () => {
+    const getCanvasPlan = vi.fn().mockResolvedValue(samplePlan)
+    const api = createApi({
+      getCanvasPlan,
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn().mockImplementation((handler: (event: { messageId: string; runId: string; response: { type: 'answer'; summary: string; text: string; dropped: string[] } }) => void) => {
+        setTimeout(() => handler({
+          messageId: 'message-1',
+          runId: 'run-agent-1',
+          response: {
+            type: 'answer',
+            summary: '用户提出了普通问题，应由通用 Agent 直接回答。',
+            text: '今天是星期二。',
+            dropped: []
+          }
+        }), 0)
+        return vi.fn()
+      })
+    })
+
+    render(<ChatPanel api={api} onApplyPlan={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '今天星期几' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    expect(await screen.findByText('今天是星期二。')).toBeInTheDocument()
+    expect(getCanvasPlan).not.toHaveBeenCalled()
+    expect(screen.queryByText('计划已就绪：plan-1')).not.toBeInTheDocument()
+    expect(screen.queryByText('需要澄清。')).not.toBeInTheDocument()
+  })
+
   it('uses the Tailwind cn helper and references the pc-client chat implementation baseline', () => {
     const source = readFileSync('desktop/src/renderer/src/chat/ChatPanel.tsx', 'utf8')
     const tasks = readFileSync('specs/milestone-execution-plan/tasks.md', 'utf8')
@@ -221,7 +276,7 @@ describe('M4 Chat UI', () => {
     fireEvent.change(textbox, { target: { value: '@' } })
 
     expect(await screen.findByRole('listbox', { name: 'Agent 提及选择器' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /Orchestrator/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('option', { name: /General Purpose/ })).toHaveAttribute('aria-selected', 'true')
 
     fireEvent.keyDown(textbox, { key: 'ArrowDown' })
     expect(screen.getByRole('option', { name: /Canvas/ })).toHaveAttribute('aria-selected', 'true')

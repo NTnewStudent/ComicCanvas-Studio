@@ -1,104 +1,121 @@
----
-description:
-alwaysApply: true
----
-
 # ComicCanvas Studio
 
 **AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，本地优先）
 
-两条核心能力：
-1. **画布**：用户手动操作 React Flow 画布，节点化生成图片 / 视频
+本文件是 **Cursor** 项目治理入口。配置层导航见 `.cursor/README.md`。
+
+---
+
+## 项目身份
+
+核心价值：
+1. **画布**：用户手动操作 React Flow 画布，节点化生成图片 / 视频（text/image/video 三节点）
 2. **Agent**：自然语言驱动 Agent 自动「生成节点 → 连线 → 串行执行任务」
 
----
-
-## 技术栈
-
-| 层 | 选型 |
-|----|------|
-| 桌面外壳 | Electron + TypeScript 5+（strict）|
-| 渲染层 | React 18 + Vite 5 + @xyflow/react + Zustand v4 + TanStack Query v5 + Tailwind |
-| 主进程 | Node.js 20+ |
-| 数据库 | SQLite（better-sqlite3 + Drizzle ORM），DB 抽象层可切 MySQL |
-| 任务队列 | 进程内持久化队列（落 SQLite `jobs` 表），无 BullMQ / Redis |
-| 实时 | Electron IPC 事件（无 WebSocket）|
-| Agent | AsyncGenerator 主循环 + 统一 Tool 接口（参考 cc-haha 设计）|
-| 资产 | 本地 `appData/assets/`，DB 存相对路径，渲染走 `cc-asset://` 安全协议 |
+**产品定位**：以「漫剧（comic drama）制作」为主——围绕「文本 → 生图 → 生视频」组织画布与 Agent 能力。
 
 ---
 
-## 仓库结构
+## 工程形态
+
+| 层 | 路径 | 技术栈 |
+| :--- | :--- | :--- |
+| Electron 主进程 + Agent 运行时 + 本地服务 | `desktop/src/main/` | Node.js 20+ / TS strict |
+| 渲染层（画布 UI） | `desktop/src/renderer/` | React 18 / Vite 5 / @xyflow/react / Zustand / TanStack Query |
+| 数据持久化 | `desktop/src/main/db/` | SQLite（better-sqlite3 + Drizzle），DB 抽象层（可切 MySQL）|
+| 任务队列 + 模型适配 | `desktop/src/main/jobs/`、`desktop/src/main/providers/` | 进程内持久化队列 + 模型网关适配器 |
+| 共享契约 | `shared/` | 连接矩阵 / Plan 类型 / IPC 契约（前后端唯一真源）|
+
+> 包管理：**Bun 1.3.14**（`.bun-version` + `bun.lock`）。不引入 `package-lock.json`、`npm run` 或 `npx` 作为项目入口。
+
+> ⚠️ 无 Redis / 无 BullMQ / 无 WebSocket：进程内持久化任务队列 + Electron IPC 事件替代。
+> ⚠️ 资产落本地 `appData/assets/`，DB 存相对路径，渲染走 `cc-asset://` 安全协议。
+
+---
+
+## Cursor 治理层
 
 ```
-comic-canvas/
-├── AGENTS.md / AGENTS.md          # 本文件（项目规则） / 编码行为准则
-├── .Codex/                       # Codex 治理层
-│   ├── settings.json              # 权限配置（LTM 自动捕获已停用）
-│   ├── README.md                  # 治理层导航
-│   ├── agents/                    # 4 个子 agent 定义（自包含）
-│   │   ├── orchestrator-agent.md
-│   │   ├── canvas-agent.md
-│   │   ├── tooling-agent.md
-│   │   └── pm-agent.md
-│   ├── rules/                     # alwaysApply 或按 globs 自动激活
-│   │   ├── coding-standards.md    → alwaysApply
-│   │   ├── electron-node.md       → desktop/src/main|preload/**
-│   │   ├── agent-runtime.md       → desktop/src/main/agent/**
-│   │   ├── canvas-engine.md       → desktop/src/renderer/canvas/**
-│   │   ├── tool-contracts.md      → desktop/src/main/tools/**
-│   │   ├── data-persistence.md    → desktop/src/main/db/**
-│   │   └── tests.md               → **/*.{test,spec}.{ts,tsx}
-│   ├── commands/                  # 斜杠命令（/orchestrator /canvas /tooling /pm）
-│   ├── skills/                    # pm-req-planner / canvas-node-designer / skill-creator
-│   └── specs/                     # 需求/设计/任务三件套
-│       └── canvas-agent-orchestration/
-├── ltm/                           # 历史遗留目录；当前不再使用 LTM
-├── shared/                        # 前后端唯一真源契约
-│   ├── connection-matrix.ts       # 节点连接矩阵
-│   ├── plan.ts                    # 声明式 CanvasPlan 类型
-│   ├── nodes.ts                   # 节点 / 边类型
-│   └── ipc.ts                     # IPC 通道契约
-├── desktop/
-│   └── src/
-│       ├── main/                  # 主进程（Node）
-│       │   ├── agent/             # Agent 主循环 + 编排
-│       │   ├── tools/             # 统一 Tool 接口 + Canvas 工具集
-│       │   ├── jobs/              # 任务队列 + JobWorker
-│       │   ├── providers/         # 模型网关适配器（image/video/text）
-│       │   ├── db/                # Drizzle schema + 仓储层
-│       │   ├── assets/            # 本地资产管线
-│       │   └── ipc/               # IPC handler
-│       ├── preload/               # contextBridge 白名单 API
-│       └── renderer/              # 渲染层（React）
-│           └── canvas/            # React Flow 画布
-└── docs/
-    ├── research-report.md
-    ├── architecture/
-    ├── api-contracts/             # IPC / 服务契约（契约先行）
-    └── progress/                  # 需求 / 迭代 / 测试报告
+.cursor/
+├── README.md
+├── mcp.json
+├── rules/                    # Project Rules（.mdc）
+│   ├── project-identity.mdc  # alwaysApply
+│   ├── coding-standards.mdc  # alwaysApply
+│   ├── ltm-operations.mdc    # alwaysApply
+│   ├── project-commands.mdc  # Apply Intelligently
+│   ├── electron-node.mdc     # globs: main + preload
+│   ├── agent-runtime.mdc     # globs: main/agent
+│   ├── canvas-engine.mdc     # globs: renderer/canvas
+│   ├── tool-contracts.mdc
+│   ├── data-persistence.mdc
+│   ├── tests.mdc
+│   ├── agent-*.mdc           # 纯手动 @
+│   └── skill-*.mdc
+└── agents/                   # Subagents（.md）
+    ├── orchestrator-agent.md
+    ├── canvas-agent.md
+    ├── tooling-agent.md
+    └── pm-agent.md
+```
+
+### Rules 与 Subagents
+
+| 机制 | 位置 | 激活 | 用途 |
+| :--- | :--- | :--- | :--- |
+| **Project Rules** | `.cursor/rules/*.mdc` | `@规则名`、globs、alwaysApply | 向当前 Agent 注入指令 |
+| **Subagents** | `.cursor/agents/*.md` | `/subagent名`、Agent 自动委托 | 独立 context 执行子任务 |
+
+> [Cursor Rules](https://cursor.com/docs/rules) · [Subagents](https://cursor.com/docs/subagents)
+
+---
+
+## Agent 分工
+
+| Agent | 角色 | Rule | Subagent |
+| :--- | :--- | :--- | :--- |
+| **orchestrator-agent** | CanvasPlan 编排 | `@agent-orchestrator` | `/orchestrator-agent` |
+| **canvas-agent** | 画布 / 节点 / 连线 | `@agent-canvas` | `/canvas-agent` |
+| **tooling-agent** | 主进程 / Tool / DB | `@agent-tooling` | `/tooling-agent` |
+| **pm-agent** | 需求 / 契约 / 进度 | `@agent-pm` | `/pm-agent` |
+
+- **Rule `@`**：当前对话注入角色约束
+- **Subagent `/`**：长链路、并行子任务、隔离 verbose 输出
+
+```
+@agent-tooling 审查 desktop/src/main/ipc/canvas.handler.ts
+/tooling-agent 重构 jobs 队列入队路径并跑 vitest
 ```
 
 ---
 
-## Agent 角色
+## 上岗前必读（按角色）
 
-| Agent | 职责 | 文件范围 | 激活方式 |
-|-------|------|----------|---------|
-| **orchestrator-agent** | 自然语言 → CanvasPlan 编排 | `main/agent/` + `shared/plan.ts` | `@orchestrator-agent` |
-| **canvas-agent** | React Flow 画布 / 节点 / 连线 | `renderer/canvas/` | `@canvas-agent` |
-| **tooling-agent** | Agent 运行时 / Tool / Queue / DB | `main/**` | `@tooling-agent` |
-| **pm-agent** | 需求 / 契约 / 进度 / 测试 | `docs/` + `.Codex/specs/` | `@pm-agent` |
+### orchestrator-agent
+```
+AGENTS.md + @agent-orchestrator + specs/canvas-agent-orchestration/
+```
 
-完整角色定义在 `.Codex/agents/<name>.md`（自包含）。
+### canvas-agent
+```
+AGENTS.md + @agent-canvas + global/design/DESIGN.md + shared/
+```
+
+### tooling-agent
+```
+AGENTS.md + @agent-tooling + docs/api-contracts/
+```
+
+### pm-agent
+```
+AGENTS.md + @agent-pm + specs/ + docs/progress/
+```
 
 ---
 
 ## 核心契约
 
 ### 节点连接矩阵（`shared/connection-matrix.ts`，唯一真源）
-
-三种节点：`text` / `image` / `video`。
 
 | 上游 | 允许下游 |
 |------|---------|
@@ -108,84 +125,67 @@ comic-canvas/
 
 ### CanvasPlan（`shared/plan.ts`）
 
-```typescript
-interface CanvasPlan {
-  kind: 'plan' | 'clarify'
-  summary: string
-  nodes: { ref: string; type: string; title: string; data: Record<string, unknown> }[]
-  edges: { source: string; target: string; edgeType: string }[]
-  runSteps: { ref: string; action: RunAction }[]
-  question: string | null
-  dropped: string[]
-}
-type RunAction = 'imageRun' | 'videoRun' | 'textPolish'
-```
+`kind: 'plan' | 'clarify'`；`runSteps.action` 白名单：`imageRun` | `videoRun` | `textPolish`。
 
-### Tools & Agents 系统（`shared/tools-agents.ts`）
+### IPC（`shared/ipc.ts`，`domain.action`）
 
-- **统一 Tool 接口**：手动操作与 Agent 编排共用同一套 Tool 实现（区别只在触发源）。
-- **Canvas 工具集**：queryGraph / proposePlan / createNode / connectNodes / updateNodeData / deleteNode(ask) / runNode。
-- **super-agent**：`allowedTools: '*'`，默认对话入口，持有全部工具。
-- **spawnSubAgent**：内联定义模式 spawn 子 agent 跑长任务；权限 ⊆ 父级，递归深度 ≤ `MAX_SPAWN_DEPTH(2)`。
-- **网关热拔插**：`GatewayConfig`（OpenAI 兼容），设置页改 URL/Key 后重新初始化 Provider，不重启。
-- **资产文件夹**：`AssetFolder`，图片/视频分类 + 用户自定义嵌套文件夹。
-- 详见 `docs/api-contracts/tools-agents.md`。
+`canvas.*` / `job.*` / `settings.*` / `asset.*`
 
-### IPC 通道（`shared/ipc.ts`，命名格式 `domain.action`）
+---
 
-- canvas.*：`chatSend` / `chatGetPlan` / `runNode` / `saveGraph` / `loadGraph`
-- job.*：`subscribe` / `progress` / `completed` / `failed`
-- settings.*：`getGateways` / `saveGateway` / `getAgents` / `saveAgent` / `getTools` / `toggleTool`
-- asset.*：`getFolders` / `createFolder` / `moveAsset` / `deleteAsset`
+## 共享真源
+
+| 文档 | 用途 | 写入方 |
+| :--- | :--- | :--- |
+| `docs/api-contracts/` | IPC / 服务契约 | pm-agent 起草，tooling-agent 主改 |
+| `global/design/DESIGN.md` | UI/UX design token | canvas-agent 主消费，pm-agent 协调 |
+| `shared/connection-matrix.ts` | 连接矩阵 | tooling-agent + canvas-agent |
+| `shared/plan.ts` | CanvasPlan 类型 | orchestrator-agent |
+| `specs/` | requirements / design / tasks | pm-agent 主改，全体消费 |
+| `docs/progress/` | 迭代与测试报告 | pm-agent |
+| `docs/architecture/` | 系统架构 | 全体 |
 
 ---
 
 ## 全局禁止
 
-- ❌ Canvas Plan 里出现可执行代码 / 脚本字符串
-- ❌ 前后端各自维护连接矩阵副本（只消费 `shared/connection-matrix.ts`）
-- ❌ 生图/生视频走同步阻塞路径（必须入任务队列，IPC 事件回推终态）
+- ❌ 直接引用 hjwall / cc-haha 源码（仅参考设计与契约）
+- ❌ Canvas Plan 含可执行代码 / 脚本字符串
+- ❌ 前后端各自维护连接矩阵副本
+- ❌ 生图/生视频同步阻塞（必须入队 + IPC 终态）
 - ❌ `contextIsolation: false` 或 `nodeIntegration: true`
-- ❌ TypeScript `any`（用 `unknown` + 类型收窄）
-- ❌ 未在 `docs/api-contracts/` 登记契约就开新 IPC 通道
-- ❌ 密钥明文存储 / 写进日志 / 写进 LTM
+- ❌ TypeScript `any`
+- ❌ 未在 `docs/api-contracts/` 登记就开新 IPC
+- ❌ 密钥明文存储 / 写进日志
 - ❌ DB 查询散落业务层（走仓储层）
+- ❌ 子 agent 提权 / 递归深度超 `MAX_SPAWN_DEPTH(2)`
+- ❌ `runNode` 同步等待生成
 - ❌ 渲染层 `setInterval` 轮询资产状态
-- ❌ 子 agent 提权（工具集超出父 agent）/ 递归深度超 `MAX_SPAWN_DEPTH(2)`
-- ❌ `runNode` 同步等待生成；第三方网关轮询在 JobWorker 内部做，不阻塞入队入口
 
 ---
 
-## 编码规范
+## Skill 速查
 
-- 所有导出函数/类/方法必须有 JSDoc（意图、参数、返回、异常）
-- 所有 IPC/服务方法标注契约锚点：`@see docs/api-contracts/...`
-- 所有异常 throw/catch 必须有行内注释说明原因，禁止吞异常
-- 纯逻辑（矩阵校验、prompt 拼接、orientation 判定）放 `lib/` 纯函数，不依赖框架运行时
-- IPC handler 薄（Zod 校验 + 转调）、service 厚
+| Skill | 激活 | 用途 |
+| :--- | :--- | :--- |
+| canvas-node-designer | `@skill-canvas-node-designer` | 新增/修改节点类型（六处一致）|
+| pm-req-planner | `@skill-pm-req-planner` | EARS 需求三件套 → `specs/` |
+| skill-creator | `@skill-creator` | 创建新 `.cursor/rules` 规则 |
+
+规则定义见 `.cursor/rules/skill-*.mdc`。
 
 ---
 
 ## 项目记录
 
-当前项目不再使用 LTM。不要在工作开始、结束、检查进度或保存检查点时运行
-`ltm/bin/ltm.py`，也不要依赖 `ltm/runtime/active-context.json`。任务状态以
-`specs/`、`docs/progress/`、git 状态和用户最新指令为准。
+不使用 LTM。不要运行 `ltm/bin/ltm.py`。任务状态以 `specs/`、`docs/progress/`、git 与用户最新指令为准。
 
 ---
 
-## 命令速查
+## 编码规范快查
 
-```bash
-# 子 agent 切换
-@orchestrator-agent   # 编排 + CanvasPlan
-@canvas-agent         # 画布 + 节点
-@tooling-agent        # 主进程 + Tool + DB
-@pm-agent             # 需求 + 契约 + 进度
+- 导出符号 JSDoc；IPC/服务 `@see docs/api-contracts/...`
+- 异常 throw/catch 行内注释；禁止吞异常
+- 纯逻辑放 `lib/`；IPC handler 薄、service 厚
 
-# 斜杠命令
-/orchestrator         # 同上，Codex slash command
-/canvas
-/tooling
-/pm
-```
+详细规则见 `.cursor/rules/coding-standards.mdc`。

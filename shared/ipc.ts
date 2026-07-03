@@ -33,7 +33,7 @@ import type {
 import type { GatewayConfigInput, GatewayConfigView, GatewayFetchModelsRequest, GatewayFetchModelsResponse } from './gateway'
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
 import type { CanvasPlan, PlanRunStep } from './plan'
-import type { AgentDefinition, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
+import type { AgentDefinition, AgentNonCanvasResponse, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
 import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillListRequest } from './skills'
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
 import type { ToolDescriptor, ToolInvocationRecord } from './tools'
@@ -133,6 +133,8 @@ export type AgentIpcChannel =
   | 'agent.getRun'
   | 'agent.approveTool'
   | 'agent.spawn'
+  | 'agent.responseReady'
+  | 'agent.delta'
   | 'agent.progress'
   | 'agent.completed'
   | 'agent.failed'
@@ -412,7 +414,7 @@ export interface IpcRequestMap {
 }
 
 export interface IpcResponseMap {
-  'canvas.chatSend': { jobId: string; messageId: string; status: 'pending' }
+  'canvas.chatSend': { runId: string; jobId: string; messageId: string; status: 'pending' }
   'canvas.chatGetPlan': CanvasPlan
   'canvas.applyPlan': CanvasApplyPlanResponse
   'canvas.runPlan': CanvasRunPlanResponse
@@ -506,6 +508,8 @@ export interface IpcEventMap {
   'tool.completed': { invocationId: string; output: unknown }
   'tool.failed': { invocationId: string; error: SafeErrorEnvelope }
   'tool.audit': { traceId: string; toolId: string; decision: string }
+  'agent.responseReady': { runId: string; messageId: string; response: AgentNonCanvasResponse }
+  'agent.delta': { runId: string; messageId: string; delta: string }
   'agent.progress': { runId: string; message: string }
   'agent.completed': { runId: string; output: string }
   'agent.failed': { runId: string; error: SafeErrorEnvelope }
