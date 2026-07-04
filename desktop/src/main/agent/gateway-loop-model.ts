@@ -6,13 +6,20 @@
 
 import type { AgentDefinition } from '../../../../shared/agents'
 import type { AgentResponse } from '../../../../shared/agents'
-import type { GatewayRequest, GatewayResult } from '../../../../shared/gateway'
+import type { GatewayRequest, GatewayResult, GatewayType } from '../../../../shared/gateway'
 import type { ToolDescriptor } from '../../../../shared/tools'
 import type { GatewayRegistry } from '../providers/registry'
 import type { ToolRuntime } from '../tools/runtime'
+import {
+  gatewayToolCallsToAgentCalls,
+  loopMessagesToGatewayMessages,
+  resolveAgentToolProtocol,
+  toolDescriptorsToGatewayTools,
+  type AgentToolProtocol
+} from '../lib/agent-gateway-tools'
 import type { AgentContextLoopState, AgentLoopModel, AgentLoopStepResult, AgentToolCall, RunAgentContextLoopInput } from './context-loop'
 import { resumeAgentContextLoopWithApproval, runAgentContextLoop } from './context-loop'
-import type { OrchestratorPlanner, OrchestratorProgressDraft } from './orchestrator'
+import type { OrchestratorPlanner, OrchestratorPlannerDraft } from './orchestrator'
 import { sanitizePlan } from './sanitize-plan'
 import { estimateCostUsd } from './cost'
 
@@ -22,6 +29,8 @@ interface GatewayAgentLoopModelOptions {
   runId: string
   gatewayId?: string
   modelId?: string
+  /** Tool protocol for this gateway; defaults from gateway type when omitted. */
+  toolProtocol?: AgentToolProtocol
   /** Optional fallback gateway+model tried once when the primary call fails. */
   fallbackGatewayId?: string
   fallbackModelId?: string
@@ -38,6 +47,8 @@ export interface GatewayAgentPlannerOptions {
   /** Optional fallback gateway+model when the primary text model fails. */
   fallbackGatewayId?: string
   fallbackModelId?: string
+  /** Resolves gateway type for native-vs-json tool protocol selection. */
+  resolveGatewayType?: (gatewayId: string) => GatewayType | undefined
   /**
    * Lazily resolves the effective default text model for agents that do not pin
    * their own gateway. Returning null signals that no real text model is
@@ -185,12 +196,19 @@ function noTextModelClarification(): AgentResponse {
   }
 }
 
-function compactToolsForPrompt(tools: readonly ToolDescriptor[]): Array<Pick<ToolDescriptor, 'id' | 'name' | 'description' | 'inputSchemaRef'>> {
+function compactToolsForPrompt(tools: readonly ToolDescriptor[]): Array<{
+  id: string
+  name: string
+  description: string
+  inputSchemaRef: string
+  inputParametersJsonSchema?: Record<string, unknown>
+}> {
   return tools.map((tool) => ({
     id: tool.id,
     name: tool.name,
     description: tool.description,
-    inputSchemaRef: tool.inputSchemaRef
+    inputSchemaRef: tool.inputSchemaRef,
+    ...(tool.inputParametersJsonSchema ? { inputParametersJsonSchema: tool.inputParametersJsonSchema } : {})
   }))
 }
 
@@ -253,7 +271,55 @@ function buildPrompt(state: AgentContextLoopState): string {
   ].join('\n')
 }
 
-function gatewayRequest(options: GatewayAgentLoopModelOptions, state: AgentContextLoopState): GatewayRequest {
+function buildNativeSystemPrompt(state: AgentContextLoopState): string {
+  const contextSection = state.additionalContext
+    ? `\n${state.additionalContext}\n`
+    : ''
+
+  return [
+    'You are running inside ComicCanvas Studio Agent orchestration.',
+    'Use the provided native tools for canvas and filesystem operations.',
+    'When you are ready to finish, respond with exactly one JSON object (no markdown unless fenced) using one of these terminal shapes:',
+    stableJson({
+      type: 'answer',
+      summary: 'short summary',
+      text: 'direct answer for ordinary questions',
+      dropped: []
+    }),
+    stableJson({
+      type: 'clarification',
+      summary: 'why clarification is needed',
+      question: 'one user-facing question',
+      missing: ['specific missing item'],
+      dropped: []
+    }),
+    stableJson({
+      type: 'canvasPlan',
+      plan: {
+        kind: 'plan',
+        summary: 'short summary',
+        nodes: [],
+        edges: [],
+        runSteps: [],
+        question: null,
+        dropped: []
+      }
+    }),
+    '',
+    'Hard rules:',
+    '- Use prior turns in Messages; short follow-ups like "创建" refer to earlier context.',
+    '- Prefer action over questions for clear creative intents; produce a CanvasPlan with sensible defaults.',
+    '- CanvasPlan is declarative JSON only. Never include executable code or provider secrets.',
+    '- Image/video reference nodes do not generate. Use imageConfigV2 for imageRun and videoConfigV2 for videoRun.',
+    '- Use only migrated node types: text, image, video, imageConfigV2, videoConfigV2, character, scene, audio, videoCompose, superResolution, muxAudioVideo.',
+    '',
+    `Loop state: turn ${state.turnCount + 1}/${state.maxTurns}`,
+    `Dropped tools: ${stableJson(state.droppedTools)}`,
+    contextSection
+  ].join('\n')
+}
+
+function gatewayJsonRequest(options: GatewayAgentLoopModelOptions, state: AgentContextLoopState): GatewayRequest {
   return {
     channel: 'text',
     modelKey: options.modelId ?? options.agent.gatewayPolicy.modelId ?? '',
@@ -267,6 +333,86 @@ function gatewayRequest(options: GatewayAgentLoopModelOptions, state: AgentConte
   }
 }
 
+function gatewayNativeRequest(options: GatewayAgentLoopModelOptions, state: AgentContextLoopState): GatewayRequest {
+  const transcript = loopMessagesToGatewayMessages(state.messages)
+  const systemIndex = transcript.findIndex((message) => message.role === 'system')
+  const nativeSystem = buildNativeSystemPrompt(state)
+
+  if (systemIndex >= 0) {
+    transcript[systemIndex] = { role: 'system', content: nativeSystem }
+  } else {
+    transcript.unshift({ role: 'system', content: nativeSystem })
+  }
+
+  return {
+    channel: 'text',
+    modelKey: options.modelId ?? options.agent.gatewayPolicy.modelId ?? '',
+    prompt: '',
+    references: [],
+    messages: transcript,
+    tools: toolDescriptorsToGatewayTools(state.allowedTools),
+    toolChoice: 'auto',
+    parameters: {
+      temperature: options.agent.effort === 'low' ? 0.1 : options.agent.effort === 'medium' ? 0.3 : 0.5
+    },
+    idempotencyKey: `${options.runId}:turn-${state.turnCount + 1}`
+  }
+}
+
+function parseGatewayTextStep(text: string): AgentLoopStepResult {
+  const trimmed = text.trim()
+  if (trimmed.length === 0) {
+    return clarifyFromInvalidModelResponse()
+  }
+
+  try {
+    return parseModelJson(parseJsonObject(trimmed))
+  } catch {
+    return {
+      type: 'response',
+      response: {
+        type: 'answer',
+        summary: 'General answer.',
+        text: trimmed,
+        dropped: []
+      }
+    }
+  }
+}
+
+function gatewayRequestForProtocol(
+  options: GatewayAgentLoopModelOptions,
+  state: AgentContextLoopState,
+  protocol: AgentToolProtocol
+): GatewayRequest {
+  return protocol === 'native' ? gatewayNativeRequest(options, state) : gatewayJsonRequest(options, state)
+}
+
+function parseGatewayStepResult(
+  result: GatewayResult,
+  state: AgentContextLoopState,
+  protocol: AgentToolProtocol
+): AgentLoopStepResult {
+  if (result.kind !== 'text') {
+    throw new Error('agent_model_non_text_result')
+  }
+
+  if (protocol === 'native' && result.toolCalls && result.toolCalls.length > 0) {
+    const allowed = new Set(state.allowedTools.map((tool) => tool.id))
+    const calls = gatewayToolCallsToAgentCalls(result.toolCalls, allowed)
+
+    if (calls.length > 0) {
+      return {
+        type: 'toolCalls',
+        calls,
+        ...(result.text.trim().length > 0 ? { message: result.text } : {})
+      }
+    }
+  }
+
+  return parseGatewayTextStep(result.text)
+}
+
 /**
  * Creates an AgentLoopModel that asks a configured text gateway for each loop step,
  * tracks token usage, and retries against a fallback gateway when the primary fails.
@@ -277,6 +423,7 @@ function gatewayRequest(options: GatewayAgentLoopModelOptions, state: AgentConte
  */
 export function createGatewayAgentLoopModel(options: GatewayAgentLoopModelOptions): AgentLoopModel {
   let lastRawUsage: { inputTokens: number | undefined; outputTokens: number | undefined } | undefined
+  const toolProtocol = options.toolProtocol ?? 'json'
 
   async function invokeWithFallback(gatewayId: string, request: GatewayRequest): Promise<GatewayResult> {
     const ctx = options.onDelta ? { onDelta: options.onDelta } : undefined
@@ -294,23 +441,26 @@ export function createGatewayAgentLoopModel(options: GatewayAgentLoopModelOption
   return {
     async step(state) {
       const gatewayId = options.gatewayId ?? options.agent.gatewayPolicy.gatewayId ?? 'stub-main'
-      const request = gatewayRequest(options, state)
+      const request = gatewayRequestForProtocol(options, state, toolProtocol)
       const result = await invokeWithFallback(gatewayId, request)
 
       if (result.kind !== 'text') {
         throw new Error('agent_model_non_text_result')
       }
 
-      // Record usage for the loop accumulator.
       lastRawUsage = result.usage
         ? { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }
         : undefined
 
-      try {
-        return parseModelJson(parseJsonObject(result.text))
-      } catch {
-        return clarifyFromInvalidModelResponse()
+      if (toolProtocol === 'json') {
+        try {
+          return parseModelJson(parseJsonObject(result.text))
+        } catch {
+          return clarifyFromInvalidModelResponse()
+        }
       }
+
+      return parseGatewayStepResult(result, state, toolProtocol)
     },
     lastUsage() {
       if (!lastRawUsage) return undefined
@@ -323,6 +473,62 @@ export function createGatewayAgentLoopModel(options: GatewayAgentLoopModelOption
   }
 }
 
+function summarizeToolInput(input: unknown): string {
+  try {
+    const text = JSON.stringify(input)
+    return text.length > 160 ? `${text.slice(0, 157)}...` : text
+  } catch {
+    return '{}'
+  }
+}
+
+function loopEventToPlannerDraft(event: import('./context-loop').AgentLoopEvent): OrchestratorPlannerDraft | null {
+  if (event.type === 'progress') {
+    return { type: 'progress', message: event.message, progress: event.progress }
+  }
+
+  if (event.type === 'toolStarted') {
+    return {
+      type: 'toolStarted',
+      callId: event.call.id,
+      toolId: event.call.toolId,
+      inputSummary: summarizeToolInput(event.call.input)
+    }
+  }
+
+  if (event.type === 'tool') {
+    const status = event.result.record.status === 'completed' ? 'completed' : event.result.record.status === 'denied' ? 'denied' : 'failed'
+    return {
+      type: 'toolCompleted',
+      callId: event.call.id,
+      toolId: event.call.toolId,
+      invocationId: event.result.record.invocationId,
+      status,
+      summary: `${event.call.toolId} ${status}`
+    }
+  }
+
+  if (event.type === 'permissionRequired') {
+    return {
+      type: 'permissionRequired',
+      callId: event.request.callId,
+      toolId: event.request.toolId,
+      reason: event.request.reason,
+      requiredPermissions: event.request.requiredPermissions
+    }
+  }
+
+  if (event.type === 'response') {
+    if (event.response.type === 'canvasPlan') {
+      return { type: 'progress', message: 'Agent produced a CanvasPlan', progress: 90 }
+    }
+
+    return { type: 'progress', message: 'Agent produced an answer', progress: 90 }
+  }
+
+  return null
+}
+
 /**
  * Creates an OrchestratorPlanner backed by the Agent context loop and gateway text models.
  * @param options - Gateway, ToolRuntime, tool descriptor, and default model dependencies.
@@ -332,7 +538,7 @@ export function createGatewayAgentLoopModel(options: GatewayAgentLoopModelOption
  */
 export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): OrchestratorPlanner {
   return {
-    async *proposePlan(input): AsyncGenerator<OrchestratorProgressDraft, AgentResponse> {
+    async *proposePlan(input): AsyncGenerator<OrchestratorPlannerDraft, AgentResponse> {
       if (!input.agent) {
         throw new Error('agent_not_found')
       }
@@ -358,6 +564,7 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
 
       if (gatewayId) {
         modelOptions.gatewayId = gatewayId
+        modelOptions.toolProtocol = resolveAgentToolProtocol(options.resolveGatewayType?.(gatewayId))
       }
 
       if (modelId) {
@@ -383,15 +590,9 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
       let next = await loop.next()
 
       while (!next.done) {
-        if (next.value.type === 'progress') {
-          yield { type: 'progress', message: next.value.message, progress: next.value.progress }
-        } else if (next.value.type === 'tool') {
-          const status = next.value.result.record.status
-          yield { type: 'progress', message: `Tool ${next.value.call.toolId} ${status}`, progress: 50 }
-        } else if (next.value.response.type === 'canvasPlan') {
-          yield { type: 'progress', message: 'Agent produced a CanvasPlan', progress: 90 }
-        } else {
-          yield { type: 'progress', message: 'Agent produced an answer', progress: 90 }
+        const draft = loopEventToPlannerDraft(next.value)
+        if (draft) {
+          yield draft
         }
 
         next = await loop.next()
@@ -406,7 +607,7 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
         ? { type: 'canvasPlan', plan: sanitizePlan(loopResult.response.plan) }
         : loopResult.response
     },
-    async *resumeApprovedTool(input): AsyncGenerator<OrchestratorProgressDraft, AgentResponse> {
+    async *resumeApprovedTool(input): AsyncGenerator<OrchestratorPlannerDraft, AgentResponse> {
       const modelOptions: GatewayAgentLoopModelOptions = {
         gateways: options.gateways,
         agent: input.agent,
@@ -421,6 +622,7 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
 
       if (gatewayId) {
         modelOptions.gatewayId = gatewayId
+        modelOptions.toolProtocol = resolveAgentToolProtocol(options.resolveGatewayType?.(gatewayId))
       }
 
       if (modelId) {
@@ -443,15 +645,9 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
       let next = await loop.next()
 
       while (!next.done) {
-        if (next.value.type === 'progress') {
-          yield { type: 'progress', message: next.value.message, progress: next.value.progress }
-        } else if (next.value.type === 'tool') {
-          const status = next.value.result.record.status
-          yield { type: 'progress', message: `Tool ${next.value.call.toolId} ${status}`, progress: 50 }
-        } else if (next.value.response.type === 'canvasPlan') {
-          yield { type: 'progress', message: 'Agent produced a CanvasPlan', progress: 90 }
-        } else {
-          yield { type: 'progress', message: 'Agent produced an answer', progress: 90 }
+        const draft = loopEventToPlannerDraft(next.value)
+        if (draft) {
+          yield draft
         }
 
         next = await loop.next()

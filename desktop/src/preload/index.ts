@@ -21,6 +21,9 @@ export interface ComicCanvasApi {
   getAgentRun(input: IpcRequestMap['agent.getRun']): Promise<IpcResponseMap['agent.getRun']>
   approveAgentTool(input: IpcRequestMap['agent.approveTool']): Promise<IpcResponseMap['agent.approveTool']>
   spawnSubAgent(input: IpcRequestMap['agent.spawn']): Promise<IpcResponseMap['agent.spawn']>
+  listSkills(input?: IpcRequestMap['skill.list']): Promise<IpcResponseMap['skill.list']>
+  getSkillMetadata(input: IpcRequestMap['skill.getMetadata']): Promise<IpcResponseMap['skill.getMetadata']>
+  reloadSkills(input?: IpcRequestMap['skill.reload']): Promise<IpcResponseMap['skill.reload']>
   listGateways(): Promise<IpcResponseMap['gateway.list']>
   saveGateway(input: IpcRequestMap['gateway.save']): Promise<IpcResponseMap['gateway.save']>
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
@@ -62,6 +65,9 @@ export interface ComicCanvasApi {
   onCanvasPlanReady(handler: (event: IpcEventMap['canvas.planReady']) => void): () => void
   onAgentResponseReady(handler: (event: IpcEventMap['agent.responseReady']) => void): () => void
   onAgentDelta(handler: (event: IpcEventMap['agent.delta']) => void): () => void
+  onAgentToolStarted(handler: (event: IpcEventMap['agent.toolStarted']) => void): () => void
+  onAgentToolCompleted(handler: (event: IpcEventMap['agent.toolCompleted']) => void): () => void
+  onAgentPermissionRequired(handler: (event: IpcEventMap['agent.permissionRequired']) => void): () => void
   saveGraph(input: IpcRequestMap['canvas.saveGraph']): Promise<IpcResponseMap['canvas.saveGraph']>
   validateGraph(input: IpcRequestMap['canvas.validateGraph']): Promise<IpcResponseMap['canvas.validateGraph']>
   loadGraph(input: IpcRequestMap['canvas.loadGraph']): Promise<IpcResponseMap['canvas.loadGraph']>
@@ -84,7 +90,7 @@ export interface ComicCanvasApi {
   testStorageConnection(input: StorageConfigInput): Promise<StorageConnectionTestResult>
 }
 
-type SubscribableEventChannel = Extract<IpcEventChannel, 'job.progress' | 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady' | 'agent.responseReady' | 'agent.delta'>
+type SubscribableEventChannel = Extract<IpcEventChannel, 'job.progress' | 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady' | 'agent.responseReady' | 'agent.delta' | 'agent.toolStarted' | 'agent.toolCompleted' | 'agent.permissionRequired'>
 
 /**
  * Invokes a whitelisted main-process channel from typed preload APIs only.
@@ -283,6 +289,9 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/agents.md
    */
   spawnSubAgent: (input) => invokeMain('agent.spawn', input),
+  listSkills: (input) => invokeMain('skill.list', input ?? {}),
+  getSkillMetadata: (input) => invokeMain('skill.getMetadata', input),
+  reloadSkills: (input) => invokeMain('skill.reload', input ?? {}),
   /**
    * Lists configured gateway providers.
    * @returns Gateway configuration views.
@@ -607,6 +616,9 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/agents.md
    */
   onAgentDelta: (handler) => subscribeMain('agent.delta', handler),
+  onAgentToolStarted: (handler) => subscribeMain('agent.toolStarted', handler),
+  onAgentToolCompleted: (handler) => subscribeMain('agent.toolCompleted', handler),
+  onAgentPermissionRequired: (handler) => subscribeMain('agent.permissionRequired', handler),
   /**
    * Persists a canvas graph snapshot for the given project.
    * @param input - Save request including project ID and graph snapshot.

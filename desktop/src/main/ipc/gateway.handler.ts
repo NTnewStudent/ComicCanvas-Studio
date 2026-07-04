@@ -63,6 +63,17 @@ export function seedGatewayConfigs(configs: GatewayConfigView[]): void {
   }
 }
 
+/**
+ * Returns a renderer-safe gateway config view by ID.
+ * @param gatewayId - Gateway identifier.
+ * @returns Config view when registered; otherwise undefined.
+ * @see docs/api-contracts/gateway-providers.md
+ */
+export function getGatewayConfig(gatewayId: string): GatewayConfigView | undefined {
+  ensureDefaultGateway()
+  return gatewayConfigs.get(gatewayId)
+}
+
 function gatewayId(input: GatewayConfigInput): string {
   return input.id ?? `gateway-${input.name.trim().toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-|-$/gu, '') || 'provider'}`
 }

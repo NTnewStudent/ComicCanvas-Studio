@@ -12,6 +12,9 @@ interface IpcEventWindow {
     send(channel: 'canvas.planReady', event: IpcEventMap['canvas.planReady']): void
     send(channel: 'agent.responseReady', event: IpcEventMap['agent.responseReady']): void
     send(channel: 'agent.delta', event: IpcEventMap['agent.delta']): void
+    send(channel: 'agent.toolStarted', event: IpcEventMap['agent.toolStarted']): void
+    send(channel: 'agent.toolCompleted', event: IpcEventMap['agent.toolCompleted']): void
+    send(channel: 'agent.permissionRequired', event: IpcEventMap['agent.permissionRequired']): void
   }
 }
 
@@ -52,6 +55,33 @@ export function createIpcCanvasPlanEventBus(getWindows: IpcCanvasWindowProvider)
       for (const window of getWindows()) {
         if (!window.isDestroyed()) {
           window.webContents.send('agent.delta', event)
+        }
+      }
+    },
+    emitToolStarted(event) {
+      inner.emitToolStarted(event)
+
+      for (const window of getWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('agent.toolStarted', event)
+        }
+      }
+    },
+    emitToolCompleted(event) {
+      inner.emitToolCompleted(event)
+
+      for (const window of getWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('agent.toolCompleted', event)
+        }
+      }
+    },
+    emitPermissionRequired(event) {
+      inner.emitPermissionRequired(event)
+
+      for (const window of getWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send('agent.permissionRequired', event)
         }
       }
     },

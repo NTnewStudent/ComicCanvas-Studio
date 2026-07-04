@@ -113,9 +113,41 @@ interface AgentResponseReadyEvent {
   messageId: string
   response: Exclude<AgentResponse, { type: 'canvasPlan' }>
 }
+
+interface AgentToolStartedEvent {
+  runId: string
+  messageId: string
+  callId: string
+  toolId: string
+  inputSummary: string
+}
+
+interface AgentToolCompletedEvent {
+  runId: string
+  messageId: string
+  callId: string
+  toolId: string
+  invocationId: string
+  status: 'completed' | 'failed' | 'denied'
+  summary: string
+}
+
+interface AgentPermissionRequiredEvent {
+  runId: string
+  messageId: string
+  callId: string
+  toolId: string
+  reason: string
+  requiredPermissions: ToolPermission[]
+}
 ```
 
 Rules:
+
+- `agent.toolStarted` SHALL be emitted immediately before ToolRuntime executes an agent-requested tool call.
+- `agent.toolCompleted` SHALL be emitted after ToolRuntime returns for that call, including denied and failed outcomes.
+- `agent.permissionRequired` SHALL be emitted when a tool returns `decision: 'ask'` and the loop pauses for `agent.approveTool`.
+- Tool lifecycle events SHALL include `runId` and `messageId` so renderer timelines can correlate them with chat turns.
 
 - `answer` is for ordinary conversation, coding/help questions, time/date questions, and general knowledge responses that do not require graph mutation.
 - `clarification` is for greetings, low-signal requests, and ambiguous tasks where the Agent needs more information before selecting tools or creating nodes.
@@ -201,6 +233,7 @@ Rules:
 - Agent context loops SHALL compact older assistant/tool messages deterministically against the agent context token budget while preserving the system prompt, current user request, and a compacted summary boundary.
 - Agent loops that exceed `maxTurns` SHALL terminate with structured metadata including `errorClass`, `turnsUsed`, dropped tools, compaction summary, and omitted message count.
 - Gateway-backed Agent models SHALL return JSON shaped as `toolCalls` or `AgentResponse`; invalid JSON SHALL be converted into a safe `clarification` response with dropped audit metadata instead of mutating the graph.
+- OpenAI-compatible gateways SHALL use native `tools` / `tool_calls` when `resolveAgentToolProtocol` selects `native`; stub and unknown gateways SHALL keep the JSON `toolCalls` protocol.
 - Agent-produced CanvasPlan SHALL be sanitized before application.
 - Child permissions SHALL be parent permissions intersected with target/requested policy.
 - Sub-agent spawn results SHALL include an independent trace with run ID, parent run/trace IDs, effective permissions, dropped permissions, terminal status, and timings.

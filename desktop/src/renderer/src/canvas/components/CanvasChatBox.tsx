@@ -18,6 +18,11 @@ import type { AgentDefinition, AgentResponse } from '../../../../../../shared/ag
 import type { IpcEventMap } from '../../../../../../shared/ipc'
 import type { CanvasPlan } from '../../../../../../shared/plan'
 import { formatAgentTraceSummary } from '../../chat/agent-trace-summary'
+import { applyAgentPlanOnReady } from '../../chat/agent/apply-agent-plan-on-ready'
+import { AgentPermissionModal, type AgentPermissionRequest } from '../../chat/agent/AgentPermissionModal'
+import { AgentRunStatusBar } from '../../chat/agent/AgentRunStatusBar'
+import { AgentSubAgentPanel, extractSubAgentItems } from '../../chat/agent/AgentSubAgentPanel'
+import { AgentToolTrace, type AgentToolTraceItem } from '../../chat/agent/AgentToolPill'
 import { AgentMentionPopover } from '../../chat/AgentMentionPopover'
 import { PlanCard, type ApplyPlanOptions } from '../../chat/PlanCard'
 import { useMentionTrigger } from '../../chat/useMentionTrigger'
@@ -66,7 +71,12 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
   const [busy, setBusy] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [thinking, setThinking] = useState<string[]>([])
+  const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
+  const [permissionRequest, setPermissionRequest] = useState<AgentPermissionRequest | null>(null)
+  const [permissionBusy, setPermissionBusy] = useState(false)
   const [streamingText, setStreamingText] = useState<string>('')
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+  const [runTrace, setRunTrace] = useState<Record<string, unknown> | null>(null)
   const [plan, setPlan] = useState<CanvasPlan | null>(null)
   const [agents, setAgents] = useState<AgentDefinition[]>([])
   const [selectedAgent, setSelectedAgent] = useState<AgentDefinition | null>(null)
@@ -77,6 +87,10 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
   const dragRef = useRef({ active: false, startX: 0, startFabX: 0, moved: false })
   const pendingMessageIdRef = useRef<string | null>(null)
   const pendingJobIdRef = useRef<string | null>(null)
+  const pendingRunIdRef = useRef<string | null>(null)
+  const autoExecuteRef = useRef(autoExecute)
+  const selectedAgentRef = useRef(selectedAgent)
+  const onApplyPlanRef = useRef(onApplyPlan)
   const scrollRef = useRef<HTMLDivElement>(null)
   const mentionTrigger = useMentionTrigger(input, caretIndex)
   const filteredAgents = useMemo(() => {
@@ -115,6 +129,18 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
   useEffect(() => {
     setActiveAgentIndex(0)
   }, [mentionTrigger?.query])
+
+  useEffect(() => {
+    autoExecuteRef.current = autoExecute
+  }, [autoExecute])
+
+  useEffect(() => {
+    selectedAgentRef.current = selectedAgent
+  }, [selectedAgent])
+
+  useEffect(() => {
+    onApplyPlanRef.current = onApplyPlan
+  }, [onApplyPlan])
 
   // Center the FAB horizontally on mount.
   useEffect(() => {
@@ -155,6 +181,60 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
     })
   }, [])
 
+  useEffect(() => {
+    const api = window.comicCanvas
+    if (!api?.onAgentToolStarted) return
+
+    return api.onAgentToolStarted((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
+      pendingRunIdRef.current = event.runId
+      setToolTrace((prev) => [
+        ...prev.filter((item) => item.callId !== event.callId),
+        {
+          callId: event.callId,
+          toolId: event.toolId,
+          status: 'running',
+          inputSummary: event.inputSummary
+        }
+      ])
+    })
+  }, [])
+
+  useEffect(() => {
+    const api = window.comicCanvas
+    if (!api?.onAgentToolCompleted) return
+
+    return api.onAgentToolCompleted((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
+      setToolTrace((prev) => [
+        ...prev.filter((item) => item.callId !== event.callId),
+        {
+          callId: event.callId,
+          toolId: event.toolId,
+          status: event.status === 'completed' ? 'completed' : event.status === 'denied' ? 'denied' : 'failed',
+          summary: event.summary
+        }
+      ])
+    })
+  }, [])
+
+  useEffect(() => {
+    const api = window.comicCanvas
+    if (!api?.onAgentPermissionRequired) return
+
+    return api.onAgentPermissionRequired((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
+      pendingRunIdRef.current = event.runId
+      setPermissionRequest({
+        runId: event.runId,
+        callId: event.callId,
+        toolId: event.toolId,
+        reason: event.reason
+      })
+      setBusy(true)
+    })
+  }, [])
+
   /* ── Listen for plan ready events ── */
   useEffect(() => {
     const api = window.comicCanvas
@@ -167,15 +247,40 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
       api
         .getCanvasPlan({ messageId: event.messageId })
         .then((nextPlan: CanvasPlan) => {
-          setPlan(nextPlan)
+          const applied = applyAgentPlanOnReady({
+            plan: nextPlan,
+            uiAutoExecute: autoExecuteRef.current,
+            agentAutoRun: selectedAgentRef.current?.triggerPolicy.autoRun,
+            applyPlan: (plan, options) => {
+              onApplyPlanRef.current(plan, options)
+              setPlan(null)
+            },
+          })
+
+          if (!applied) {
+            setPlan(nextPlan)
+          }
+
           setMessages((prev) => [
             ...prev,
             {
               id: `assistant-${event.planId}`,
               role: 'assistant',
-              content: nextPlan.kind === 'clarify' ? (nextPlan.question ?? '需要更多信息。') : `计划已就绪：${event.planId}`,
+              content: nextPlan.kind === 'clarify'
+                ? (nextPlan.question ?? '需要更多信息。')
+                : applied
+                  ? `计划已自动应用：${event.planId}`
+                  : `计划已就绪：${event.planId}`,
             },
           ])
+
+          if (applied) {
+            setThinking((prev) => (
+              prev.includes('计划已自动应用到画布并执行运行步骤。')
+                ? prev
+                : [...prev, '计划已自动应用到画布并执行运行步骤。']
+            ))
+          }
         })
         .catch(() => {
           setMessages((prev) => [
@@ -184,9 +289,15 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
           ])
         })
         .finally(() => {
+          const completedRunId = pendingRunIdRef.current
           setBusy(false)
           pendingMessageIdRef.current = null
           pendingJobIdRef.current = null
+          pendingRunIdRef.current = null
+          setPermissionRequest(null)
+          if (completedRunId) {
+            refreshRunTrace(completedRunId)
+          }
         })
     })
 
@@ -206,8 +317,11 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
       setStreamingText('')
       setMessages((prev) => [...prev, { id: `assistant-${event.runId}`, role: 'assistant', content: assistantText }])
       setBusy(false)
+      refreshRunTrace(event.runId)
       pendingMessageIdRef.current = null
       pendingJobIdRef.current = null
+      pendingRunIdRef.current = null
+      setPermissionRequest(null)
     })
 
     return unsub
@@ -236,7 +350,58 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
   }, [messages, thinking])
 
   // Show the transcript area when there's anything to show.
-  const showTranscript = messages.length > 0 || thinking.length > 0 || streamingText.length > 0
+  const showTranscript = messages.length > 0 || thinking.length > 0 || streamingText.length > 0 || toolTrace.length > 0
+  const subAgentItems = useMemo(() => extractSubAgentItems(toolTrace), [toolTrace])
+
+  const refreshRunTrace = useCallback((runId: string) => {
+    const api = window.comicCanvas
+    if (!api?.getAgentRun) {
+      return
+    }
+
+    void api.getAgentRun({ runId })
+      .then((run) => {
+        setRunTrace(run.trace ?? null)
+      })
+      .catch(() => {
+        setRunTrace(null)
+      })
+  }, [])
+
+  const handleApprovePermission = useCallback(async () => {
+    const api = window.comicCanvas
+    if (!api?.approveAgentTool || !permissionRequest) return
+
+    setPermissionBusy(true)
+    try {
+      const result = await api.approveAgentTool({
+        runId: permissionRequest.runId,
+        callId: permissionRequest.callId,
+        approvedBy: 'canvas-user'
+      })
+      if ('errorClass' in result) {
+        throw new Error(result.message)
+      }
+      pendingRunIdRef.current = result.runId
+      pendingJobIdRef.current = result.jobId
+      setPermissionRequest(null)
+    } catch {
+      setMessages((prev) => [...prev, { id: `permission-error-${Date.now()}`, role: 'assistant', content: '工具批准失败，请重试。' }])
+      setPermissionRequest(null)
+      setBusy(false)
+    } finally {
+      setPermissionBusy(false)
+    }
+  }, [permissionRequest])
+
+  const handleDismissPermission = useCallback(() => {
+    setPermissionRequest(null)
+    setBusy(false)
+    pendingMessageIdRef.current = null
+    pendingJobIdRef.current = null
+    pendingRunIdRef.current = null
+    setMessages((prev) => [...prev, { id: `permission-denied-${Date.now()}`, role: 'assistant', content: '已拒绝工具调用，Agent 已停止。' }])
+  }, [])
 
   const selectAgent = useCallback((agent: AgentDefinition): void => {
     if (!mentionTrigger) {
@@ -265,12 +430,17 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
     setBusy(true)
     setPlan(null)
     setThinking([])
+    setToolTrace([])
+    setPermissionRequest(null)
     setStreamingText('')
+    setRunStartedAt(Date.now())
+    setRunTrace(null)
 
     try {
       const result = await api.sendCanvasChat({ message: content, agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID })
       pendingMessageIdRef.current = result.messageId
       pendingJobIdRef.current = result.jobId
+      pendingRunIdRef.current = result.runId
       setThinking((prev) => [...prev, `Agent 已排队：${result.jobId}`])
       if (api.getAgentRun) {
         void api.getAgentRun({ runId: result.runId })
@@ -340,6 +510,12 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
 
   return (
     <div className="nopan nodrag nowheel pointer-events-none fixed inset-0 z-30">
+      <AgentPermissionModal
+        request={permissionRequest}
+        busy={permissionBusy}
+        onApprove={() => { void handleApprovePermission() }}
+        onDismiss={handleDismissPermission}
+      />
       {/* ── FAB 按钮：底部居中、可拖动（参考 hjwall） ── */}
       <div
         className="pointer-events-auto fixed bottom-6 z-40"
@@ -380,6 +556,8 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
         style={{ transitionTimingFunction: 'cubic-bezier(0.34,1.56,0.64,1)' }}
       >
         {/* Plan 预览卡片 */}
+        <AgentSubAgentPanel items={subAgentItems} />
+        <AgentToolTrace items={toolTrace} />
         {plan && (
           <div className="mb-2">
             <PlanCard
@@ -539,6 +717,7 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
                 )}
               </button>
             </div>
+            <AgentRunStatusBar busy={busy} runStartedAt={runStartedAt} trace={runTrace} />
           </div>
         </div>
       </div>

@@ -78,6 +78,35 @@ export interface GatewayReference extends AssetRef {
   url: string
 }
 
+/** OpenAI-compatible tool call emitted by a chat completion. */
+export interface GatewayToolCall {
+  id: string
+  type: 'function'
+  function: {
+    name: string
+    arguments: string
+  }
+}
+
+/** OpenAI-compatible tool definition for chat completions. */
+export interface GatewayToolDefinition {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: Record<string, unknown>
+  }
+}
+
+/** Multi-turn chat message for native tool-calling gateways. */
+export interface GatewayChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content?: string | null
+  tool_calls?: GatewayToolCall[]
+  tool_call_id?: string
+  name?: string
+}
+
 export interface GatewayRequest {
   channel: GatewayChannel
   modelKey: string
@@ -85,6 +114,11 @@ export interface GatewayRequest {
   references: GatewayReference[]
   parameters: Record<string, unknown>
   idempotencyKey: string
+  /** When set for text channel, replaces the single-user `prompt` message. */
+  messages?: GatewayChatMessage[]
+  /** Native OpenAI-compatible tools for the completion request. */
+  tools?: GatewayToolDefinition[]
+  toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } }
 }
 
 export interface GatewayUsage {
@@ -98,7 +132,7 @@ export interface GatewayMediaMetadata extends AssetMetadata {
 }
 
 export type GatewayResult =
-  | { kind: 'text'; text: string; usage?: GatewayUsage }
+  | { kind: 'text'; text: string; toolCalls?: GatewayToolCall[]; usage?: GatewayUsage }
   | { kind: 'assetBytes'; mediaType: 'image' | 'video'; bytes: Uint8Array; metadata: GatewayMediaMetadata }
   | { kind: 'remoteTask'; remoteTaskId: string; pollAfterMs: number }
 

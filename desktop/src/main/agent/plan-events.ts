@@ -4,6 +4,7 @@
  */
 
 import type { AgentNonCanvasResponse } from '../../../../shared/agents'
+import type { IpcEventMap } from '../../../../shared/ipc'
 
 export interface CanvasPlanReadyEvent {
   messageId: string
@@ -22,10 +23,17 @@ export interface AgentDeltaEvent {
   delta: string
 }
 
+export type AgentToolStartedEvent = IpcEventMap['agent.toolStarted']
+export type AgentToolCompletedEvent = IpcEventMap['agent.toolCompleted']
+export type AgentPermissionRequiredEvent = IpcEventMap['agent.permissionRequired']
+
 export interface CanvasPlanEventBus {
   emitPlanReady(event: CanvasPlanReadyEvent): void
   emitResponseReady(event: AgentResponseReadyEvent): void
   emitDelta(event: AgentDeltaEvent): void
+  emitToolStarted(event: AgentToolStartedEvent): void
+  emitToolCompleted(event: AgentToolCompletedEvent): void
+  emitPermissionRequired(event: AgentPermissionRequiredEvent): void
   getPlanReadyEvents(): CanvasPlanReadyEvent[]
   getResponseReadyEvents(): AgentResponseReadyEvent[]
 }
@@ -57,6 +65,15 @@ export function createCanvasPlanEventBus(): CanvasPlanEventBus {
     },
     emitDelta(event: AgentDeltaEvent): void {
       // In-memory bus: no storage needed for deltas (they are fire-and-forget tokens).
+      void event
+    },
+    emitToolStarted(event: AgentToolStartedEvent): void {
+      void event
+    },
+    emitToolCompleted(event: AgentToolCompletedEvent): void {
+      void event
+    },
+    emitPermissionRequired(event: AgentPermissionRequiredEvent): void {
       void event
     },
     getPlanReadyEvents() {

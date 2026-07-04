@@ -182,7 +182,27 @@ describe('M4 Chat UI', () => {
     expect(await screen.findByText('生成宇宙飞船首帧并转成短视频。')).toBeInTheDocument()
   })
 
-  it('applies the fetched plan with autoExecute enabled and unsubscribes planReady on unmount', async () => {
+  it('auto-applies the fetched plan when autoExecute is enabled before planReady', async () => {
+    const unsubscribe = vi.fn()
+    const api = createApi({
+      onCanvasPlanReady: vi.fn().mockImplementation((handler: (event: { messageId: string; planId: string }) => void) => {
+        setTimeout(() => handler({ messageId: 'message-1', planId: 'plan-1' }), 0)
+        return unsubscribe
+      })
+    })
+    const onApplyPlan = vi.fn()
+    render(<ChatPanel api={api} onApplyPlan={onApplyPlan} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '生成短视频' } })
+    fireEvent.click(screen.getByRole('switch', { name: '自动执行计划运行步骤' }))
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    await waitFor(() => expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: true }))
+    expect(await screen.findByText('计划已自动应用：plan-1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '应用计划' })).not.toBeInTheDocument()
+  })
+
+  it('applies the fetched plan manually when autoExecute is disabled', async () => {
     const unsubscribe = vi.fn()
     const api = createApi({
       onCanvasPlanReady: vi.fn().mockImplementation((handler: (event: { messageId: string; planId: string }) => void) => {
@@ -194,14 +214,31 @@ describe('M4 Chat UI', () => {
     const { unmount } = render(<ChatPanel api={api} onApplyPlan={onApplyPlan} />)
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '生成短视频' } })
-    fireEvent.click(screen.getByRole('switch', { name: '自动执行计划运行步骤' }))
     fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
 
     await screen.findByText('生成宇宙飞船首帧并转成短视频。')
     fireEvent.click(screen.getByRole('button', { name: '应用计划' }))
 
-    expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: true })
+    expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: false })
 
+    unmount()
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('unsubscribes planReady on unmount', async () => {
+    const unsubscribe = vi.fn()
+    const api = createApi({
+      onCanvasPlanReady: vi.fn().mockImplementation((handler: (event: { messageId: string; planId: string }) => void) => {
+        setTimeout(() => handler({ messageId: 'message-1', planId: 'plan-1' }), 0)
+        return unsubscribe
+      })
+    })
+    const { unmount } = render(<ChatPanel api={api} onApplyPlan={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '生成短视频' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    await screen.findByText('计划已就绪：plan-1')
     unmount()
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })

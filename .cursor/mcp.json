@@ -1,0 +1,37 @@
+{
+  "mcpServers": {
+    "qtwx-mcp-1": {
+      "command": "/opt/homebrew/bin/node",
+      "args": [
+        "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/mcp-server/index.mjs"
+      ],
+      "env": {
+        "QINGTIAN_SESSION": "1",
+        "QINGTIAN_QUEUE_ROOT": "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/messages",
+        "QINGTIAN_RUNTIME_STAMP": "b9e12af59ba9"
+      }
+    },
+    "qtwx-mcp-2": {
+      "command": "/opt/homebrew/bin/node",
+      "args": [
+        "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/mcp-server/index.mjs"
+      ],
+      "env": {
+        "QINGTIAN_SESSION": "2",
+        "QINGTIAN_QUEUE_ROOT": "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/messages",
+        "QINGTIAN_RUNTIME_STAMP": "b9e12af59ba9"
+      }
+    },
+    "qtwx-mcp-3": {
+      "command": "/opt/homebrew/bin/node",
+      "args": [
+        "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/mcp-server/index.mjs"
+      ],
+      "env": {
+        "QINGTIAN_SESSION": "3",
+        "QINGTIAN_QUEUE_ROOT": "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/messages",
+        "QINGTIAN_RUNTIME_STAMP": "b9e12af59ba9"
+      }
+    }
+  }
+}

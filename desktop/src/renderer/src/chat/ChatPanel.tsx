@@ -3,7 +3,7 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { AtSign, Bot, Loader2, Send, Square, Trash2 } from 'lucide-react'
 
 import type { AgentDefinition, AgentResponse } from '../../../../../shared/agents'
@@ -11,6 +11,11 @@ import type { IpcEventMap, IpcRequestMap, IpcResponseMap } from '../../../../../
 import type { CanvasPlan } from '../../../../../shared/plan'
 import { cn } from '../lib/cn'
 import { formatAgentTraceSummary } from './agent-trace-summary'
+import { applyAgentPlanOnReady } from './agent/apply-agent-plan-on-ready'
+import { AgentPermissionModal, type AgentPermissionRequest } from './agent/AgentPermissionModal'
+import { AgentRunStatusBar } from './agent/AgentRunStatusBar'
+import { AgentSubAgentPanel, extractSubAgentItems } from './agent/AgentSubAgentPanel'
+import { AgentToolTrace, type AgentToolTraceItem } from './agent/AgentToolPill'
 import { AgentMentionPopover } from './AgentMentionPopover'
 import { PlanCard, type ApplyPlanOptions } from './PlanCard'
 import { useMentionTrigger } from './useMentionTrigger'
@@ -30,6 +35,14 @@ export interface ChatPanelApi {
   onAgentResponseReady: (handler: (event: IpcEventMap['agent.responseReady']) => void) => () => void
   /** @see docs/api-contracts/agents.md — streaming token deltas */
   onAgentDelta?: (handler: (event: IpcEventMap['agent.delta']) => void) => () => void
+  /** @see docs/api-contracts/agents.md */
+  onAgentToolStarted?: (handler: (event: IpcEventMap['agent.toolStarted']) => void) => () => void
+  /** @see docs/api-contracts/agents.md */
+  onAgentToolCompleted?: (handler: (event: IpcEventMap['agent.toolCompleted']) => void) => () => void
+  /** @see docs/api-contracts/agents.md */
+  onAgentPermissionRequired?: (handler: (event: IpcEventMap['agent.permissionRequired']) => void) => () => void
+  /** @see docs/api-contracts/agents.md */
+  approveAgentTool?: (input: IpcRequestMap['agent.approveTool']) => Promise<IpcResponseMap['agent.approveTool']>
   /** @see docs/api-contracts/jobs.md */
   onJobProgress?: (handler: (event: IpcEventMap['job.progress']) => void) => () => void
 }
@@ -109,10 +122,19 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
   const [plan, setPlan] = useState<CanvasPlan | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [thinking, setThinking] = useState<string[]>([])
+  const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
+  const [permissionRequest, setPermissionRequest] = useState<AgentPermissionRequest | null>(null)
+  const [permissionBusy, setPermissionBusy] = useState(false)
   /** Partial model output accumulating while the model streams. Cleared on final responseReady. */
   const [streamingText, setStreamingText] = useState<string>('')
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
+  const [runTrace, setRunTrace] = useState<Record<string, unknown> | null>(null)
   const pendingMessageIdRef = useRef<string | null>(null)
   const pendingJobIdRef = useRef<string | null>(null)
+  const pendingRunIdRef = useRef<string | null>(null)
+  const autoExecuteRef = useRef(autoExecute)
+  const selectedAgentRef = useRef(selectedAgent)
+  const onApplyPlanRef = useRef(onApplyPlan)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const mentionTrigger = useMentionTrigger(input, caretIndex)
   const filteredAgents = useMemo(() => {
@@ -133,10 +155,37 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
   const activeAgent = filteredAgents[Math.min(activeAgentIndex, Math.max(filteredAgents.length - 1, 0))]
   const outgoingMessage = stripSelectedAgentMention(input.trim(), selectedAgent)
   const canSend = outgoingMessage.length > 0 && !busy
+  const subAgentItems = useMemo(() => extractSubAgentItems(toolTrace), [toolTrace])
+
+  const refreshRunTrace = useCallback((runId: string) => {
+    if (!api.getAgentRun) {
+      return
+    }
+
+    void api.getAgentRun({ runId })
+      .then((run) => {
+        setRunTrace(run.trace ?? null)
+      })
+      .catch(() => {
+        setRunTrace(null)
+      })
+  }, [api])
 
   useEffect(() => {
     pendingMessageIdRef.current = pendingMessageId
   }, [pendingMessageId])
+
+  useEffect(() => {
+    autoExecuteRef.current = autoExecute
+  }, [autoExecute])
+
+  useEffect(() => {
+    selectedAgentRef.current = selectedAgent
+  }, [selectedAgent])
+
+  useEffect(() => {
+    onApplyPlanRef.current = onApplyPlan
+  }, [onApplyPlan])
 
   useEffect(() => {
     let isMounted = true
@@ -175,25 +224,116 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
       setBusy(true)
       api.getCanvasPlan({ messageId: event.messageId })
         .then((nextPlan) => {
-          setPlan(nextPlan)
+          const applied = applyAgentPlanOnReady({
+            plan: nextPlan,
+            uiAutoExecute: autoExecuteRef.current,
+            agentAutoRun: selectedAgentRef.current?.triggerPolicy.autoRun,
+            applyPlan: (plan, options) => {
+              onApplyPlanRef.current(plan, options)
+              setPlan(null)
+            },
+          })
+
+          if (!applied) {
+            setPlan(nextPlan)
+          }
+
           setMessages((items) => [
             ...items,
             {
               id: `assistant-${event.planId}`,
               role: 'assistant',
-              content: nextPlan.kind === 'clarify' ? (nextPlan.question ?? '需要更多信息。') : `计划已就绪：${event.planId}`
+              content: nextPlan.kind === 'clarify'
+                ? (nextPlan.question ?? '需要更多信息。')
+                : applied
+                  ? `计划已自动应用：${event.planId}`
+                  : `计划已就绪：${event.planId}`
             }
           ])
+
+          if (applied) {
+            setThinking((items) => (
+              items.includes('计划已自动应用到画布并执行运行步骤。')
+                ? items
+                : [...items, '计划已自动应用到画布并执行运行步骤。']
+            ))
+          }
         })
         .catch(() => {
           // The queued chat can outlive its result fetch, so surface a recoverable assistant message.
           setMessages((items) => [...items, { id: `assistant-error-${event.planId}`, role: 'assistant', content: '计划获取失败。' }])
         })
         .finally(() => {
+          const completedRunId = pendingRunIdRef.current
           setBusy(false)
           setPendingMessageId(null)
           pendingJobIdRef.current = null
+          pendingRunIdRef.current = null
+          setPermissionRequest(null)
+          if (completedRunId) {
+            refreshRunTrace(completedRunId)
+          }
         })
+    })
+  }, [api])
+
+  useEffect(() => {
+    if (!api.onAgentToolStarted) return undefined
+
+    return api.onAgentToolStarted((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) {
+        return
+      }
+
+      pendingRunIdRef.current = event.runId
+      setToolTrace((items) => [
+        ...items.filter((item) => item.callId !== event.callId),
+        {
+          callId: event.callId,
+          toolId: event.toolId,
+          status: 'running',
+          inputSummary: event.inputSummary
+        }
+      ])
+    })
+  }, [api])
+
+  useEffect(() => {
+    if (!api.onAgentToolCompleted) return undefined
+
+    return api.onAgentToolCompleted((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) {
+        return
+      }
+
+      setToolTrace((items) => [
+        ...items.filter((item) => item.callId !== event.callId),
+        {
+          callId: event.callId,
+          toolId: event.toolId,
+          status: event.status === 'completed' ? 'completed' : event.status === 'denied' ? 'denied' : 'failed',
+          summary: event.summary
+        }
+      ])
+    })
+  }, [api])
+
+  useEffect(() => {
+    if (!api.onAgentPermissionRequired) return undefined
+
+    return api.onAgentPermissionRequired((event) => {
+      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) {
+        return
+      }
+
+      pendingRunIdRef.current = event.runId
+      setPermissionRequest({
+        runId: event.runId,
+        callId: event.callId,
+        toolId: event.toolId,
+        reason: event.reason
+      })
+      setBusy(true)
     })
   }, [api])
 
@@ -220,8 +360,11 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
       setBusy(false)
       setPendingMessageId(null)
       pendingJobIdRef.current = null
+      pendingRunIdRef.current = null
+      setPermissionRequest(null)
+      refreshRunTrace(event.runId)
     })
-  }, [api])
+  }, [api, refreshRunTrace])
 
   // Accumulate streaming token deltas into a live partial-text display.
   useEffect(() => {
@@ -254,7 +397,44 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
     if (element) {
       element.scrollTop = element.scrollHeight
     }
-  }, [messages, thinking, busy])
+  }, [messages, thinking, busy, toolTrace.length, streamingText])
+
+  const handleApprovePermission = useCallback(async () => {
+    if (!api.approveAgentTool || !permissionRequest) {
+      return
+    }
+
+    setPermissionBusy(true)
+    try {
+      const result = await api.approveAgentTool({
+        runId: permissionRequest.runId,
+        callId: permissionRequest.callId,
+        approvedBy: 'chat-panel-user'
+      })
+      if ('errorClass' in result) {
+        throw new Error(result.message)
+      }
+      pendingRunIdRef.current = result.runId
+      pendingJobIdRef.current = result.jobId
+      setPermissionRequest(null)
+    } catch {
+      setMessages((items) => [...items, { id: `permission-error-${Date.now()}`, role: 'assistant', content: '工具批准失败，请重试。' }])
+      setPermissionRequest(null)
+      setBusy(false)
+    } finally {
+      setPermissionBusy(false)
+    }
+  }, [api, permissionRequest])
+
+  const handleDismissPermission = useCallback(() => {
+    setPermissionRequest(null)
+    setBusy(false)
+    setPendingMessageId(null)
+    pendingMessageIdRef.current = null
+    pendingJobIdRef.current = null
+    pendingRunIdRef.current = null
+    setMessages((items) => [...items, { id: `permission-denied-${Date.now()}`, role: 'assistant', content: '已拒绝工具调用，Agent 已停止。' }])
+  }, [])
 
   const statusText = useMemo(() => {
     if (busy && pendingMessageId) {
@@ -295,13 +475,18 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
     setBusy(true)
     setPlan(null)
     setThinking([])
+    setToolTrace([])
+    setPermissionRequest(null)
     setStreamingText('')
+    setRunStartedAt(Date.now())
+    setRunTrace(null)
     setMessages((items) => [...items, { id: `user-${Date.now()}`, role: 'user', content: message }])
 
     api.sendCanvasChat({ message, agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID })
       .then((ticket) => {
         setPendingMessageId(ticket.messageId)
         pendingJobIdRef.current = ticket.jobId
+        pendingRunIdRef.current = ticket.runId
         setThinking((items) => [...items, `Agent 已排队：${ticket.jobId}`])
         void api.getAgentRun({ runId: ticket.runId })
           .then((run) => {
@@ -332,11 +517,14 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
     setPendingMessageId(null)
     pendingMessageIdRef.current = null
     pendingJobIdRef.current = null
+    pendingRunIdRef.current = null
+    setPermissionRequest(null)
   }
 
   function clearConversation(): void {
     setMessages([])
     setThinking([])
+    setToolTrace([])
     setPlan(null)
     stopRun()
   }
@@ -410,6 +598,9 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
           </label>
         </div>
       </div>
+
+      <AgentSubAgentPanel items={subAgentItems} />
+      <AgentToolTrace items={toolTrace} />
 
       <div ref={transcriptRef} className="mt-4 max-h-72 space-y-2 overflow-y-auto rounded-lg border border-border-secondary bg-bg-input p-3">
         {messages.length === 0 && thinking.length === 0 ? (
@@ -514,6 +705,7 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
             </button>
           </div>
         </div>
+        <AgentRunStatusBar busy={busy} runStartedAt={runStartedAt} trace={runTrace} />
       </div>
 
       {plan && (
@@ -521,6 +713,13 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
           <PlanCard plan={plan} autoExecute={autoExecute} onAutoExecuteChange={setAutoExecute} onApplyPlan={onApplyPlan} />
         </div>
       )}
+
+      <AgentPermissionModal
+        request={permissionRequest}
+        busy={permissionBusy}
+        onApprove={handleApprovePermission}
+        onDismiss={handleDismissPermission}
+      />
     </section>
   )
 }

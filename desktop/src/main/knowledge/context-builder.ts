@@ -80,18 +80,28 @@ function renderCanvasSummary(input: CanvasSummaryInput): string {
   }
 
   const typeGroups: Record<string, number> = {}
+  const runStates: Record<string, number> = {}
   for (const node of graph.nodes) {
     typeGroups[node.type] = (typeGroups[node.type] ?? 0) + 1
+    const status = typeof node.data === 'object' && node.data !== null && 'status' in node.data
+      ? String((node.data as { status?: unknown }).status ?? 'idle')
+      : 'idle'
+    runStates[status] = (runStates[status] ?? 0) + 1
   }
   const typeSummary = Object.entries(typeGroups)
     .map(([type, count]) => `${count}×${type}`)
+    .join(', ')
+  const runSummary = Object.entries(runStates)
+    .filter(([status, count]) => count > 0 && status !== 'idle')
+    .map(([status, count]) => `${count} ${status}`)
     .join(', ')
 
   const selectedPart = selectedNodeIds.length > 0
     ? ` Selected nodes: ${selectedNodeIds.slice(0, 8).join(', ')}${selectedNodeIds.length > 8 ? '...' : ''}.`
     : ''
+  const runPart = runSummary.length > 0 ? ` Run states: ${runSummary}.` : ''
 
-  return `Canvas: ${nodeCount} nodes (${typeSummary}), ${edgeCount} edges.${selectedPart}`
+  return `Canvas: ${nodeCount} nodes (${typeSummary}), ${edgeCount} edges.${runPart}${selectedPart}`
 }
 
 function renderAssetsSummary(input: AssetSummaryInput): string {

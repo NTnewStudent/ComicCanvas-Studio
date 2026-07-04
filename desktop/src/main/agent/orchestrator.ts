@@ -7,7 +7,8 @@
 import type { AgentDefinition, AgentResponse, AgentRunRequest, AgentRunStatus, AgentRunTicket, AgentToolApprovalInput, AgentTriggerKind } from '../../../../shared/agents'
 import type { JobResult } from '../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../shared/plan'
-import type { ToolDescriptor } from '../../../../shared/tools'
+import type { CanvasGraphSnapshot } from '../../../../shared/graph'
+import type { ToolDescriptor, ToolPermission } from '../../../../shared/tools'
 import type { AgentRunRepository } from '../db/repositories/agent-run.repo'
 import type { PersistedJobRecord } from '../db/repositories/job.repo'
 import type { ChatMessageRepository } from '../db/repositories/chat-message.repo'
@@ -19,6 +20,8 @@ import type { CanvasPlanEventBus } from './plan-events'
 import { sanitizePlan } from './sanitize-plan'
 import { analyzeAgentIntent, formatIntentProgress, type AgentIntentAnalysis } from './intent-analysis'
 import { buildAgentContext } from '../knowledge/context-builder'
+import { buildSkillContext } from '../knowledge/skill-context'
+import type { SkillRegistry } from '../skills/registry'
 
 const DEFAULT_CHAT_AGENT_ID = 'general-purpose'
 const CANVAS_ORCHESTRATOR_AGENT_ID = 'canvas-orchestrator'
@@ -29,9 +32,33 @@ export interface OrchestratorProgressDraft {
   progress: number
 }
 
+export type OrchestratorPlannerDraft =
+  | OrchestratorProgressDraft
+  | {
+      type: 'toolStarted'
+      callId: string
+      toolId: string
+      inputSummary: string
+    }
+  | {
+      type: 'toolCompleted'
+      callId: string
+      toolId: string
+      invocationId: string
+      status: 'completed' | 'failed' | 'denied'
+      summary: string
+    }
+  | {
+      type: 'permissionRequired'
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions: ToolPermission[]
+    }
+
 export interface OrchestratorPlanner {
-  proposePlan(input: OrchestratorPlannerInput): AsyncGenerator<OrchestratorProgressDraft, AgentResponse | CanvasPlan> | Promise<AgentResponse | CanvasPlan> | AgentResponse | CanvasPlan
-  resumeApprovedTool?(input: OrchestratorApprovalPlannerInput): AsyncGenerator<OrchestratorProgressDraft, AgentResponse | CanvasPlan> | Promise<AgentResponse | CanvasPlan> | AgentResponse | CanvasPlan
+  proposePlan(input: OrchestratorPlannerInput): AsyncGenerator<OrchestratorPlannerDraft, AgentResponse | CanvasPlan> | Promise<AgentResponse | CanvasPlan> | AgentResponse | CanvasPlan
+  resumeApprovedTool?(input: OrchestratorApprovalPlannerInput): AsyncGenerator<OrchestratorPlannerDraft, AgentResponse | CanvasPlan> | Promise<AgentResponse | CanvasPlan> | AgentResponse | CanvasPlan
 }
 
 export interface OrchestratorPlannerInput {
@@ -58,6 +85,26 @@ export type OrchestratorEvent =
   | { type: 'progress'; runId: string; message: string; progress: number }
   | { type: 'plan'; runId: string; messageId: string; planId: string; plan: CanvasPlan }
   | { type: 'response'; runId: string; messageId: string; response: AgentResponse }
+  | { type: 'toolStarted'; runId: string; messageId: string; callId: string; toolId: string; inputSummary: string }
+  | {
+      type: 'toolCompleted'
+      runId: string
+      messageId: string
+      callId: string
+      toolId: string
+      invocationId: string
+      status: 'completed' | 'failed' | 'denied'
+      summary: string
+    }
+  | {
+      type: 'permissionRequired'
+      runId: string
+      messageId: string
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions: ToolPermission[]
+    }
 
 export interface OrchestratorRunResult {
   runId: string
@@ -95,10 +142,13 @@ export interface OrchestratorRuntimeOptions {
   agentRuns?: AgentRunRepository
   chatMessages?: ChatMessageRepository
   planEvents?: CanvasPlanEventBus
+  getCanvasGraph?: (workflowId?: string) => CanvasGraphSnapshot
+  getSelectedNodeIds?: () => string[]
   idFactory?: (prefix: 'message' | 'run') => string
   planIdFactory?: () => string
   workflowId?: string
   clock?: () => number
+  skillRegistry?: SkillRegistry
 }
 
 export interface OrchestratorRuntime {
@@ -138,6 +188,10 @@ interface StoredRun {
   pausedState?: AgentContextLoopState
   effectiveAgent?: AgentDefinition
   response?: AgentResponse
+  startedAt?: number
+  completedAt?: number
+  turnCount?: number
+  usageSummary?: string
 }
 
 function fallbackOrchestratorAgent(agentId: string): AgentDefinition {
@@ -190,7 +244,7 @@ function fallbackOrchestratorAgent(agentId: string): AgentDefinition {
   }
 }
 
-function isAsyncIterable(value: unknown): value is AsyncGenerator<OrchestratorProgressDraft, AgentResponse | CanvasPlan> {
+function isAsyncIterable(value: unknown): value is AsyncGenerator<OrchestratorPlannerDraft, AgentResponse | CanvasPlan> {
   return typeof value === 'object' && value !== null && Symbol.asyncIterator in value
 }
 
@@ -398,7 +452,11 @@ function runTrace(run: StoredRun): Record<string, unknown> {
     ...(run.intentAnalysis ? { intentAnalysis: run.intentAnalysis } : {}),
     ...(capabilityCheck ? { capabilityCheck } : {}),
     ...(run.response && run.response.type !== 'canvasPlan' ? { response: run.response } : {}),
-    ...(run.pendingApproval ? { pendingApproval: run.pendingApproval } : {})
+    ...(run.pendingApproval ? { pendingApproval: run.pendingApproval } : {}),
+    ...(run.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
+    ...(run.completedAt !== undefined ? { completedAt: run.completedAt } : {}),
+    ...(run.turnCount !== undefined ? { turnCount: run.turnCount } : {}),
+    ...(run.usageSummary ? { usageSummary: run.usageSummary } : {})
   }
 }
 
@@ -458,7 +516,51 @@ function approvalPayload(value: Record<string, unknown>): ApprovalResumePayload 
   }
 }
 
-async function* plannerEvents(options: OrchestratorRunOptions): AsyncGenerator<OrchestratorProgressDraft, AgentResponse> {
+function plannerDraftToEvent(
+  draft: OrchestratorPlannerDraft,
+  runId: string,
+  messageId: string
+): OrchestratorEvent {
+  if (draft.type === 'progress') {
+    return { type: 'progress', runId, message: draft.message, progress: draft.progress }
+  }
+
+  if (draft.type === 'toolStarted') {
+    return {
+      type: 'toolStarted',
+      runId,
+      messageId,
+      callId: draft.callId,
+      toolId: draft.toolId,
+      inputSummary: draft.inputSummary
+    }
+  }
+
+  if (draft.type === 'toolCompleted') {
+    return {
+      type: 'toolCompleted',
+      runId,
+      messageId,
+      callId: draft.callId,
+      toolId: draft.toolId,
+      invocationId: draft.invocationId,
+      status: draft.status,
+      summary: draft.summary
+    }
+  }
+
+  return {
+    type: 'permissionRequired',
+    runId,
+    messageId,
+    callId: draft.callId,
+    toolId: draft.toolId,
+    reason: draft.reason,
+    requiredPermissions: draft.requiredPermissions
+  }
+}
+
+async function* plannerEvents(options: OrchestratorRunOptions): AsyncGenerator<OrchestratorEvent, AgentResponse> {
   const input: OrchestratorPlannerInput = {
     runId: options.runId,
     messageId: options.messageId,
@@ -485,7 +587,14 @@ async function* plannerEvents(options: OrchestratorRunOptions): AsyncGenerator<O
   const proposed = options.planner.proposePlan(input)
 
   if (isAsyncIterable(proposed)) {
-    return normalizeAgentResponse(yield* proposed)
+    let next = await proposed.next()
+
+    while (!next.done) {
+      yield plannerDraftToEvent(next.value, options.runId, options.messageId)
+      next = await proposed.next()
+    }
+
+    return normalizeAgentResponse(next.value)
   }
 
   return normalizeAgentResponse(await proposed)
@@ -497,7 +606,7 @@ async function* approvalPlannerEvents(options: OrchestratorRunOptions & {
   loop: AgentContextLoopState
   approval: AgentToolApprovalRequest
   approvedBy: string
-}): AsyncGenerator<OrchestratorProgressDraft, AgentResponse> {
+}): AsyncGenerator<OrchestratorEvent, AgentResponse> {
   if (!options.planner.resumeApprovedTool) {
     throw new Error('agent_approval_resume_unavailable')
   }
@@ -515,7 +624,14 @@ async function* approvalPlannerEvents(options: OrchestratorRunOptions & {
   })
 
   if (isAsyncIterable(proposed)) {
-    return normalizeAgentResponse(yield* proposed)
+    let next = await proposed.next()
+
+    while (!next.done) {
+      yield plannerDraftToEvent(next.value, options.runId, options.messageId)
+      next = await proposed.next()
+    }
+
+    return normalizeAgentResponse(next.value)
   }
 
   return normalizeAgentResponse(await proposed)
@@ -723,7 +839,7 @@ export async function* runOrchestrator(options: OrchestratorRunOptions): AsyncGe
       let next = await stream.next()
 
       while (!next.done) {
-        yield { type: 'progress', runId: options.runId, message: next.value.message, progress: next.value.progress }
+        yield next.value
         next = await stream.next()
       }
 
@@ -766,7 +882,7 @@ export async function* runApprovalOrchestrator(options: OrchestratorRunOptions &
   let next = await stream.next()
 
   while (!next.done) {
-    yield { type: 'progress', runId: options.runId, message: next.value.message, progress: next.value.progress }
+    yield next.value
     next = await stream.next()
   }
 
@@ -807,16 +923,49 @@ async function consumeRunStream(
     trigger: AgentTriggerKind
   }
 ): Promise<OrchestratorRunResult> {
+  let turnCount = 0
+  let usageSummary: string | undefined
   let next = await stream.next()
 
   while (!next.done) {
     if (next.value.type === 'progress') {
+      if (next.value.message.startsWith('用量：')) {
+        usageSummary = next.value.message
+      }
       options.events.emitProgress({
         channel: 'job.progress',
         jobId: options.jobId,
         progress: next.value.progress,
         message: next.value.message,
         emittedAt: Date.now()
+      })
+    } else if (next.value.type === 'toolStarted') {
+      turnCount += 1
+      options.planEvents?.emitToolStarted({
+        runId: next.value.runId,
+        messageId: next.value.messageId,
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        inputSummary: next.value.inputSummary
+      })
+    } else if (next.value.type === 'toolCompleted') {
+      options.planEvents?.emitToolCompleted({
+        runId: next.value.runId,
+        messageId: next.value.messageId,
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        invocationId: next.value.invocationId,
+        status: next.value.status,
+        summary: next.value.summary
+      })
+    } else if (next.value.type === 'permissionRequired') {
+      options.planEvents?.emitPermissionRequired({
+        runId: next.value.runId,
+        messageId: next.value.messageId,
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        reason: next.value.reason,
+        requiredPermissions: next.value.requiredPermissions
       })
     }
 
@@ -860,7 +1009,11 @@ async function consumeRunStream(
     status: 'completed',
     agentId: options.agentId,
     trigger: options.trigger,
-    ...(previousRun?.intentAnalysis ? { intentAnalysis: previousRun.intentAnalysis } : {})
+    ...(previousRun?.intentAnalysis ? { intentAnalysis: previousRun.intentAnalysis } : {}),
+    startedAt: previousRun?.startedAt,
+    completedAt: Date.now(),
+    turnCount,
+    ...(usageSummary ? { usageSummary } : {})
   })
 
   return next.value
@@ -1126,9 +1279,21 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           policy: agent.contextPolicy,
           workflowId: options.workflowId ?? 'default',
           recentMessages,
+          ...(options.getCanvasGraph && agent.contextPolicy.includeCanvasGraph
+            ? {
+                canvas: {
+                  graph: options.getCanvasGraph(options.workflowId),
+                  ...(options.getSelectedNodeIds ? { selectedNodeIds: options.getSelectedNodeIds() } : {})
+                }
+              }
+            : {}),
           tokenBudget: Math.floor(agent.contextPolicy.maxContextTokens * 0.4),
           clock
         })
+        const skillContext = options.skillRegistry
+          ? buildSkillContext(agent, options.skillRegistry, Math.floor(agent.contextPolicy.maxContextTokens * 0.2))
+          : ''
+        const additionalContext = [contextResult.rendered, skillContext].filter((section) => section.length > 0).join('\n\n')
 
         const loop = createAgentContextLoop({
           agent,
@@ -1136,7 +1301,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           message,
           availableTools: options.listTools?.() ?? [],
           ...(history.length > 0 ? { history } : {}),
-          ...(contextResult.rendered ? { additionalContext: contextResult.rendered } : {})
+          ...(additionalContext ? { additionalContext } : {})
         })
 
         // Build a delta callback that fans token deltas to the renderer in real time.
@@ -1144,7 +1309,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           ? (delta: string) => { options.planEvents!.emitDelta({ runId, messageId, delta }) }
           : undefined
 
-        setRun({ ...(runsById.get(runId) ?? { runId, messageId }), runId, messageId, status: 'running', agentId, trigger, intentAnalysis, effectiveAgent: agent })
+        setRun({ ...(runsById.get(runId) ?? { runId, messageId }), runId, messageId, status: 'running', agentId, trigger, intentAnalysis, effectiveAgent: agent, startedAt: clock() })
 
         try {
           const stream = runOrchestrator({

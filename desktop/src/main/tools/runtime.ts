@@ -16,6 +16,7 @@ import type {
   ToolPermissionResult,
   ToolProgress
 } from '../../../../shared/tools'
+import { enrichToolDescriptorWithInputSchema } from '../lib/tool-schema'
 
 export interface ToolInvocationInput {
   toolId: string
@@ -289,7 +290,7 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
   return {
     list(includeDisabled = false) {
       return Array.from(toolsById.values())
-        .map((tool) => cloneDescriptor(tool.descriptor))
+        .map((tool) => enrichToolDescriptorWithInputSchema(cloneDescriptor(tool.descriptor), tool.inputSchema))
         .filter((descriptor) => includeDisabled || descriptor.enabled)
     },
     register(tool) {

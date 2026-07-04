@@ -26,10 +26,12 @@ import { createStorageConfigRepository } from './db/repositories/storage.repo'
 import { createStyleRepository } from './db/repositories/style.repo'
 import { createWorkflowRepository } from './db/repositories/workflow.repo'
 import { registerAgentHandlers } from './ipc/agent.handler'
+import { registerSkillHandlers } from './ipc/skill.handler'
+import { spawnSubAgent } from './agent/spawn-sub-agent'
 import { registerAssetHandlers } from './ipc/asset.handler'
 import { registerCanvasHandlers } from './ipc/canvas.handler'
 import { registerCanvasSnippetHandlers } from './ipc/canvas-snippet.handler'
-import { getGatewayModelCatalog, registerGatewayHandlers, seedGatewayConfigs } from './ipc/gateway.handler'
+import { getGatewayModelCatalog, getGatewayConfig, registerGatewayHandlers, seedGatewayConfigs } from './ipc/gateway.handler'
 import { registerJobHandlers } from './ipc/job.handler'
 import { registerStyleHandlers } from './ipc/style.handler'
 import { registerToolHandlers } from './ipc/tool.handler'
@@ -47,6 +49,7 @@ import { createAssetTools } from './tools/asset'
 import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
 import { createFsTools } from './tools/fs'
 import { createAgentSpawnTool, createChildAgentRunner } from './tools/agent'
+import { createSkillRegistry } from './skills/registry'
 import { createToolRuntime } from './tools/runtime'
 import type { SafeStorageAdapter } from './security/key-vault'
 
@@ -137,6 +140,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     reloader.reload(localGateways.configs)
   }
   const agentRegistry = createAgentRegistry({ agents, clock })
+  const skillRegistry = createSkillRegistry()
   const assetCloudUrls = createAssetCloudUrlService({
     assetRoot: options.assetRoot,
     assets,
@@ -249,6 +253,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       tools: toolRuntime,
       listTools: () => toolRuntime.list(),
       resolveDefaultModel: resolveDefaultTextModel,
+      resolveGatewayType: (gatewayId) => getGatewayConfig(gatewayId)?.type,
       fallbackGatewayId: 'stub-main',
       fallbackModelId: 'stub-text'
     })
@@ -262,10 +267,16 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     planner,
     registry: agentRegistry,
     listTools: () => toolRuntime.list(),
+    getCanvasGraph: (workflowId) => graphStore.getGraph(workflowId),
     agentRuns,
+    skillRegistry,
     idFactory: options.messageIdFactory ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`),
     planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
     clock
+  })
+  const childRunner = createChildAgentRunner({
+    toolRuntime,
+    listTools: () => toolRuntime.list()
   })
   // Register the spawn tool now that the planner is available.
   registerAgentSpawnTool(planner)
@@ -345,7 +356,23 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     clock,
     idFactory: () => `snippet-${crypto.randomUUID()}`
   })
-  registerAgentHandlers(options.ipcMain, { registry: agentRegistry, runtime: orchestrator })
+  registerAgentHandlers(options.ipcMain, {
+    registry: agentRegistry,
+    runtime: orchestrator,
+    spawnSubAgent: (input) => {
+      const parentAgent = agentRegistry.get('general-purpose')
+      const allowedTools = parentAgent?.allowedTools ?? '*'
+      const allowedSkills = parentAgent?.allowedSkills ?? '*'
+
+      return spawnSubAgent(input, {
+        parentRunId: `ipc-spawn-${crypto.randomUUID()}`,
+        parentTraceId: 'ipc-spawn',
+        allowedTools,
+        allowedSkills
+      }, { runChild: childRunner })
+    }
+  })
+  registerSkillHandlers(options.ipcMain, { registry: skillRegistry })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
   registerStorageHandlers(options.ipcMain, {
     repository: storageConfigs,

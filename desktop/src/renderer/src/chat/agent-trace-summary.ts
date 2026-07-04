@@ -61,5 +61,9 @@ export function formatAgentTraceSummary(trace: Record<string, unknown> | undefin
     lines.push(`执行模式：${intent.executionMode}；推荐 Agent：${intent.recommendedAgentId}。`)
   }
 
+  if (typeof trace.usageSummary === 'string' && trace.usageSummary.trim().length > 0) {
+    lines.push(trace.usageSummary)
+  }
+
   return lines
 }

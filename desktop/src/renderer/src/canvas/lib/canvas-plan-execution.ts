@@ -6,7 +6,7 @@
 
 import type { StoreApi } from 'zustand/vanilla'
 
-import type { JobTerminalEvent, JobTicket } from '../../../../../../shared/jobs'
+import type { JobTerminalEvent, JobTicket, JobType } from '../../../../../../shared/jobs'
 import type { CanvasPlan, RunAction } from '../../../../../../shared/plan'
 import type { CanvasStoreState } from '../store/canvas.store'
 import { applyCanvasPlan, type ApplyCanvasPlanOptions, type ApplyCanvasPlanResult } from './apply-plan'
@@ -36,8 +36,21 @@ export interface CanvasPlanExecutionController {
   readonly currentRunner: PlanRunner | null
 }
 
-function jobTypeForRunAction(action: RunAction): 'canvas.polishText' | 'canvas.generateImage' {
-  return action === 'textPolish' ? 'canvas.polishText' : 'canvas.generateImage'
+/**
+ * Maps a Plan run step action to the durable job type used for node failure patches.
+ * @param action - Sanitized Plan run action.
+ * @returns Persisted canvas job type for the step.
+ */
+function jobTypeForRunAction(action: RunAction): JobType {
+  switch (action) {
+    case 'textPolish':
+      return 'canvas.polishText'
+    case 'videoRun':
+      return 'canvas.generateVideo'
+    case 'imageRun':
+    default:
+      return 'canvas.generateImage'
+  }
 }
 
 function markNodeRunning(store: StoreApi<CanvasStoreState>, step: PlanRunnerStep): void {

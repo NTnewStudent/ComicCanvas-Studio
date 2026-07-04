@@ -38,8 +38,15 @@ const canvasWritePermission: ToolPermission = { kind: 'canvas.write', reason: 'C
 const canvasEdgeWritePermission: ToolPermission = { kind: 'canvas.write', reason: 'Creates or mutates canvas graph edges.' }
 const providerSpendPermission: ToolPermission = { kind: 'provider.spend', reason: 'May enqueue provider-backed generation jobs.' }
 
-const positionSchema = z.object({ x: z.number(), y: z.number() })
-const viewportSchema = z.object({ x: z.number(), y: z.number(), zoom: z.number() })
+const positionSchema = z.object({
+  x: z.number().describe('Canvas X coordinate in pixels.'),
+  y: z.number().describe('Canvas Y coordinate in pixels.')
+})
+const viewportSchema = z.object({
+  x: z.number().describe('Viewport pan X offset.'),
+  y: z.number().describe('Viewport pan Y offset.'),
+  zoom: z.number().describe('Viewport zoom level.')
+})
 const nodeTypeSchema = z.enum([
   'text',
   'image',
@@ -53,11 +60,11 @@ const nodeTypeSchema = z.enum([
   'superResolution',
   'muxAudioVideo',
   'mjImage'
-])
-const orientationSchema = z.enum(['landscape', 'portrait', 'square'])
-const statusSchema = z.enum(['idle', 'pending', 'running', 'done', 'error'])
-const edgeTypeSchema = z.enum(['promptOrder', 'imageOrder', 'imageRole', 'outputLink', 'reference', 'default'])
-const imageRoleSchema = z.enum(['first_frame', 'last_frame', 'reference'])
+]).describe('Canvas node type identifier.')
+const orientationSchema = z.enum(['landscape', 'portrait', 'square']).describe('Media orientation.')
+const statusSchema = z.enum(['idle', 'pending', 'running', 'done', 'error']).describe('Node run status.')
+const edgeTypeSchema = z.enum(['promptOrder', 'imageOrder', 'imageRole', 'outputLink', 'reference', 'default']).describe('Semantic edge type from the connection matrix.')
+const imageRoleSchema = z.enum(['first_frame', 'last_frame', 'reference']).describe('Image role when edgeType is imageRole.')
 
 const textDataSchema = z.object({
   label: z.string(),
@@ -329,8 +336,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'readonly'
       }),
       inputSchema: z.object({
-        summary: z.string(),
-        plan: planSchema.optional()
+        summary: z.string().describe('Short human-readable summary of the proposed plan.'),
+        plan: planSchema.optional().describe('Optional full CanvasPlan draft; omit to return a clarify shell.')
       }),
       outputSchema: planSchema,
       renderToolUseMessage: () => 'Propose canvas plan',
@@ -357,8 +364,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'readonly'
       }),
       inputSchema: z.object({
-        mode: z.enum(['lenient', 'strict']).optional(),
-        graph: graphSchema.optional()
+        mode: z.enum(['lenient', 'strict']).optional().describe('Validation strictness; defaults to strict.'),
+        graph: graphSchema.optional().describe('Graph to validate; defaults to the persisted canvas graph.')
       }),
       outputSchema: graphValidationResultSchema,
       renderToolUseMessage: () => 'Validate canvas graph',
@@ -379,8 +386,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
       }),
       inputSchema: z.object({
         type: nodeTypeSchema,
-        position: positionSchema,
-        data: nodeDataSchema.optional()
+        position: positionSchema.describe('Initial node position on the canvas.'),
+        data: nodeDataSchema.optional().describe('Optional node data payload; defaults are applied per node type.')
       }),
       outputSchema: z.object({ nodeId: z.string() }),
       renderToolUseMessage: (input) => `Create ${input.type} node`,
@@ -410,8 +417,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        nodeId: z.string(),
-        offset: positionSchema.optional()
+        nodeId: z.string().describe('Existing canvas node ID to duplicate.'),
+        offset: positionSchema.optional().describe('XY offset from the source node; defaults to (32, 32).')
       }),
       outputSchema: z.object({ nodeId: z.string() }),
       renderToolUseMessage: (input) => `Duplicate ${input.nodeId}`,
@@ -437,8 +444,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        nodeId: z.string(),
-        label: z.string().min(1)
+        nodeId: z.string().describe('Canvas node ID to rename.'),
+        label: z.string().min(1).describe('New display label for the node.')
       }),
       outputSchema: z.object({ nodeId: z.string(), label: z.string() }),
       renderToolUseMessage: (input) => `Rename ${input.nodeId}`,
@@ -462,8 +469,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        nodeId: z.string(),
-        position: positionSchema
+        nodeId: z.string().describe('Canvas node ID to move.'),
+        position: positionSchema.describe('Target canvas position.')
       }),
       outputSchema: z.object({ nodeId: z.string(), position: positionSchema }),
       renderToolUseMessage: (input) => `Move ${input.nodeId}`,
@@ -487,8 +494,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        source: z.string(),
-        target: z.string(),
+        source: z.string().describe('Source node ID.'),
+        target: z.string().describe('Target node ID.'),
         edgeType: edgeTypeSchema,
         imageRole: imageRoleSchema.optional()
       }),
@@ -525,10 +532,10 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        source: z.string(),
+        source: z.string().describe('Existing source node ID.'),
         type: nodeTypeSchema,
-        position: positionSchema,
-        data: nodeDataSchema.optional(),
+        position: positionSchema.describe('Position for the newly created target node.'),
+        data: nodeDataSchema.optional().describe('Optional data for the new node.'),
         edgeType: edgeTypeSchema,
         imageRole: imageRoleSchema.optional()
       }),
@@ -572,7 +579,7 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         permissions: [{ kind: 'destructive', reason: 'Deletes an edge from the canvas graph.' }, canvasEdgeWritePermission],
         concurrency: 'serial-write'
       }),
-      inputSchema: z.object({ edgeId: z.string() }),
+      inputSchema: z.object({ edgeId: z.string().describe('Persisted edge ID to delete.') }),
       outputSchema: z.object({ edgeId: z.string() }),
       renderToolUseMessage: (input) => `Delete edge ${input.edgeId}`,
       checkPermissions: () => ({
@@ -602,13 +609,13 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        edgeId: z.string(),
+        edgeId: z.string().describe('Persisted edge ID to update.'),
         data: z.object({
           edgeType: edgeTypeSchema.optional(),
           imageRole: imageRoleSchema.nullable().optional(),
           promptOrder: z.number().optional(),
           imageOrder: z.number().optional()
-        })
+        }).describe('Partial edge data fields to merge.')
       }),
       outputSchema: z.object({ edgeId: z.string() }),
       renderToolUseMessage: (input) => `Update edge ${input.edgeId}`,
@@ -645,8 +652,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        nodeId: z.string(),
-        data: z.record(z.string(), z.unknown())
+        nodeId: z.string().describe('Canvas node ID to patch.'),
+        data: z.record(z.string(), z.unknown()).describe('Partial node data merged into the existing payload.')
       }),
       outputSchema: z.object({ nodeId: z.string() }),
       renderToolUseMessage: (input) => `Update ${input.nodeId}`,
@@ -670,8 +677,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'readonly'
       }),
       inputSchema: z.object({
-        nodeIds: z.array(z.string()),
-        edgeIds: z.array(z.string()).optional()
+        nodeIds: z.array(z.string()).describe('Node IDs to include in the extracted fragment.'),
+        edgeIds: z.array(z.string()).optional().describe('Optional edge IDs; internal edges between selected nodes are kept.')
       }),
       outputSchema: graphSchema,
       renderToolUseMessage: () => 'Extract canvas selection',
@@ -690,9 +697,9 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        nodeIds: z.array(z.string()),
-        edgeIds: z.array(z.string()).optional(),
-        offset: positionSchema.optional()
+        nodeIds: z.array(z.string()).describe('Node IDs to duplicate.'),
+        edgeIds: z.array(z.string()).optional().describe('Optional internal edge IDs to duplicate with the selection.'),
+        offset: positionSchema.optional().describe('XY offset applied to duplicated nodes.')
       }),
       outputSchema: z.object({ nodeIds: z.array(z.string()), edgeIds: z.array(z.string()) }),
       renderToolUseMessage: () => 'Duplicate canvas selection',
@@ -734,8 +741,8 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        nodeIds: z.array(z.string()).optional(),
-        edgeIds: z.array(z.string()).optional()
+        nodeIds: z.array(z.string()).optional().describe('Node IDs to delete.'),
+        edgeIds: z.array(z.string()).optional().describe('Edge IDs to delete; edges attached to deleted nodes are removed.')
       }),
       outputSchema: z.object({ deletedNodeIds: z.array(z.string()), deletedEdgeIds: z.array(z.string()) }),
       renderToolUseMessage: () => 'Delete canvas selection',
@@ -776,10 +783,10 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         concurrency: 'serial-write'
       }),
       inputSchema: z.object({
-        nodeIds: z.array(z.string()),
-        origin: positionSchema.optional(),
-        columns: z.number().int().positive().optional(),
-        gap: positionSchema.optional()
+        nodeIds: z.array(z.string()).describe('Node IDs to lay out in a grid.'),
+        origin: positionSchema.optional().describe('Top-left origin of the grid.'),
+        columns: z.number().int().positive().optional().describe('Column count; defaults to sqrt(n).'),
+        gap: positionSchema.optional().describe('Horizontal and vertical spacing between nodes.')
       }),
       outputSchema: z.object({ nodeIds: z.array(z.string()) }),
       renderToolUseMessage: () => 'Layout canvas selection',
@@ -810,7 +817,7 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         permissions: [{ kind: 'destructive', reason: 'Deletes a node from the canvas graph.' }, canvasWritePermission],
         concurrency: 'serial-write'
       }),
-      inputSchema: z.object({ nodeId: z.string() }),
+      inputSchema: z.object({ nodeId: z.string().describe('Canvas node ID to delete with its attached edges.') }),
       outputSchema: z.object({ nodeId: z.string(), deletedEdgeIds: z.array(z.string()) }),
       renderToolUseMessage: (input) => `Delete ${input.nodeId}`,
       checkPermissions: () => ({
@@ -840,7 +847,7 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         permissions: [providerSpendPermission],
         concurrency: 'serial-write'
       }),
-      inputSchema: z.object({ nodeId: z.string() }),
+      inputSchema: z.object({ nodeId: z.string().describe('Runnable canvas node ID (imageConfigV2, videoConfigV2, text, etc.).') }),
       outputSchema: jobTicketSchema,
       renderToolUseMessage: (input) => `Run ${input.nodeId}`,
       call(input, ctx) {

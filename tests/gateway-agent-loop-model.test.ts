@@ -6,6 +6,7 @@ import type { GatewayRequest, GatewayResult } from '../shared/gateway'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
 import { createGatewayAgentPlanner } from '../desktop/src/main/agent/gateway-loop-model'
+import type { OrchestratorPlannerDraft } from '../desktop/src/main/agent/orchestrator'
 import { createToolRuntime, defineTool } from '../desktop/src/main/tools/runtime'
 
 const queryGraphDescriptor: ToolDescriptor = {
@@ -77,6 +78,18 @@ function expectAgentResponse(value: CanvasPlan | AgentResponse): AgentResponse {
   return value
 }
 
+function plannerDraftMessage(draft: OrchestratorPlannerDraft): string {
+  if (draft.type === 'progress') {
+    return draft.message
+  }
+
+  if (draft.type === 'toolCompleted') {
+    return `Tool ${draft.toolId} ${draft.status}`
+  }
+
+  return draft.type
+}
+
 describe('Gateway-backed Agent loop planner', () => {
   it('turns model toolCalls and tool observations into a sanitized CanvasPlan', async () => {
     const prompts: string[] = []
@@ -132,12 +145,13 @@ describe('Gateway-backed Agent loop planner', () => {
     let next = await stream.next()
 
     while (!next.done) {
-      progress.push(next.value.message)
+      progress.push(plannerDraftMessage(next.value))
       next = await stream.next()
     }
 
     expect(progress).toEqual([
       'Agent loop turn 1',
+      'toolStarted',
       'Tool canvas.queryGraph completed',
       'Agent loop turn 2',
       'Agent produced a CanvasPlan'
@@ -232,5 +246,66 @@ describe('Gateway-backed Agent loop planner', () => {
       throw new Error('expected_clarification_response')
     }
     expect(response.question).toContain('画布目标')
+  })
+
+  it('uses native gateway tools for openai_compat gateways', async () => {
+    const requests: GatewayRequest[] = []
+    const runtime = createToolRuntime({
+      tools: [
+        defineTool({
+          descriptor: { ...queryGraphDescriptor, inputParametersJsonSchema: { type: 'object', properties: {}, additionalProperties: false } },
+          inputSchema: z.object({}),
+          outputSchema: z.object({ nodeCount: z.number() }),
+          renderToolUseMessage: () => 'Query graph',
+          call() {
+            return { nodeCount: 0 }
+          }
+        })
+      ]
+    })
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        async invoke(_gatewayId, request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return {
+              kind: 'text',
+              text: '',
+              toolCalls: [{
+                id: 'call-query',
+                type: 'function',
+                function: { name: 'canvas.queryGraph', arguments: '{}' }
+              }]
+            }
+          }
+
+          return textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan }))
+        }
+      },
+      tools: runtime,
+      listTools: () => [queryGraphDescriptor],
+      resolveGatewayType: () => 'openai_compat'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-native-tools',
+      messageId: 'message-native-tools',
+      message: '做一个雨夜侦探竖屏画面',
+      agentId: 'orchestrator',
+      agent: agent({ gatewayPolicy: { gatewayId: 'openai-local', modelId: 'gpt-test', allowedChannels: ['text'] } }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    let next = await stream.next()
+    while (!next.done) {
+      next = await stream.next()
+    }
+
+    expect(requests[0]?.tools?.map((tool) => tool.function.name)).toEqual(['canvas.queryGraph'])
+    expect(requests[0]?.messages?.some((message) => message.role === 'system')).toBe(true)
+    expect(expectAgentResponse(next.value).type).toBe('canvasPlan')
   })
 })

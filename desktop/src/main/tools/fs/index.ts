@@ -154,8 +154,8 @@ export function createFsTools(options: FsToolsOptions): ToolDefinition<unknown, 
         concurrency: 'readonly'
       }),
       inputSchema: z.object({
-        path: z.string().min(1),
-        maxBytes: z.number().int().positive().optional()
+        path: z.string().min(1).describe('Project-relative file path within the workspace root.'),
+        maxBytes: z.number().int().positive().optional().describe('Optional read cap in bytes (defaults to 256 KiB).')
       }),
       outputSchema: z.object({
         path: z.string(),
@@ -206,8 +206,8 @@ export function createFsTools(options: FsToolsOptions): ToolDefinition<unknown, 
         concurrency: 'readonly'
       }),
       inputSchema: z.object({
-        pattern: z.string().min(1),
-        limit: z.number().int().positive().max(1000).optional()
+        pattern: z.string().min(1).describe('Glob pattern relative to workspace (supports **, *, ?).'),
+        limit: z.number().int().positive().max(1000).optional().describe('Maximum number of paths to return.')
       }),
       outputSchema: z.object({
         matches: z.array(z.string()),
@@ -247,10 +247,10 @@ export function createFsTools(options: FsToolsOptions): ToolDefinition<unknown, 
         concurrency: 'readonly'
       }),
       inputSchema: z.object({
-        query: z.string().min(1),
-        include: z.string().optional(),
-        caseSensitive: z.boolean().optional(),
-        limit: z.number().int().positive().max(500).optional()
+        query: z.string().min(1).describe('Regular expression to match per line.'),
+        include: z.string().optional().describe('Optional glob filter limiting which files are searched.'),
+        caseSensitive: z.boolean().optional().describe('When true, search is case-sensitive.'),
+        limit: z.number().int().positive().max(500).optional().describe('Maximum number of matching lines to return.')
       }),
       outputSchema: z.object({
         matches: z.array(z.object({ path: z.string(), line: z.number(), text: z.string() })),

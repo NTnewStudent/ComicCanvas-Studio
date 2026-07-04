@@ -46,8 +46,10 @@ export interface AgentContextLoopState {
 export type AgentLoopMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string }
+  | { role: 'assistant'; content: string; toolCalls?: AgentToolCall[] }
   | { role: 'tool'; toolId: string; invocationId: string; status: ToolInvocationRecord['status']; content: string }
+
+const MAX_READONLY_TOOL_BATCH = 8
 
 export interface AgentToolCall {
   id: string
@@ -68,6 +70,8 @@ export interface AgentLoopModel {
 
 export type AgentLoopEvent =
   | { type: 'progress'; message: string; progress: number }
+  | { type: 'toolStarted'; call: AgentToolCall }
+  | { type: 'permissionRequired'; call: AgentToolCall; request: AgentToolApprovalRequest }
   | { type: 'tool'; call: AgentToolCall; result: ToolInvocationResult }
   | { type: 'response'; response: AgentResponse }
 
@@ -180,12 +184,22 @@ function buildSystemPrompt(agent: AgentDefinition, trigger: AgentTriggerKind): s
   ].join('\n')
 }
 
-function toolResultContent(result: ToolInvocationResult): string {
-  if (result.error) {
-    return `Tool failed: ${result.error.errorClass}: ${result.error.message}`
+const MAX_TOOL_RESULT_CHARS = 2048
+
+function truncateToolResultContent(content: string): string {
+  if (content.length <= MAX_TOOL_RESULT_CHARS) {
+    return content
   }
 
-  return JSON.stringify(result.output ?? result.record)
+  return `${content.slice(0, MAX_TOOL_RESULT_CHARS)}…[truncated]`
+}
+
+function toolResultContent(result: ToolInvocationResult): string {
+  if (result.error) {
+    return truncateToolResultContent(`Tool failed: ${result.error.errorClass}: ${result.error.message}`)
+  }
+
+  return truncateToolResultContent(JSON.stringify(result.output ?? result.record))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -369,6 +383,13 @@ function cloneAgentLoopMessage(message: AgentLoopMessage): AgentLoopMessage {
     return { ...message }
   }
 
+  if (message.role === 'assistant' && message.toolCalls) {
+    return {
+      ...message,
+      toolCalls: message.toolCalls.map((call) => ({ ...call }))
+    }
+  }
+
   return { ...message }
 }
 
@@ -378,6 +399,147 @@ function cloneAgentContextLoopState(state: AgentContextLoopState): AgentContextL
     allowedTools: state.allowedTools.map((tool) => ({ ...tool, permissions: tool.permissions.map((permission) => ({ ...permission })) })),
     droppedTools: [...state.droppedTools],
     messages: state.messages.map(cloneAgentLoopMessage)
+  }
+}
+
+function toolConcurrencyFor(state: AgentContextLoopState, toolId: string): ToolDescriptor['concurrency'] {
+  return state.allowedTools.find((tool) => tool.id === toolId)?.concurrency ?? 'serial-write'
+}
+
+async function* executeAgentToolCall(
+  input: RunAgentContextLoopInput,
+  state: AgentContextLoopState,
+  call: AgentToolCall,
+  allowedToolIds: Set<string>,
+  actor: ToolActor
+): AsyncGenerator<AgentLoopEvent, 'continue' | 'approval'> {
+  if (!allowedToolIds.has(call.toolId)) {
+    state.droppedTools.push(call.toolId)
+    state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
+    return 'continue'
+  }
+
+  yield { type: 'toolStarted', call }
+
+  const result = await input.tools.invoke({
+    toolId: call.toolId,
+    input: call.input,
+    actor,
+    traceId: input.traceId
+  })
+
+  yield { type: 'tool', call, result }
+  state.messages.push({
+    role: 'tool',
+    toolId: call.toolId,
+    invocationId: result.record.invocationId,
+    status: result.record.status,
+    content: toolResultContent(result)
+  })
+
+  const pendingApproval = approvalRequestFromDeniedTool(call, result)
+
+  if (pendingApproval) {
+    state.transition = 'approval_required'
+    yield { type: 'permissionRequired', call, request: pendingApproval }
+    throw new AgentLoopTerminalError({
+      errorClass: 'agent_tool_approval_required',
+      message: 'Tool requires user approval before execution.',
+      turnsUsed: state.turnCount,
+      droppedTools: state.droppedTools,
+      compactionSummary: state.compactionSummary,
+      omittedMessages: state.omittedMessages,
+      pendingApproval,
+      pausedState: state
+    })
+  }
+
+  return 'continue'
+}
+
+async function* executeAgentToolCalls(
+  input: RunAgentContextLoopInput,
+  state: AgentContextLoopState,
+  calls: readonly AgentToolCall[],
+  allowedToolIds: Set<string>,
+  actor: ToolActor
+): AsyncGenerator<AgentLoopEvent, void> {
+  let index = 0
+
+  while (index < calls.length) {
+    const call = calls[index] as AgentToolCall
+
+    if (!allowedToolIds.has(call.toolId)) {
+      state.droppedTools.push(call.toolId)
+      state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
+      index += 1
+      continue
+    }
+
+    if (toolConcurrencyFor(state, call.toolId) === 'readonly') {
+      const batch: AgentToolCall[] = []
+
+      while (index < calls.length && batch.length < MAX_READONLY_TOOL_BATCH) {
+        const candidate = calls[index] as AgentToolCall
+        if (!allowedToolIds.has(candidate.toolId)) {
+          break
+        }
+        if (toolConcurrencyFor(state, candidate.toolId) !== 'readonly') {
+          break
+        }
+        batch.push(candidate)
+        index += 1
+      }
+
+      if (batch.length === 0) {
+        continue
+      }
+
+      for (const started of batch) {
+        yield { type: 'toolStarted', call: started }
+      }
+
+      const results = await Promise.all(batch.map((entry) => input.tools.invoke({
+        toolId: entry.toolId,
+        input: entry.input,
+        actor,
+        traceId: input.traceId
+      })))
+
+      for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+        const entry = batch[batchIndex] as AgentToolCall
+        const result = results[batchIndex] as ToolInvocationResult
+        yield { type: 'tool', call: entry, result }
+        state.messages.push({
+          role: 'tool',
+          toolId: entry.toolId,
+          invocationId: result.record.invocationId,
+          status: result.record.status,
+          content: toolResultContent(result)
+        })
+
+        const pendingApproval = approvalRequestFromDeniedTool(entry, result)
+        if (pendingApproval) {
+          state.transition = 'approval_required'
+          yield { type: 'permissionRequired', call: entry, request: pendingApproval }
+          throw new AgentLoopTerminalError({
+            errorClass: 'agent_tool_approval_required',
+            message: 'Tool requires user approval before execution.',
+            turnsUsed: state.turnCount,
+            droppedTools: state.droppedTools,
+            compactionSummary: state.compactionSummary,
+            omittedMessages: state.omittedMessages,
+            pendingApproval,
+            pausedState: state
+          })
+        }
+      }
+
+      continue
+    }
+
+    yield* executeAgentToolCall(input, state, call, allowedToolIds, actor)
+    index += 1
   }
 }
 
@@ -414,7 +576,14 @@ export async function* runAgentContextLoop(input: RunAgentContextLoopInput): Asy
       accUsage.costUsd += stepUsage.costUsd ?? 0
     }
 
-    if (step.message) {
+    if (step.type === 'toolCalls') {
+      const assistantContent = step.message ?? ''
+      state.messages.push({
+        role: 'assistant',
+        content: assistantContent,
+        ...(step.calls.length > 0 ? { toolCalls: step.calls } : {})
+      })
+    } else if (step.message) {
       state.messages.push({ role: 'assistant', content: step.message })
     }
 
@@ -432,45 +601,7 @@ export async function* runAgentContextLoop(input: RunAgentContextLoopInput): Asy
       }
     }
 
-    for (const call of step.calls) {
-      if (!allowedToolIds.has(call.toolId)) {
-        state.droppedTools.push(call.toolId)
-        state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
-        continue
-      }
-
-      const result = await input.tools.invoke({
-        toolId: call.toolId,
-        input: call.input,
-        actor,
-        traceId: input.traceId
-      })
-
-      yield { type: 'tool', call, result }
-      state.messages.push({
-        role: 'tool',
-        toolId: call.toolId,
-        invocationId: result.record.invocationId,
-        status: result.record.status,
-        content: toolResultContent(result)
-      })
-
-      const pendingApproval = approvalRequestFromDeniedTool(call, result)
-
-      if (pendingApproval) {
-        state.transition = 'approval_required'
-        throw new AgentLoopTerminalError({
-          errorClass: 'agent_tool_approval_required',
-          message: 'Tool requires user approval before execution.',
-          turnsUsed: state.turnCount,
-          droppedTools: state.droppedTools,
-          compactionSummary: state.compactionSummary,
-          omittedMessages: state.omittedMessages,
-          pendingApproval,
-          pausedState: state
-        })
-      }
-    }
+    yield* executeAgentToolCalls(input, state, step.calls, allowedToolIds, actor)
 
     state.transition = 'tool_results'
   }
@@ -512,6 +643,7 @@ export async function* resumeAgentContextLoopWithApproval(input: ResumeAgentCont
     toolId: input.approval.toolId,
     input: input.approval.input
   }
+  yield { type: 'toolStarted', call }
   const result = await input.tools.invoke({
     toolId: call.toolId,
     input: call.input,

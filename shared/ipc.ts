@@ -36,7 +36,7 @@ import type { CanvasPlan, PlanRunStep } from './plan'
 import type { AgentDefinition, AgentNonCanvasResponse, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
 import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillListRequest } from './skills'
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
-import type { ToolDescriptor, ToolInvocationRecord } from './tools'
+import type { ToolDescriptor, ToolInvocationRecord, ToolPermission } from './tools'
 import type { StylePresetSaveInput, StylePresetView, StyleProjectDefaultRequest } from './styles'
 import type { CanvasSnippetDeleteRequest, CanvasSnippetDeleteResponse, CanvasSnippetGetRequest, CanvasSnippetListRequest, CanvasSnippetSaveInput, CanvasSnippetSaveResponse, CanvasSnippetView } from './snippets'
 import type { WorkflowModelCatalog } from './workflow-node-definitions'
@@ -135,6 +135,9 @@ export type AgentIpcChannel =
   | 'agent.spawn'
   | 'agent.responseReady'
   | 'agent.delta'
+  | 'agent.toolStarted'
+  | 'agent.toolCompleted'
+  | 'agent.permissionRequired'
   | 'agent.progress'
   | 'agent.completed'
   | 'agent.failed'
@@ -510,6 +513,30 @@ export interface IpcEventMap {
   'tool.audit': { traceId: string; toolId: string; decision: string }
   'agent.responseReady': { runId: string; messageId: string; response: AgentNonCanvasResponse }
   'agent.delta': { runId: string; messageId: string; delta: string }
+  'agent.toolStarted': {
+    runId: string
+    messageId: string
+    callId: string
+    toolId: string
+    inputSummary: string
+  }
+  'agent.toolCompleted': {
+    runId: string
+    messageId: string
+    callId: string
+    toolId: string
+    invocationId: string
+    status: 'completed' | 'failed' | 'denied'
+    summary: string
+  }
+  'agent.permissionRequired': {
+    runId: string
+    messageId: string
+    callId: string
+    toolId: string
+    reason: string
+    requiredPermissions: ToolPermission[]
+  }
   'agent.progress': { runId: string; message: string }
   'agent.completed': { runId: string; output: string }
   'agent.failed': { runId: string; error: SafeErrorEnvelope }
