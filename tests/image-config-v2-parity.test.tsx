@@ -3,7 +3,7 @@
 import '@testing-library/jest-dom/vitest'
 
 import { ReactFlowProvider } from '@xyflow/react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ImageConfigV2Node from '../desktop/src/renderer/src/canvas/nodes/ImageConfigV2Node'
@@ -42,7 +42,7 @@ afterEach(() => {
   cleanup()
 })
 
-function renderImageConfig(): void {
+function renderImageConfig(onRun?: (id: string) => void): void {
   canvasStore.getState().setNodes([
     {
       id: 'reference-image',
@@ -106,6 +106,7 @@ function renderImageConfig(): void {
           url: 'cc-asset://asset/result-a',
           status: 'done'
         }}
+        {...(onRun ? { onRun } : {})}
       />
     </ReactFlowProvider>
   )
@@ -152,14 +153,16 @@ describe('Task 30 imageConfigV2 parity', () => {
     })
   })
 
-  it('keeps generation async by exposing a run button without returning image data synchronously', () => {
-    renderImageConfig()
+  it('delegates generation to the injected onRun callback instead of mutating state synchronously', () => {
+    const onRun = vi.fn()
+    renderImageConfig(onRun)
 
     fireEvent.click(screen.getByTestId('image-config-v2-generate-btn'))
 
+    expect(onRun).toHaveBeenCalledWith('image-config')
+    // 组件不再自行写入 pending/running 状态，真实调度交给 onRun（由 CanvasPage 的
+    // handleRunNode 负责设置 status 并调用 window.comicCanvas.runCanvasNode）。
     const node = canvasStore.getState().nodes.find((candidate) => candidate.id === 'image-config')
-    expect(canvasStore.getState().getNodeRunStatus('image-config')).toBe('running')
-    expect(node?.data).toMatchObject({ url: '' })
-    expect(within(screen.getByTestId('image-config-v2-toolbar')).getByRole('button', { name: /生成/u })).toBeDisabled()
+    expect(node?.data).toMatchObject({ status: 'done' })
   })
 })

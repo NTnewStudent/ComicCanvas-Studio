@@ -204,6 +204,8 @@ interface ToolbarProps {
   onUpdateData: (patch: Partial<VideoNodeData>) => void
   onMentionSelect?: (mentionedNodeId: string, sourceNodeId: string) => void
   onMentionsChange?: (currentMentionIds: string[], sourceNodeId: string) => void
+  /** 触发真实运行调度（由 CanvasPage 的运行上下文注入） */
+  onRun?: (id: string) => void
 }
 
 const VideoToolbar: FC<ToolbarProps> = ({
@@ -216,6 +218,7 @@ const VideoToolbar: FC<ToolbarProps> = ({
   onUpdateData,
   onMentionSelect,
   onMentionsChange,
+  onRun,
 }) => {
   const ratio = data.ratio ?? '9:16'
   const duration = data.duration ?? data.durationSeconds ?? 5
@@ -237,11 +240,11 @@ const VideoToolbar: FC<ToolbarProps> = ({
 
   const selectedModelLabel = VIDEO_MODELS.find((model) => model.id === data.modelId)?.label ?? data.modelId
 
-  // ── 生成按钮：只进入异步运行态，结果由 JobWorker/IPC 回写 ──
+  // ── 生成按钮：委托给运行上下文入队，终态由 job.completed/job.failed 回写 ──
   const handleGenerate = useCallback(() => {
     if (generating) return
-    onUpdateData({ status: 'running', url: '' })
-  }, [generating, onUpdateData])
+    onRun?.(nodeId)
+  }, [generating, nodeId, onRun])
 
   // ── 比例选择 ──
   const ratioItems = useMemo(
@@ -497,12 +500,17 @@ const VideoToolbar: FC<ToolbarProps> = ({
 
 // ─── 主组件 ────────────────────────────────────────────────────────────────
 
-const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
+interface VideoConfigV2NodeProps extends NodeProps {
+  /** 触发真实运行调度（由 CanvasPage 的运行上下文注入） */
+  onRun?: (id: string) => void
+}
+
+const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onRun }) => {
   // ── Store (vanilla zustand → React hook) ──
-  const runStatus = useStore(canvasStore, (s) => s.getNodeRunStatus(id))
   const canvasNodes = useStore(canvasStore, (s) => s.nodes)
   const storeNodeData = canvasNodes.find((node) => node.id === id)?.data as VideoNodeData | undefined
   const d: VideoNodeData = { ...(data as unknown as VideoNodeData), ...(storeNodeData ?? {}) }
+  const runStatus = d.status ?? 'idle'
 
   // ── 本地状态 ──
   const [isHovered, setIsHovered] = useState(false)
@@ -908,6 +916,7 @@ const VideoConfigV2Node: FC<NodeProps> = ({ id, data, selected }) => {
             onUpdateData={updateData}
             onMentionSelect={handleMentionSelect}
             onMentionsChange={handleMentionsChange}
+            {...(onRun ? { onRun } : {})}
           />
         </div>
       )}

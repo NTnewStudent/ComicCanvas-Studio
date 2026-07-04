@@ -12,7 +12,7 @@ import {
   type CanvasActionFailureReason,
 } from '../../../../../../shared/canvas-actions'
 import type { CanvasGraphSnapshot } from '../../../../../../shared/graph'
-import type { CanvasEdgeData, CanvasNodeData, NodeStatus, NodeType } from '../../../../../../shared/nodes'
+import type { CanvasEdgeData, CanvasNodeData, NodeType } from '../../../../../../shared/nodes'
 
 export interface CanvasPosition {
   x: number
@@ -57,8 +57,6 @@ export interface CanvasStoreState extends CanvasSnapshot {
   past: CanvasSnapshot[]
   future: CanvasSnapshot[]
   lastConnectError: { reason: ConnectFailureReason; at: number } | null
-  /** 节点运行状态（运行时数据，不参与 undo/redo） */
-  nodeRunStatus: Map<string, NodeStatus>
   addNode(this: void, type: NodeType, position: CanvasPosition, data?: Partial<CanvasNodeData>): string
   deleteNode(this: void, id: string): void
   updateNodeData(this: void, id: string, data: Partial<CanvasNodeData>): void
@@ -72,10 +70,6 @@ export interface CanvasStoreState extends CanvasSnapshot {
   applyChange(this: void, snapshot: CanvasSnapshot): void
   undo(this: void): void
   redo(this: void): void
-  /** 设置指定节点的运行状态 */
-  setNodeRunStatus(this: void, nodeId: string, status: NodeStatus): void
-  /** 获取指定节点的运行状态（未登记时返回 'idle'） */
-  getNodeRunStatus(this: void, nodeId: string): NodeStatus
 }
 
 const maxHistory = 50
@@ -126,7 +120,6 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
     past: [],
     future: [],
     lastConnectError: null,
-    nodeRunStatus: new Map<string, NodeStatus>(),
 
     addNode(type, position, data) {
       const id = idFactory()
@@ -242,18 +235,6 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
           future: state.future.slice(1)
         }
       })
-    },
-
-    setNodeRunStatus(nodeId, status) {
-      set((state) => {
-        const next = new Map(state.nodeRunStatus)
-        next.set(nodeId, status)
-        return { nodeRunStatus: next }
-      })
-    },
-
-    getNodeRunStatus(nodeId) {
-      return get().nodeRunStatus.get(nodeId) ?? 'idle'
     }
   }))
 }

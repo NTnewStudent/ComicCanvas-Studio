@@ -6,8 +6,24 @@ import { describe, expect, it } from 'vitest'
 
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createWorkflowRepository } from '../desktop/src/main/db/repositories/workflow.repo'
+import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
 import type { CanvasGraphSnapshot } from '../shared/graph'
 import type { NodeType } from '../shared/nodes'
+
+type Handler = (_event: unknown, request: unknown) => unknown
+
+function createFakeIpcMain(): { handlers: Map<string, Handler>; ipcMain: { handle(channel: string, handler: Handler): void } } {
+  const handlers = new Map<string, Handler>()
+
+  return {
+    handlers,
+    ipcMain: {
+      handle(channel, handler) {
+        handlers.set(channel, handler)
+      }
+    }
+  }
+}
 
 const graph: CanvasGraphSnapshot = {
   nodes: [
@@ -182,6 +198,99 @@ describe('Phase A workflow project repository', () => {
         nodeCount: 1,
         restoreSourceVersionId: 'version-old'
       })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('repository create() alone leaves no version row (version creation is the caller\'s responsibility)', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-workflow-create-'))
+    const dbPath = join(tempDir, 'workflow-create.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const workflows = createWorkflowRepository(db)
+      workflows.create({
+        id: 'workflow-fresh',
+        name: 'Fresh workflow',
+        createdAt: 1_784_200_000_000,
+        updatedAt: 1_784_200_000_000
+      })
+
+      // Repository-level create() intentionally does not insert a version —
+      // callers (IPC handlers, import, copyTemplate) decide when to add one.
+      expect(workflows.getLatestVersion('workflow-fresh')).toBeNull()
+      expect(workflows.getSummary('workflow-fresh')).toMatchObject({
+        id: 'workflow-fresh',
+        nodeCount: 0,
+        edgeCount: 0
+      })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('canvas.createWorkflow IPC handler inserts an initial version so a fresh workflow is never version-less', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-workflow-ipc-create-'))
+    const dbPath = join(tempDir, 'workflow-ipc-create.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const workflows = createWorkflowRepository(db)
+      const { ipcMain, handlers } = createFakeIpcMain()
+      let now = 1_784_400_000_000
+      let versionIndex = 0
+      registerCanvasHandlers(ipcMain, {
+        workflows,
+        clock: () => now++,
+        idFactory: () => `graph-version-${++versionIndex}`
+      })
+
+      const created = handlers.get('canvas.createWorkflow')?.({}, { name: '未命名工作流' }) as { id: string; name: string }
+
+      expect(workflows.getLatestVersion(created.id)).toMatchObject({
+        workflowId: created.id,
+        graph: { nodes: [], edges: [] }
+      })
+      expect(workflows.getSummary(created.id)).toMatchObject({
+        id: created.id,
+        nodeCount: 0,
+        edgeCount: 0
+      })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('renames a workflow and soft-deletes it out of list()/getSummary()', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-workflow-lifecycle-'))
+    const dbPath = join(tempDir, 'workflow-lifecycle.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const workflows = createWorkflowRepository(db)
+      workflows.create({
+        id: 'workflow-lifecycle',
+        name: 'Original name',
+        createdAt: 1_784_300_000_000,
+        updatedAt: 1_784_300_000_000
+      })
+
+      workflows.rename('workflow-lifecycle', 'Renamed workflow')
+      expect(workflows.getSummary('workflow-lifecycle')?.name).toBe('Renamed workflow')
+      expect(workflows.list().some((summary) => summary.id === 'workflow-lifecycle')).toBe(true)
+
+      workflows.delete('workflow-lifecycle')
+      // Soft delete: getSummary()/list() must both stop returning the workflow,
+      // matching the `deleted_at IS NULL` filter used by every select statement.
+      expect(workflows.getSummary('workflow-lifecycle')).toBeNull()
+      expect(workflows.list().some((summary) => summary.id === 'workflow-lifecycle')).toBe(false)
     } finally {
       db.close()
       rmSync(tempDir, { recursive: true, force: true })

@@ -73,8 +73,6 @@ const MOCK_MODELS = [
   { id: 'dall-e-3', label: 'DALL路E 3' },
 ]
 
-/** 鎺ュ彛妗╋細妯℃嫙鐢熸垚寤惰繜锛堟绉掞級 */
-const MOCK_GENERATE_DELAY = 3000
 
 // 鈹€鈹€ 杈呭姪鍑芥暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
@@ -113,6 +111,8 @@ interface ImageConfigV2NodeProps {
   id: string
   data: ImageNodeData
   selected?: boolean
+  /** 触发真实运行调度（由 CanvasPage 的运行上下文注入） */
+  onRun?: (id: string) => void
 }
 
 // 鈹€鈹€ 缁勪欢 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -121,11 +121,10 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
   id,
   data,
   selected,
+  onRun,
 }) => {
   const updateNodeData = useStore(canvasStore, (s) => s.updateNodeData)
   const deleteNode = useStore(canvasStore, (s) => s.deleteNode)
-  const setNodeRunStatus = useStore(canvasStore, (s) => s.setNodeRunStatus)
-  const getNodeRunStatus = useStore(canvasStore, (s) => s.getNodeRunStatus)
   const canvasNodes = useStore(canvasStore, (s) => s.nodes)
   const canvasEdges = useStore(canvasStore, (s) => s.edges)
 
@@ -137,7 +136,7 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
 
   const storeNodeData = canvasNodes.find((node) => node.id === id)?.data as ImageNodeData | undefined
   const d: ImageNodeData = { ...data, ...(storeNodeData ?? {}) }
-  const status = getNodeRunStatus(id)
+  const status = d.status ?? 'idle'
   const displayUrl = d.url ?? ''
   const resultUrls = d.urls ?? []
   const selectedResultIndex = d.selectedIndex ?? 0
@@ -225,12 +224,8 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
 
   const handleGenerate = useCallback(() => {
     if (generating) return
-    setNodeRunStatus(id, 'running')
-    updateNodeData(id, { url: '' })
-    window.setTimeout(() => {
-      setNodeRunStatus(id, 'idle')
-    }, MOCK_GENERATE_DELAY)
-  }, [id, generating, setNodeRunStatus, updateNodeData])
+    onRun?.(id)
+  }, [generating, id, onRun])
 
   const handleDownload = useCallback(() => {
     if (!displayUrl) return

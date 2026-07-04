@@ -12,6 +12,13 @@ import type { GraphValidationIssue, GraphValidationSummary } from '../../../../.
 import type { NodeStatus } from '../../../../../shared/nodes'
 import { decodeJson, encodeJson } from './json'
 
+/**
+ * Fields accepted when creating a new workflow record. Callers are
+ * responsible for inserting the initial graph version separately via
+ * {@link WorkflowRepository.addVersion}; `create()` is intentionally
+ * version-agnostic.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowCreateRecord {
   id: string
   name: string
@@ -28,6 +35,10 @@ export interface WorkflowCreateRecord {
   updatedAt: number
 }
 
+/**
+ * Fields accepted when inserting a new immutable workflow graph version.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowVersionCreateRecord {
   id: string
   workflowId: string
@@ -38,6 +49,11 @@ export interface WorkflowVersionCreateRecord {
   validationWarnings?: GraphValidationIssue[]
 }
 
+/**
+ * A persisted workflow graph version as returned by the repository (same
+ * shape as the create input, since versions are immutable once inserted).
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export type WorkflowVersionRecord = WorkflowVersionCreateRecord
 
 interface WorkflowVersionRow {
@@ -50,6 +66,11 @@ interface WorkflowVersionRow {
   validation_warnings_json: string | null
 }
 
+/**
+ * Denormalized workflow listing row used by project-list and template
+ * surfaces. Derived from the workflow record plus its latest graph version.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowSummary {
   id: string
   name: string
@@ -78,6 +99,11 @@ export interface WorkflowSummary {
   }
 }
 
+/**
+ * Lightweight metadata about one workflow graph version, used for version
+ * history listings without shipping the full graph payload.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowVersionSummary {
   id: string
   createdAt: string
@@ -92,6 +118,11 @@ export interface WorkflowVersionSummary {
   }
 }
 
+/**
+ * Fields accepted when restoring a historical workflow version as a new
+ * latest version, preserving immutable version history.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowVersionRestoreInput {
   workflowId: string
   sourceVersionId: string
@@ -100,6 +131,11 @@ export interface WorkflowVersionRestoreInput {
   createdBy: string
 }
 
+/**
+ * Fields accepted when copying a published public template into a new
+ * private draft workflow.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowTemplateCopyInput {
   templateId: string
   workflowId: string
@@ -109,16 +145,29 @@ export interface WorkflowTemplateCopyInput {
   createdBy: string
 }
 
+/**
+ * Result of copying a template into a new draft workflow.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowTemplateCopyResult {
   workflowId: string
   graphVersion: string
   name: string
 }
 
+/**
+ * Filter options for {@link WorkflowRepository.listTemplates}.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowTemplateListOptions {
   scope?: 'public' | 'my' | 'all'
 }
 
+/**
+ * Fields accepted when publishing a draft as a template. Publishing runs
+ * strict graph validation and will not mutate template state on failure.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowTemplatePublishInput {
   workflowId: string
   visibility: 'private' | 'public'
@@ -126,6 +175,12 @@ export interface WorkflowTemplatePublishInput {
   updatedAt: number
 }
 
+/**
+ * Result of a template publish attempt: either the updated workflow
+ * summary on success, or a non-retryable domain error describing why
+ * publishing was rejected (unavailable workflow or failed strict validation).
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export type WorkflowTemplatePublishResult = WorkflowSummary | {
   errorClass: 'workflow_template_unavailable' | 'workflow_template_validation_failed'
   message: string
@@ -133,26 +188,100 @@ export type WorkflowTemplatePublishResult = WorkflowSummary | {
   issues?: GraphValidationIssue[]
 }
 
+/**
+ * Repository boundary for workflow (canvas project) records and their
+ * immutable graph version history. All SQL/Drizzle access to the
+ * `workflows` and `workflow_versions` tables is confined to this module;
+ * callers (IPC handlers, services) must not issue raw queries.
+ * @see docs/api-contracts/canvas-plan.md
+ */
 export interface WorkflowRepository {
+  /**
+   * Inserts a new workflow record. Intentionally version-agnostic: callers
+   * must separately insert an initial graph version via {@link addVersion}
+   * in the same logical operation, or the workflow will have no persisted
+   * graph until one is added.
+   * @param record - Fields for the new workflow row.
+   * @throws Error when the underlying INSERT fails (e.g. duplicate id).
+   * @see docs/api-contracts/canvas-plan.md
+   */
   create(record: WorkflowCreateRecord): void
+  /**
+   * Appends a new immutable graph version for a workflow and refreshes the
+   * workflow's `updatedAt` timestamp, atomically in one transaction.
+   * @param record - Graph version fields to insert.
+   * @throws Error when the underlying transaction fails.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   addVersion(record: WorkflowVersionCreateRecord): void
+  /**
+   * Reads the most recently created graph version for a workflow.
+   * @param workflowId - Workflow id to look up.
+   * @returns The latest version, or `null` if the workflow has no versions.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   getLatestVersion(workflowId: string): WorkflowVersionRecord | null
+  /**
+   * Reads a denormalized summary of one workflow (name, scope, counts,
+   * warnings) derived from its latest graph version.
+   * @param workflowId - Workflow id to look up.
+   * @returns The summary, or `null` if the workflow does not exist or was
+   * soft-deleted.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   getSummary(workflowId: string): WorkflowSummary | null
-  /** 列出模板摘要，默认仅返回已发布公共模板 */
+  /**
+   * 列出模板摘要，默认仅返回已发布公共模板。
+   * @param options - Optional scope filter (`public` | `my` | `all`).
+   * @see docs/api-contracts/canvas-plan.md
+   */
   listTemplates(options?: WorkflowTemplateListOptions): WorkflowSummary[]
-  /** 通过 strict 校验后发布本地模板 */
+  /**
+   * 通过 strict 校验后发布本地模板；校验失败时不修改模板状态。
+   * @param input - Target workflow, desired visibility, and validation result.
+   * @returns Updated summary on success, or a non-retryable domain error.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   publishTemplate(input: WorkflowTemplatePublishInput): WorkflowTemplatePublishResult
-  /** 将公共模板复制为私有草稿工作流 */
+  /**
+   * 将公共模板复制为私有草稿工作流，一并复制其最新图版本。
+   * @param input - Source template id, target workflow/version ids, and name.
+   * @returns Copy result, or `null` if the source template is unavailable.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   copyTemplateToDraft(input: WorkflowTemplateCopyInput): WorkflowTemplateCopyResult | null
-  /** 列出所有工作流摘要 */
+  /**
+   * 列出所有未删除的草稿工作流摘要。
+   * @see docs/api-contracts/canvas-plan.md
+   */
   list(): WorkflowSummary[]
-  /** 列出指定工作流的版本历史 */
+  /**
+   * 列出指定工作流的版本历史（不含完整 graph 载荷）。
+   * @param workflowId - Workflow id to look up.
+   * @param limit - Maximum number of versions to return (default 20).
+   * @see docs/api-contracts/canvas-plan.md
+   */
   listVersions(workflowId: string, limit?: number): WorkflowVersionSummary[]
-  /** 将历史版本复制为新的最新版本，保留不可变版本历史 */
+  /**
+   * 将历史版本复制为新的最新版本，保留不可变版本历史。
+   * @param input - Source version id and new version metadata.
+   * @returns The newly inserted version, or `null` if the source version
+   * does not exist.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   restoreVersion(input: WorkflowVersionRestoreInput): WorkflowVersionRecord | null
-  /** 重命名工作流 */
+  /**
+   * 重命名工作流并刷新其 `updatedAt`。
+   * @param workflowId - Workflow id to rename.
+   * @param name - New display name.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   rename(workflowId: string, name: string): void
-  /** 软删除工作流 */
+  /**
+   * 软删除工作流（设置 `deletedAt`），使其从 `list()`/`getSummary()` 中排除。
+   * @param workflowId - Workflow id to soft-delete.
+   * @see docs/api-contracts/canvas-plan.md
+   */
   delete(workflowId: string): void
 }
 

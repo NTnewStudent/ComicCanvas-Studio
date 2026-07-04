@@ -23,6 +23,7 @@ import {
   useEdgesState,
   useReactFlow,
   type Node,
+  type NodeProps,
   type Edge,
   type EdgeTypes,
   type NodeTypes,
@@ -87,9 +88,9 @@ import VideoConfigV2Node from './nodes/VideoConfigV2Node'
 import { CharacterNode } from './nodes/CharacterNode'
 import { SceneNode } from './nodes/SceneNode'
 import { AudioNode } from './nodes/AudioNode'
-import { VideoComposeNode } from './nodes/VideoComposeNode'
-import { SuperResolutionNode } from './nodes/SuperResolutionNode'
-import { MuxAudioVideoNode } from './nodes/MuxAudioVideoNode'
+import { VideoComposeNode, type VideoComposeNodeProps } from './nodes/VideoComposeNode'
+import { SuperResolutionNode, type SuperResolutionNodeProps } from './nodes/SuperResolutionNode'
+import { MuxAudioVideoNode, type MuxAudioVideoNodeProps } from './nodes/MuxAudioVideoNode'
 import { MjImageNode } from './nodes/MjImageNode'
 import { useCanvasRealtime } from './hooks/use-canvas-realtime'
 import { ProjectManager } from './components/ProjectManager'
@@ -219,7 +220,7 @@ function defaultNodeData(type: NodeType, sequence: number): CanvasNodeData {
 
 function jobTypeForNodeType(type: NodeType): JobType | null {
   if (type === 'text') return 'canvas.polishText'
-  if (type === 'video') return 'canvas.generateVideo'
+  if (type === 'video' || type === 'videoConfigV2') return 'canvas.generateVideo'
   if (type === 'audio') return 'canvas.generateAudio'
   if (type === 'videoCompose') return 'canvas.composeVideo'
   if (type === 'superResolution') return 'canvas.upscaleVideo'
@@ -325,20 +326,98 @@ function VideoNodeWrapper({
   )
 }
 
+function ImageConfigV2NodeWrapper({
+  id,
+  data,
+  selected,
+}: {
+  id: string
+  data: ImageNodeData
+  selected?: boolean
+}): JSX.Element {
+  const runContext = useCanvasRunContext()
+  return (
+    <ImageConfigV2Node
+      id={id}
+      data={data}
+      selected={selected ?? false}
+      onRun={(nodeId) => runContext?.runNode(nodeId)}
+    />
+  )
+}
+
+function VideoConfigV2NodeWrapper(props: NodeProps): JSX.Element {
+  const runContext = useCanvasRunContext()
+  return (
+    <VideoConfigV2Node
+      {...props}
+      onRun={(nodeId: string) => runContext?.runNode(nodeId)}
+    />
+  )
+}
+
+/**
+ * Injects a real `onRun` callback into VideoComposeNode so its "运行" button
+ * dispatches an actual `canvas.composeVideo` job instead of leaving the node
+ * stuck in `status: 'running'` forever (task 16 fix: the component previously
+ * had no wrapper, so `onRun` was always undefined).
+ */
+function VideoComposeNodeWrapper(props: NodeProps): JSX.Element {
+  const runContext = useCanvasRunContext()
+  return (
+    <VideoComposeNode
+      {...(props as unknown as VideoComposeNodeProps)}
+      onRun={(nodeId: string) => runContext?.runNode(nodeId)}
+    />
+  )
+}
+
+/**
+ * Injects a real `onRun` callback into SuperResolutionNode so its "运行"
+ * button dispatches an actual `canvas.upscaleVideo` job instead of leaving
+ * the node stuck in `status: 'running'` forever (same unwired-wrapper gap as
+ * videoCompose/muxAudioVideo, fixed alongside task 16; independently verified
+ * under task 17).
+ */
+function SuperResolutionNodeWrapper(props: NodeProps): JSX.Element {
+  const runContext = useCanvasRunContext()
+  return (
+    <SuperResolutionNode
+      {...(props as unknown as SuperResolutionNodeProps)}
+      onRun={(nodeId: string) => runContext?.runNode(nodeId)}
+    />
+  )
+}
+
+/**
+ * Injects a real `onRun` callback into MuxAudioVideoNode so its "运行"
+ * button dispatches an actual `canvas.muxAudioVideo` job instead of leaving
+ * the node stuck in `status: 'running'` forever (task 16 fix).
+ */
+function MuxAudioVideoNodeWrapper(props: NodeProps): JSX.Element {
+  const runContext = useCanvasRunContext()
+  return (
+    <MuxAudioVideoNode
+      {...(props as unknown as MuxAudioVideoNodeProps)}
+      onRun={(nodeId: string) => runContext?.runNode(nodeId)}
+    />
+  )
+}
+
 /* React Flow node type registry */
 
 const nodeTypes: NodeTypes = {
   text: TextNodeWrapper,
   image: ImageNodeWrapper,
   video: VideoNodeWrapper,
-  imageConfigV2: ImageConfigV2Node,
-  videoConfigV2: VideoConfigV2Node,
+  imageConfigV2: ImageConfigV2NodeWrapper,
+  videoConfigV2: VideoConfigV2NodeWrapper,
   character: CharacterNode,
   scene: SceneNode,
   audio: AudioNode,
-  videoCompose: VideoComposeNode,
-  superResolution: SuperResolutionNode,
-  muxAudioVideo: MuxAudioVideoNode,
+  videoCompose: VideoComposeNodeWrapper,
+  superResolution: SuperResolutionNodeWrapper,
+  muxAudioVideo: MuxAudioVideoNodeWrapper,
   mjImage: MjImageNode,
 }
 

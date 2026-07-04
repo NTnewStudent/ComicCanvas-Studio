@@ -489,7 +489,13 @@ async function buildRunDescriptor(
     }
   }
 
-  if (node.type !== 'image' && node.type !== 'video' && node.type !== 'mjImage') {
+  const isImageMedia = node.type === 'image' || node.type === 'imageConfigV2'
+  const isVideoMedia = node.type === 'video' || node.type === 'videoConfigV2'
+  // imageConfigV2/videoConfigV2 是 image/video 的 V2 面板变体，必须走同一条
+  // compileWorkflowNodeRuntimeSnapshot 路径才能拿到拼接后的 prompt、画风、
+  // 时长/分辨率等运行参数（否则会退化成不带任何参数的裸 job，R4.4 要求的
+  // "enqueue a local job and update its own status/result" 无法生效）。
+  if (!isImageMedia && !isVideoMedia && node.type !== 'mjImage') {
     return { type: 'canvas.generateImage', payload: { nodeId, nodeType: node.type, references: await resolveNodeReferences(nodeId, deps, workflowId) } }
   }
 
@@ -505,7 +511,7 @@ async function buildRunDescriptor(
   ]
 
   return {
-    type: node.type === 'video' ? 'canvas.generateVideo' : 'canvas.generateImage',
+    type: isVideoMedia ? 'canvas.generateVideo' : 'canvas.generateImage',
     payload: {
       nodeId,
       nodeType: node.type,
@@ -769,6 +775,15 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     const id = `wf-${clock()}`
     const now = clock()
     workflows.create({ id, name, createdAt: now, updatedAt: now })
+    // 新建工作流必须落一条初始图版本，否则 getSummary/getLatestVersion
+    // 只能靠 emptyGraph() 兜底，掩盖了"从未保存过图"这一真实状态。
+    workflows.addVersion({
+      id: idFactory(),
+      workflowId: id,
+      graph: defaultGraph(),
+      createdAt: now,
+      createdBy: dependencies.currentUserId ?? 'system'
+    })
     return { id, name }
   })
 
