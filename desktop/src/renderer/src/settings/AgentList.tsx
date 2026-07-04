@@ -197,22 +197,22 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
                 </div>
 
                 <div className="mt-auto flex flex-wrap justify-end gap-2">
-                  {builtin ? (
+                  {builtin && (
                     <span className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-muted">
                       <Lock className="h-4 w-4" />
-                      内置
+                      不可删除
                     </span>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setEditing(agent)}
-                        className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-base transition hover:border-border-primary"
-                        aria-label={`编辑 ${agent.name}`}
-                      >
-                        <Pencil className="h-4 w-4 text-brand" />
-                        编辑
-                      </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setEditing(agent)}
+                    className="inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-3 py-1.5 text-[13px] font-medium text-text-base transition hover:border-border-primary"
+                    aria-label={`编辑 ${agent.name}`}
+                  >
+                    <Pencil className="h-4 w-4 text-brand" />
+                    编辑
+                  </button>
+                  {!builtin && (
                       <button
                         type="button"
                         onClick={() => setDeleting(agent)}
@@ -222,7 +222,6 @@ export function AgentList({ api = agentApi() }: AgentListProps): JSX.Element {
                         <Trash2 className="h-4 w-4" />
                         删除
                       </button>
-                    </>
                   )}
                 </div>
               </article>

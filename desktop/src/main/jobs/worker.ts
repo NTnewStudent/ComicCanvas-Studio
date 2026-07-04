@@ -30,6 +30,31 @@ export interface JobWorker {
   runNext(): Promise<string | null>
 }
 
+function isStructuredJobError(error: unknown): error is { errorClass: string; message: string; retryable: boolean; details?: Record<string, unknown> } {
+  return typeof error === 'object'
+    && error !== null
+    && 'errorClass' in error
+    && typeof (error as { errorClass?: unknown }).errorClass === 'string'
+    && 'message' in error
+    && typeof (error as { message?: unknown }).message === 'string'
+    && 'retryable' in error
+    && typeof (error as { retryable?: unknown }).retryable === 'boolean'
+}
+
+function normalizeJobError(error: unknown): JobError {
+  if (isStructuredJobError(error)) {
+    return {
+      errorClass: error.errorClass,
+      message: error.message,
+      retryable: error.retryable,
+      ...(error.details ? { details: error.details } : {})
+    }
+  }
+
+  const message = error instanceof Error ? error.message : 'Job handler failed'
+  return { errorClass: 'job_worker_error', message, retryable: false }
+}
+
 /**
  * Creates a single-lease worker that processes one pending job at a time.
  * @param options - Repository, event bus, handler, lease, and clock dependencies.
@@ -66,8 +91,7 @@ export function createJobWorker(options: JobWorkerOptions): JobWorker {
         options.events.emitTerminal({ channel: 'job.completed', jobId: job.id, result, emittedAt })
       } catch (error: unknown) {
         // Worker handlers are untrusted provider/tool boundaries, so failures become persisted job errors.
-        const message = error instanceof Error ? error.message : 'Job handler failed'
-        const jobError: JobError = { errorClass: 'job_worker_error', message, retryable: false }
+        const jobError = normalizeJobError(error)
         options.jobs.fail(job.id, jobError, emittedAt)
         options.events.emitTerminal({ channel: 'job.failed', jobId: job.id, error: jobError, emittedAt })
       }

@@ -16,12 +16,18 @@ import type {
   ToolPermissionResult,
   ToolProgress
 } from '../../../../shared/tools'
+import { enrichToolDescriptorWithInputSchema } from '../lib/tool-schema'
 
 export interface ToolInvocationInput {
   toolId: string
   input: unknown
   actor: ToolActor
   traceId: string
+  approvedInvocation?: {
+    toolId: string
+    input: unknown
+    approvedBy: ToolActor
+  }
 }
 
 export interface ToolInvocationResult {
@@ -123,6 +129,15 @@ function createRecord(input: ToolInvocationInput, invocationId: string, createdA
   }
 }
 
+function stableJson(value: unknown): string {
+  return JSON.stringify(value)
+}
+
+function hasMatchingApproval(input: ToolInvocationInput): boolean {
+  return input.approvedInvocation?.toolId === input.toolId
+    && stableJson(input.approvedInvocation.input) === stableJson(input.input)
+}
+
 function cloneDescriptor(descriptor: ToolDescriptor): ToolDescriptor {
   const owner: ToolDescriptor['owner'] =
     descriptor.owner.kind === 'builtin'
@@ -215,10 +230,15 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
       ? await tool.checkPermissions(parsed.data, ctx)
       : (options.permissionPolicy?.(tool, parsed.data, ctx) ?? defaultPermissionDecision(tool))
 
-    if (permission.decision !== 'allow') {
+    if (permission.decision === 'ask' && hasMatchingApproval(input)) {
+      // A prior approval resumes the exact same tool call; execution still stays inside ToolRuntime.
+    } else if (permission.decision !== 'allow') {
       return {
         record: createRecord(input, invocationId, createdAt, 'denied'),
-        error: toolError('tool_permission_denied', permission.decisionReason),
+        error: toolError('tool_permission_denied', permission.decisionReason, false, undefined, {
+          decision: permission.decision,
+          requiredPermissions: permission.requiredPermissions
+        }),
         progress: []
       }
     }
@@ -270,7 +290,7 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
   return {
     list(includeDisabled = false) {
       return Array.from(toolsById.values())
-        .map((tool) => cloneDescriptor(tool.descriptor))
+        .map((tool) => enrichToolDescriptorWithInputSchema(cloneDescriptor(tool.descriptor), tool.inputSchema))
         .filter((descriptor) => includeDisabled || descriptor.enabled)
     },
     register(tool) {

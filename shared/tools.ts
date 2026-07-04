@@ -28,6 +28,8 @@ export interface ToolDescriptor {
   owner: ToolOwner
   inputSchemaRef: string
   outputSchemaRef: string
+  /** JSON Schema snapshot of tool input parameters; present on `tool.list` responses. */
+  inputParametersJsonSchema?: Record<string, unknown>
   permissions: ToolPermission[]
   concurrency: ToolConcurrency
   enabled: boolean

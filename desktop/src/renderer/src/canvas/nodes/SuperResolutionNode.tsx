@@ -16,6 +16,13 @@ import { canvasStore } from '../store/canvas.store'
 type SuperResolutionScene = NonNullable<SuperResolutionNodeData['scene']>
 type SuperResolutionTarget = NonNullable<SuperResolutionNodeData['resolution']>
 
+const superResolutionSceneOptions: Array<{ value: SuperResolutionScene; label: string }> = [
+  { value: 'aigc', label: 'AIGC 视频' },
+  { value: 'short_series', label: '短剧' },
+  { value: 'ugc', label: 'UGC' },
+  { value: 'old_film', label: '老电影' },
+]
+
 /** Renderer props for the production super-resolution node. */
 export interface SuperResolutionNodeProps {
   /** Canvas node identifier. */
@@ -74,9 +81,9 @@ function SuperResolutionNodeComponent({
   return (
     <article
       role="group"
-      aria-label={`Super Resolution node ${data.label}`}
+      aria-label={`视频超分节点 ${data.label}`}
       className={cn(
-        'relative flex w-[320px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'relative flex h-full min-h-[560px] w-full min-w-[380px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
@@ -84,8 +91,8 @@ function SuperResolutionNodeComponent({
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={NODE_MIN_WIDTH.video}
-        minHeight={NODE_MIN_HEIGHT.video}
+        minWidth={NODE_MIN_WIDTH.superResolution}
+        minHeight={NODE_MIN_HEIGHT.superResolution}
         lineClassName={NODE_RESIZER_CLASS_NAMES.line}
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
@@ -93,7 +100,7 @@ function SuperResolutionNodeComponent({
       <header className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-brand" />
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">Super Resolution</div>
+          <div className="text-[11px] font-semibold uppercase text-text-muted">视频超分</div>
           <div className="truncate text-[15px] font-semibold text-text-base">{data.label}</div>
         </div>
         <span className="rounded-sm bg-bg-input px-2 py-1 text-[11px] text-text-muted">{data.status}</span>
@@ -133,10 +140,11 @@ function SuperResolutionNodeComponent({
             value={data.scene ?? 'aigc'}
             onChange={(event) => update({ scene: event.target.value as SuperResolutionScene })}
           >
-            <option value="aigc">aigc</option>
-            <option value="short_series">short_series</option>
-            <option value="ugc">ugc</option>
-            <option value="old_film">old_film</option>
+            {superResolutionSceneOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">

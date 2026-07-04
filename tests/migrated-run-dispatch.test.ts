@@ -133,6 +133,104 @@ describe('REQ-096 migrated node run dispatch', () => {
     ])
   })
 
+  it('enqueues videoConfigV2 as a video job with uploaded first-frame cloud URL', async () => {
+    const enqueued: JobCreateInput[] = []
+    const uploaded: string[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      assets: {
+        getById(assetId: string) {
+          return {
+            id: assetId,
+            mediaType: 'image',
+            status: 'ready',
+            relativePath: `generated/image/${assetId}.png`,
+            safeUrl: `cc-asset://asset/${assetId}`,
+            metadata: { mimeType: 'image/png' },
+            createdAt: 1,
+            updatedAt: 1,
+          }
+        },
+      } as Pick<AssetRepository, 'getById'> as AssetRepository,
+      assetUrlResolver: {
+        async resolveAssetUrl(asset) {
+          uploaded.push(asset.id)
+          return { url: `https://cdn.example.test/assets/${asset.id}.png`, source: 'cloud' }
+        },
+      },
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'image-result-1',
+              type: 'image',
+              position: { x: 0, y: 0 },
+              data: {
+                label: 'Generated key frame',
+                assetId: 'asset-image-generated',
+                url: 'cc-asset://asset/asset-image-generated',
+                status: 'done',
+              },
+            },
+            {
+              id: 'video-config-1',
+              type: 'videoConfigV2',
+              position: { x: 320, y: 0 },
+              data: {
+                label: 'Animate key frame',
+                promptOverride: 'slow camera push',
+                modelId: 'stub-video',
+                durationSeconds: 4,
+                resolution: '1080p',
+                status: 'idle',
+                assetId: null,
+              },
+            },
+          ],
+          edges: [
+            { id: 'edge-first-frame', source: 'image-result-1', target: 'video-config-1', data: { edgeType: 'imageRole', imageRole: 'first_frame', createdAt: 1 } },
+          ],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-video-config-1', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'video-config-1' })).resolves.toEqual({
+      jobId: 'job-video-config-1',
+      status: 'pending',
+      createdAt: 1,
+    })
+    expect(uploaded).toEqual(['asset-image-generated'])
+    expect(enqueued[0]).toMatchObject({
+      type: 'canvas.generateVideo',
+      targetId: 'video-config-1',
+      requestedBy: { type: 'user', id: 'user-1' },
+      payload: {
+        nodeId: 'video-config-1',
+        nodeType: 'videoConfigV2',
+        prompt: '参考图像：\nslow camera push',
+        modelKey: 'stub-video',
+        parameters: { durationSeconds: 4, resolution: '1080p' },
+        references: [
+          {
+            assetId: 'asset-image-generated',
+            role: 'first_frame',
+            url: 'https://cdn.example.test/assets/asset-image-generated.png',
+            mediaType: 'image',
+          },
+        ],
+      },
+    })
+  })
+
   it('keeps legacy mjImage compatible without enabling MJ multi-result behavior', async () => {
     const enqueued: JobCreateInput[] = []
     const { ipcMain, handlers } = createFakeIpcMain()

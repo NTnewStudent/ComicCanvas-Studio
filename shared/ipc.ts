@@ -30,13 +30,13 @@ import type {
   AssetTrashRequest,
   AssetTrashResponse
 } from './assets'
-import type { GatewayConfigInput, GatewayConfigView } from './gateway'
+import type { GatewayConfigInput, GatewayConfigView, GatewayFetchModelsRequest, GatewayFetchModelsResponse } from './gateway'
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
 import type { CanvasPlan, PlanRunStep } from './plan'
-import type { AgentDefinition, AgentRunRequest, AgentRunTicket, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
+import type { AgentDefinition, AgentNonCanvasResponse, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
 import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillListRequest } from './skills'
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
-import type { ToolDescriptor, ToolInvocationRecord } from './tools'
+import type { ToolDescriptor, ToolInvocationRecord, ToolPermission } from './tools'
 import type { StylePresetSaveInput, StylePresetView, StyleProjectDefaultRequest } from './styles'
 import type { CanvasSnippetDeleteRequest, CanvasSnippetDeleteResponse, CanvasSnippetGetRequest, CanvasSnippetListRequest, CanvasSnippetSaveInput, CanvasSnippetSaveResponse, CanvasSnippetView } from './snippets'
 import type { WorkflowModelCatalog } from './workflow-node-definitions'
@@ -75,6 +75,7 @@ export type JobIpcChannel =
 
 export type AssetIpcChannel =
   | 'asset.import'
+  | 'asset.pickImportFiles'
   | 'asset.get'
   | 'asset.list'
   | 'asset.move'
@@ -97,6 +98,7 @@ export type GatewayIpcChannel =
   | 'gateway.test'
   | 'gateway.reload'
   | 'gateway.models'
+  | 'gateway.fetchModels'
   | 'gateway.changed'
 
 export type StyleIpcChannel =
@@ -129,7 +131,13 @@ export type AgentIpcChannel =
   | 'agent.delete'
   | 'agent.run'
   | 'agent.getRun'
+  | 'agent.approveTool'
   | 'agent.spawn'
+  | 'agent.responseReady'
+  | 'agent.delta'
+  | 'agent.toolStarted'
+  | 'agent.toolCompleted'
+  | 'agent.permissionRequired'
   | 'agent.progress'
   | 'agent.completed'
   | 'agent.failed'
@@ -351,6 +359,7 @@ export interface IpcRequestMap {
   'job.list': JobListFilter
   'job.recover': Record<string, never>
   'asset.import': AssetImportRequest
+  'asset.pickImportFiles': Record<string, never>
   'asset.get': { assetId: string }
   'asset.list': AssetListRequest
   'asset.move': AssetMoveRequest
@@ -370,6 +379,7 @@ export interface IpcRequestMap {
   'gateway.test': { gatewayId: string; channel: 'text' | 'image' | 'video' }
   'gateway.reload': { gatewayId?: string }
   'gateway.models': Record<string, never>
+  'gateway.fetchModels': GatewayFetchModelsRequest
   'style.list': { includeDisabled?: boolean }
   'style.save': StylePresetSaveInput
   'style.delete': { stylePresetId: string }
@@ -388,6 +398,7 @@ export interface IpcRequestMap {
   'agent.delete': { agentId: string }
   'agent.run': AgentRunRequest
   'agent.getRun': { runId: string }
+  'agent.approveTool': AgentToolApprovalInput
   'agent.spawn': SpawnSubAgentInput
   'skill.list': SkillListRequest
   'skill.reload': { skillId?: string }
@@ -406,7 +417,7 @@ export interface IpcRequestMap {
 }
 
 export interface IpcResponseMap {
-  'canvas.chatSend': { jobId: string; messageId: string; status: 'pending' }
+  'canvas.chatSend': { runId: string; jobId: string; messageId: string; status: 'pending' }
   'canvas.chatGetPlan': CanvasPlan
   'canvas.applyPlan': CanvasApplyPlanResponse
   'canvas.runPlan': CanvasRunPlanResponse
@@ -430,6 +441,7 @@ export interface IpcResponseMap {
   'job.list': JobRecord[]
   'job.recover': JobRecoveryReport
   'asset.import': AssetRecord
+  'asset.pickImportFiles': { paths: string[] }
   'asset.get': AssetRecord
   'asset.list': AssetRecord[]
   'asset.move': AssetRecord
@@ -449,6 +461,7 @@ export interface IpcResponseMap {
   'gateway.test': JobTicket
   'gateway.reload': { reloadedGatewayIds: string[] }
   'gateway.models': WorkflowModelCatalog
+  'gateway.fetchModels': GatewayFetchModelsResponse
   'style.list': StylePresetView[]
   'style.save': StylePresetView
   'style.delete': { stylePresetId: string; deleted: true }
@@ -467,6 +480,7 @@ export interface IpcResponseMap {
   'agent.delete': { agentId: string; deleted: true }
   'agent.run': AgentRunTicket
   'agent.getRun': { runId: string; status: string; trace?: Record<string, unknown> }
+  'agent.approveTool': AgentRunTicket | { errorClass: string; message: string; retryable: false }
   'agent.spawn': SpawnSubAgentResult
   'skill.list': SkillDefinition[]
   'skill.reload': { reloadedSkillIds: string[] }
@@ -497,6 +511,32 @@ export interface IpcEventMap {
   'tool.completed': { invocationId: string; output: unknown }
   'tool.failed': { invocationId: string; error: SafeErrorEnvelope }
   'tool.audit': { traceId: string; toolId: string; decision: string }
+  'agent.responseReady': { runId: string; messageId: string; response: AgentNonCanvasResponse }
+  'agent.delta': { runId: string; messageId: string; delta: string }
+  'agent.toolStarted': {
+    runId: string
+    messageId: string
+    callId: string
+    toolId: string
+    inputSummary: string
+  }
+  'agent.toolCompleted': {
+    runId: string
+    messageId: string
+    callId: string
+    toolId: string
+    invocationId: string
+    status: 'completed' | 'failed' | 'denied'
+    summary: string
+  }
+  'agent.permissionRequired': {
+    runId: string
+    messageId: string
+    callId: string
+    toolId: string
+    reason: string
+    requiredPermissions: ToolPermission[]
+  }
   'agent.progress': { runId: string; message: string }
   'agent.completed': { runId: string; output: string }
   'agent.failed': { runId: string; error: SafeErrorEnvelope }

@@ -58,9 +58,9 @@ describe('Task 42 workflow node definitions service', () => {
     )
 
     expect(runActions.get('text')).toBe('textPolish')
-    expect(runActions.get('image')).toBe('imageRun')
+    expect(runActions.get('image')).toBeNull()
     expect(runActions.get('imageConfigV2')).toBe('imageRun')
-    expect(runActions.get('video')).toBe('videoRun')
+    expect(runActions.get('video')).toBeNull()
     expect(runActions.get('videoConfigV2')).toBe('videoRun')
     expect(runActions.get('videoCompose')).toBe('videoComposeRun')
     expect(runActions.get('superResolution')).toBe('superResolutionRun')

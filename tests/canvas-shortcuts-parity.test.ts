@@ -33,11 +33,11 @@ describe('Task 22 canvas shortcuts parity', () => {
   it('keeps shortcut help aligned with the implemented shortcuts', () => {
     const source = readFileSync(CANVAS_PAGE, 'utf8')
 
-    expect(source).toContain("['Ctrl/Cmd+Z', 'Undo']")
-    expect(source).toContain("['Ctrl/Cmd+Shift+Z / Ctrl+Y', 'Redo']")
-    expect(source).toContain("['Ctrl/Cmd+1', 'Fit view']")
-    expect(source).toContain("['Ctrl/Cmd+2', 'Select mode']")
-    expect(source).toContain("['Ctrl/Cmd+3', 'Pan mode']")
-    expect(source).toContain('[deleteShortcutLabel, \'Delete selected nodes\']')
+    expect(source).toContain("['Ctrl/Cmd+Z', '撤销']")
+    expect(source).toContain("['Ctrl/Cmd+Shift+Z / Ctrl+Y', '重做']")
+    expect(source).toContain("['Ctrl/Cmd+1', '适配视图']")
+    expect(source).toContain("['Ctrl/Cmd+2', '选择模式']")
+    expect(source).toContain("['Ctrl/Cmd+3', '拖拽画布模式']")
+    expect(source).toContain('[deleteShortcutLabel, \'删除选中节点\']')
   })
 })

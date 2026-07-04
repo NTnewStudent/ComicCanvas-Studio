@@ -18,7 +18,7 @@ const safePlan: CanvasPlan = {
     },
     {
       ref: 'image-1',
-      type: 'image',
+      type: 'imageConfigV2',
       title: 'Image',
       data: {
         promptOverride: 'cinematic panel',
@@ -28,7 +28,7 @@ const safePlan: CanvasPlan = {
     },
     {
       ref: 'video-1',
-      type: 'video',
+      type: 'videoConfigV2',
       title: 'Video',
       data: {
         promptOverride: 'slow camera push',
@@ -72,15 +72,15 @@ describe('sanitizePlan', () => {
     expect(sanitized.dropped).toEqual([])
   })
 
-  it('preserves migrated semantic and tool nodes with legal connections', () => {
+  it('preserves migrated semantic and generation config nodes with legal connections', () => {
     const plan: CanvasPlan = {
       kind: 'plan',
-      summary: 'Create a comic-drama scene with character, MJ image, video composition, and mux.',
+      summary: 'Create a comic-drama scene with character, image generation, video generation, and mux context.',
       nodes: [
         { ref: 'story', type: 'text', title: 'Story', data: { content: 'A quiet hero enters a neon station.' } },
         { ref: 'hero', type: 'character', title: 'Hero', data: { description: 'calm detective' } },
         { ref: 'station', type: 'scene', title: 'Station', data: { description: 'rainy neon platform' } },
-        { ref: 'mj', type: 'mjImage', title: 'MJ image', data: { prompt: 'cinematic keyframe' } },
+        { ref: 'image-gen', type: 'imageConfigV2', title: 'Image gen', data: { promptOverride: 'cinematic keyframe' } },
         { ref: 'video-gen', type: 'videoConfigV2', title: 'Video gen', data: { promptOverride: 'slow dolly' } },
         { ref: 'compose', type: 'videoCompose', title: 'Compose', data: { transitionName: 'cut' } },
         { ref: 'composed-video', type: 'video', title: 'Composed Video', data: { promptOverride: '' } },
@@ -91,9 +91,10 @@ describe('sanitizePlan', () => {
       ],
       edges: [
         { source: 'story', target: 'hero', edgeType: 'default' },
-        { source: 'hero', target: 'mj', edgeType: 'default' },
+        { source: 'hero', target: 'image-gen', edgeType: 'default' },
+        { source: 'station', target: 'image-gen', edgeType: 'default' },
         { source: 'station', target: 'video-gen', edgeType: 'default' },
-        { source: 'mj', target: 'video-gen', edgeType: 'imageRole', imageRole: 'first_frame' },
+        { source: 'image-gen', target: 'video-gen', edgeType: 'imageRole', imageRole: 'first_frame' },
         { source: 'video-gen', target: 'compose', edgeType: 'default' },
         { source: 'compose', target: 'composed-video', edgeType: 'default' },
         { source: 'composed-video', target: 'mux', edgeType: 'default' },
@@ -102,13 +103,8 @@ describe('sanitizePlan', () => {
         { source: 'upscale', target: 'video-1', edgeType: 'default' }
       ],
       runSteps: [
-        { ref: 'mj', action: 'imageRun' },
-        { ref: 'mj', action: 'mjImageRun' },
-        { ref: 'video-gen', action: 'videoRun' },
-        { ref: 'voice', action: 'audioRun' },
-        { ref: 'compose', action: 'videoComposeRun' },
-        { ref: 'mux', action: 'muxAudioVideoRun' },
-        { ref: 'upscale', action: 'superResolutionRun' }
+        { ref: 'image-gen', action: 'imageRun' },
+        { ref: 'video-gen', action: 'videoRun' }
       ],
       question: null,
       dropped: []
@@ -120,7 +116,7 @@ describe('sanitizePlan', () => {
       'text',
       'character',
       'scene',
-      'mjImage',
+      'imageConfigV2',
       'videoConfigV2',
       'videoCompose',
       'video',
@@ -129,17 +125,47 @@ describe('sanitizePlan', () => {
       'superResolution',
       'video'
     ])
-    expect(sanitized.edges).toHaveLength(10)
+    expect(sanitized.edges).toHaveLength(11)
     expect(sanitized.runSteps).toEqual([
-      { ref: 'mj', action: 'imageRun' },
-      { ref: 'mj', action: 'mjImageRun' },
-      { ref: 'video-gen', action: 'videoRun' },
-      { ref: 'voice', action: 'audioRun' },
-      { ref: 'compose', action: 'videoComposeRun' },
-      { ref: 'mux', action: 'muxAudioVideoRun' },
-      { ref: 'upscale', action: 'superResolutionRun' }
+      { ref: 'image-gen', action: 'imageRun' },
+      { ref: 'video-gen', action: 'videoRun' }
     ])
     expect(sanitized.dropped).toEqual([])
+  })
+
+  it('drops MJ and non-generation run actions from Agent plans while preserving warnings', () => {
+    const dirty = {
+      ...cloneSafePlan(),
+      nodes: [
+        ...cloneSafePlan().nodes,
+        { ref: 'mj', type: 'mjImage', title: 'MJ image', data: { prompt: 'legacy keyframe' } },
+        { ref: 'audio', type: 'audio', title: 'Audio', data: { assetId: null } }
+      ],
+      edges: [
+        ...cloneSafePlan().edges,
+        { source: 'mj', target: 'video-1', edgeType: 'imageRole', imageRole: 'first_frame' }
+      ],
+      runSteps: [
+        ...cloneSafePlan().runSteps,
+        { ref: 'mj', action: 'mjImageRun' },
+        { ref: 'audio', action: 'audioRun' },
+        { ref: 'video-1', action: 'videoComposeRun' }
+      ]
+    } as unknown as CanvasPlan
+
+    const sanitized = sanitizePlan(dirty)
+
+    expect(sanitized.nodes.map((node) => node.ref)).toEqual(['text-1', 'image-1', 'video-1', 'audio'])
+    expect(sanitized.runSteps).toEqual(safePlan.runSteps)
+    expect(sanitized.dropped).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('node:mj:unsupported_type'),
+        expect.stringContaining('edge:mj->video-1:missing_node'),
+        expect.stringContaining('runStep:mj:unsupported_action'),
+        expect.stringContaining('runStep:audio:unsupported_action'),
+        expect.stringContaining('runStep:video-1:unsupported_action')
+      ])
+    )
   })
 
   it('drops unsupported nodes, illegal edges, missing references, and invalid run actions', () => {
@@ -192,7 +218,7 @@ describe('sanitizePlan', () => {
       nodes: [
         {
           ref: 'image-1',
-          type: 'image',
+          type: 'imageConfigV2',
           title: 'Image eval("bad")',
           data: {
             promptOverride: 'ship require("fs")',

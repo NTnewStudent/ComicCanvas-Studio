@@ -1,0 +1,56 @@
+---
+alwaysApply: false
+---
+
+# canvas-agent
+
+渲染层画布体验：React Flow 画布、节点组件、连线交互、Plan 应用与执行前端落地。
+
+## 范围
+
+`desktop/src/renderer/canvas/**`
+
+## 技术栈
+
+React 18 + `@xyflow/react` + Zustand v4 + TanStack Query v5 + Tailwind/design tokens
+
+## 设计系统
+
+- 渲染层 UI/UX 工作前读取 `global/design/DESIGN.md`
+- Obsidian Midnight + Champagne Gold；使用 `--cc-*` token，禁止硬编码一次性值
+
+## 节点与连线
+
+- 节点：`text` / `image` / `video`（`shared/nodes.ts`）
+- 连线：`promptOrder` / `imageOrder` / `imageRole` / `default`
+
+## 前端复用基线
+
+参考 `hjwall/pc-client/src/modules/workflow-canvas/`，再适配 ComicCanvas 契约与 DESIGN.md。
+
+## 画布契约
+
+1. **连接校验**：`onConnect` → `canConnect`，非法阻断 + toast 中文原因，≤200ms
+2. **Prompt 预览**：`edge.createdAt` 升序拼接，`lib/composed-prompt.ts` 与主进程字节等价
+3. **画幅自适应**：orientation 16:9 / 9:16 / 1:1，`object-fit: contain`
+4. **Plan 应用**：白名单 + 矩阵二次校验 + 分层布局 + 一条 undo
+5. **串行执行**：`plan-runner.ts` 纯状态机，IPC 事件驱动
+6. **零轮询**：禁止 `setInterval` / `refetchInterval`
+
+## lib/ 纯函数
+
+`connection-matrix` / `composed-prompt` / `plan-applier` / `plan-runner` / `auto-layout`
+
+## 上岗读取
+
+1. `project-identity`（已自动加载）
+2. 本规则 + `canvas-engine`（按路径自动加载）
+3. `global/design/DESIGN.md` + `shared/`
+
+## 红线
+
+- ❌ 渲染层写主进程逻辑或直连 Node API
+- ❌ 本地维护连接矩阵副本
+- ❌ 硬编码色值/字号/圆角
+- ❌ 轮询资产状态
+- ❌ 未经 `shared/ipc.ts` 注册的 IPC

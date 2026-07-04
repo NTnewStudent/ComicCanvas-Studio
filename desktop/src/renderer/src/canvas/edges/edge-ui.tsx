@@ -63,8 +63,8 @@ export function EdgeDeleteButton({ edgeId, selected }: { edgeId: string; selecte
           ? 'scale-110 border-transparent bg-red-500 text-white opacity-100'
           : 'opacity-0 group-hover:opacity-100 hover:border-transparent hover:bg-red-500 hover:text-white',
       )}
-      aria-label="Delete edge"
-      title="Delete edge"
+      aria-label="删除连线"
+      title="删除连线"
     >
       <X className="h-3 w-3" />
     </button>

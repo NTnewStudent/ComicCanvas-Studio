@@ -9,11 +9,15 @@
 
 import type { IpcRegistrar } from './ipc/types'
 import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
+import { createGatewayAgentPlanner } from './agent/gateway-loop-model'
 import { createAgentRegistry } from './agent/registry'
 import { createIpcCanvasPlanEventBus } from './ipc/canvas-plan-fanout'
+import { createAssetCloudUrlService } from './assets/asset-cloud-url'
 import { createAssetPipeline } from './assets/pipeline'
+import { createWorkflowAssetResolver } from './assets/workflow-asset-resolver'
 import { applyMigrations, openDatabaseAtPath } from './db/migrate'
 import { createAgentRepository } from './db/repositories/agent.repo'
+import { createAgentRunRepository } from './db/repositories/agent-run.repo'
 import { createAssetRepository } from './db/repositories/asset.repo'
 import { createChatMessageRepository } from './db/repositories/chat-message.repo'
 import { createCanvasSnippetRepository } from './db/repositories/canvas-snippet.repo'
@@ -22,22 +26,30 @@ import { createStorageConfigRepository } from './db/repositories/storage.repo'
 import { createStyleRepository } from './db/repositories/style.repo'
 import { createWorkflowRepository } from './db/repositories/workflow.repo'
 import { registerAgentHandlers } from './ipc/agent.handler'
+import { registerSkillHandlers } from './ipc/skill.handler'
+import { spawnSubAgent } from './agent/spawn-sub-agent'
 import { registerAssetHandlers } from './ipc/asset.handler'
 import { registerCanvasHandlers } from './ipc/canvas.handler'
 import { registerCanvasSnippetHandlers } from './ipc/canvas-snippet.handler'
-import { getGatewayModelCatalog, registerGatewayHandlers } from './ipc/gateway.handler'
+import { getGatewayModelCatalog, getGatewayConfig, registerGatewayHandlers, seedGatewayConfigs } from './ipc/gateway.handler'
 import { registerJobHandlers } from './ipc/job.handler'
 import { registerStyleHandlers } from './ipc/style.handler'
 import { registerToolHandlers } from './ipc/tool.handler'
-import { registerStorageHandlers } from './ipc/storage.handler'
+import { getCurrentStorageConfig, registerStorageHandlers } from './ipc/storage.handler'
 import { createIpcJobEventBus } from './jobs/ipc-fanout'
 import { createJobQueue } from './jobs/queue'
 import { createJobWorker, type JobWorker } from './jobs/worker'
 import { createGatewayConfigReloader } from './providers/gateway-reloader'
 import { createGatewayRegistry } from './providers/registry'
+import { loadLocalGateways } from './providers/local-gateways'
 import { createStubProvider } from './providers/stub.provider'
 import { runImageNodeSmokePath } from './smoke/m1-smoke'
+import { storageFactory } from './storage/storage-factory'
+import { createAssetTools } from './tools/asset'
 import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
+import { createFsTools } from './tools/fs'
+import { createAgentSpawnTool, createChildAgentRunner } from './tools/agent'
+import { createSkillRegistry } from './skills/registry'
 import { createToolRuntime } from './tools/runtime'
 import type { SafeStorageAdapter } from './security/key-vault'
 
@@ -45,10 +57,15 @@ export interface MainProcessRuntimeOptions {
   ipcMain: IpcRegistrar
   dbPath: string
   assetRoot: string
+  /** Absolute path that bounds the read-only fs.* tools. Defaults to process.cwd(). */
+  workspaceRoot?: string
+  /** Absolute path to a local, git-ignored gateways JSON file to bootstrap real providers. */
+  gatewaysFile?: string
   storageSafeStorage?: SafeStorageAdapter
   getWindows: MainRuntimeWindowProvider
   currentUserId?: string
   planner?: OrchestratorPlanner
+  agentPlannerMode?: 'deterministic' | 'gateway'
   clock?: () => number
   idFactory?: () => string
   assetIdFactory?: () => string
@@ -86,6 +103,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const jobs = createJobRepository(db)
   const assets = createAssetRepository(db)
   const agents = createAgentRepository(db)
+  const agentRuns = createAgentRunRepository(db)
   const storageConfigs = createStorageConfigRepository(db)
   const styles = createStyleRepository(db)
   const snippets = createCanvasSnippetRepository(db)
@@ -110,8 +128,25 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   })
   const gateways = createGatewayRegistry()
   gateways.set('stub-main', createStubProvider({ id: 'stub-main' }))
-  const reloader = createGatewayConfigReloader({ registry: gateways })
+  // Bootstrap real providers (and their secrets) from a local git-ignored file when present.
+  const localGatewaysFile = options.gatewaysFile ?? process.env.COMIC_CANVAS_GATEWAYS_FILE
+  const localGateways = localGatewaysFile ? loadLocalGateways(localGatewaysFile) : { configs: [], secretsByKeyRef: {} }
+  const reloader = createGatewayConfigReloader({
+    registry: gateways,
+    resolveSecret: (keyRef: string) => localGateways.secretsByKeyRef[keyRef] ?? ''
+  })
+  if (localGateways.configs.length > 0) {
+    seedGatewayConfigs(localGateways.configs)
+    reloader.reload(localGateways.configs)
+  }
   const agentRegistry = createAgentRegistry({ agents, clock })
+  const skillRegistry = createSkillRegistry()
+  const assetCloudUrls = createAssetCloudUrlService({
+    assetRoot: options.assetRoot,
+    assets,
+    getStorageConfig: getCurrentStorageConfig,
+    createStorageProvider: (config) => storageFactory.create(config)
+  })
   const graphStore: CanvasGraphStore = {
     getGraph(workflowId = 'default') {
       return workflows.getLatestVersion(workflowId)?.graph ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
@@ -156,25 +191,95 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       return ticket
     }
   }
+  const toolRuntime = createToolRuntime({
+    tools: [
+      ...createCanvasTools({
+        graphStore,
+        queue: autoQueue,
+        clock
+      }),
+      ...createAssetTools({
+        assets,
+        cloudUrls: assetCloudUrls
+      }),
+      ...createFsTools({
+        workspaceRoot: options.workspaceRoot ?? process.cwd()
+      })
+    ],
+    clock
+  })
+  // Lazily build the agent spawn tool once the planner and toolRuntime are both available.
+  // Registered after toolRuntime is created to avoid circular dependency during construction.
+  function registerAgentSpawnTool(plannerInstance: typeof planner): void {
+    void plannerInstance // planner is used by the child runner when a step model is provided
+    const childRunner = createChildAgentRunner({
+      toolRuntime,
+      listTools: () => toolRuntime.list()
+    })
+    toolRuntime.register(createAgentSpawnTool({
+      parentAgent: agentRegistry.get('general-purpose') ?? {
+        id: 'general-purpose', source: 'builtin', name: 'General Purpose', description: '',
+        instructions: '', allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep'],
+        allowedSkills: '*',
+        gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: { includeCanvasGraph: false, includeSelectedAssets: false, includeRecentMessages: false, includeKnowledge: false, maxContextTokens: 4000 },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics'], requireAskForDestructive: true },
+        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'manual', autoRun: false },
+        maxTurns: 4, effort: 'medium', enabled: true
+      },
+      parentRunId: 'runtime-spawn',
+      parentTraceId: 'runtime',
+      currentDepth: 0,
+      runChild: childRunner
+    }))
+  }
+  // Prefer a configured real (non-stub) text model so general questions get real answers.
+  // Resolved lazily so configuring a gateway takes effect without an app restart.
+  function resolveDefaultTextModel(): { gatewayId: string; modelId: string } | null {
+    try {
+      const catalog = getGatewayModelCatalog()
+      const textModel = catalog.models.text.find((model) => model.enabled && model.gatewayId !== 'stub-main')
+      if (textModel) {
+        return { gatewayId: textModel.gatewayId, modelId: textModel.id }
+      }
+    } catch {
+      // Fall back to "no model configured" when the catalog cannot be read.
+    }
+    return null
+  }
+  const planner = options.planner ?? (options.agentPlannerMode === 'gateway'
+    ? createGatewayAgentPlanner({
+      gateways,
+      tools: toolRuntime,
+      listTools: () => toolRuntime.list(),
+      resolveDefaultModel: resolveDefaultTextModel,
+      resolveGatewayType: (gatewayId) => getGatewayConfig(gatewayId)?.type,
+      fallbackGatewayId: 'stub-main',
+      fallbackModelId: 'stub-text'
+    })
+    : createDefaultOrchestratorPlanner())
   const orchestrator = createOrchestratorRuntime({
     queue: autoQueue,
     events: jobEvents,
     chatMessages: createChatMessageRepository(db),
     planEvents,
     workflowId: 'default',
-    planner: options.planner ?? createDefaultOrchestratorPlanner(),
+    planner,
+    registry: agentRegistry,
+    listTools: () => toolRuntime.list(),
+    getCanvasGraph: (workflowId) => graphStore.getGraph(workflowId),
+    agentRuns,
+    skillRegistry,
     idFactory: options.messageIdFactory ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`),
     planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
     clock
   })
-  const toolRuntime = createToolRuntime({
-    tools: createCanvasTools({
-      graphStore,
-      queue: autoQueue,
-      clock
-    }),
-    clock
+  const childRunner = createChildAgentRunner({
+    toolRuntime,
+    listTools: () => toolRuntime.list()
   })
+  // Register the spawn tool now that the planner is available.
+  registerAgentSpawnTool(planner)
   worker = createJobWorker({
     jobs,
     events: jobEvents,
@@ -222,6 +327,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     assets,
     graphStore,
     styles,
+    assetUrlResolver: createWorkflowAssetResolver({
+      getStorageConfig: getCurrentStorageConfig,
+      createStorageProvider: (config) => storageFactory.create(config),
+      cloudUrlService: assetCloudUrls
+    }),
     modelCatalog: getGatewayModelCatalog
   })
   registerJobHandlers(options.ipcMain, {
@@ -246,7 +356,23 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     clock,
     idFactory: () => `snippet-${crypto.randomUUID()}`
   })
-  registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
+  registerAgentHandlers(options.ipcMain, {
+    registry: agentRegistry,
+    runtime: orchestrator,
+    spawnSubAgent: (input) => {
+      const parentAgent = agentRegistry.get('general-purpose')
+      const allowedTools = parentAgent?.allowedTools ?? '*'
+      const allowedSkills = parentAgent?.allowedSkills ?? '*'
+
+      return spawnSubAgent(input, {
+        parentRunId: `ipc-spawn-${crypto.randomUUID()}`,
+        parentTraceId: 'ipc-spawn',
+        allowedTools,
+        allowedSkills
+      }, { runChild: childRunner })
+    }
+  })
+  registerSkillHandlers(options.ipcMain, { registry: skillRegistry })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
   registerStorageHandlers(options.ipcMain, {
     repository: storageConfigs,

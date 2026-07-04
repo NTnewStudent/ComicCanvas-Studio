@@ -12,7 +12,7 @@ import {
   type CanvasActionFailureReason,
 } from '../../../../../../shared/canvas-actions'
 import type { CanvasGraphSnapshot } from '../../../../../../shared/graph'
-import type { CanvasEdgeData, CanvasNodeData, NodeType } from '../../../../../../shared/nodes'
+import type { CanvasEdgeData, CanvasNodeData, EdgeType, ImageRole, NodeStatus, NodeType } from '../../../../../../shared/nodes'
 
 export interface CanvasPosition {
   x: number
@@ -27,6 +27,8 @@ export interface CanvasStoreNode {
   id: string
   type: NodeType
   position: CanvasPosition
+  width?: number
+  height?: number
   data: CanvasNodeData
 }
 
@@ -47,6 +49,12 @@ export type ConnectFailureReason = CanvasActionFailureReason
 
 export type ConnectResult = { ok: true; edgeId: string } | { ok: false; reason: ConnectFailureReason }
 
+export interface AddEdgeOptions {
+  edgeType?: EdgeType
+  imageRole?: ImageRole
+  createdByMention?: boolean
+}
+
 export interface CanvasStoreOptions {
   idFactory?: () => string
   edgeIdFactory?: (source: string, target: string) => string
@@ -65,7 +73,7 @@ export interface CanvasStoreState extends CanvasSnapshot {
   setNodes(this: void, nodes: CanvasStoreNode[]): void
   /** Batch-replace edges (used by debounced persistence from ReactFlow) */
   setEdges(this: void, edges: CanvasStoreEdge[]): void
-  addEdge(this: void, source: string, target: string): ConnectResult
+  addEdge(this: void, source: string, target: string, options?: AddEdgeOptions): ConnectResult
   deleteEdge(this: void, id: string): void
   applyChange(this: void, snapshot: CanvasSnapshot): void
   undo(this: void): void
@@ -170,7 +178,7 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
       set({ edges })
     },
 
-    addEdge(source, target) {
+    addEdge(source, target, options) {
       const state = get()
       const edgeId = edgeIdFactory(source, target)
       const createdAt = clock()
@@ -179,6 +187,9 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
         source,
         target,
         createdAt,
+        ...(options?.edgeType ? { edgeType: options.edgeType } : {}),
+        ...(options?.imageRole ? { imageRole: options.imageRole } : {}),
+        ...(options?.createdByMention ? { createdByMention: true } : {}),
       })
 
       if (!next.ok) {

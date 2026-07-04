@@ -43,6 +43,7 @@ function customAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition 
       maxContextTokens: 4000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
     maxTurns: 6,
     effort: 'medium',
     enabled: true,
@@ -69,14 +70,41 @@ async function withAgents(run: (dependencies: { handlers: Map<string, Handler>; 
 }
 
 describe('M5 custom Agent settings IPC', () => {
+  it('provides a cc-haha style general-purpose agent as the default conversation entry', async () => {
+    await withAgents(async ({ handlers }) => {
+      const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: false })) as AgentDefinition[]
+      const general = listed.find((agent) => agent.id === 'general-purpose')
+      const canvasOrchestrator = listed.find((agent) => agent.id === 'canvas-orchestrator')
+
+      expect(general).toMatchObject({
+        id: 'general-purpose',
+        source: 'builtin',
+        name: 'General Purpose',
+        allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep'],
+        gatewayPolicy: { allowedChannels: ['text'] },
+        triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
+      })
+      expect(general?.instructions).toContain('general-purpose agent')
+      expect(general?.instructions).toContain('fs.read, fs.glob, fs.grep')
+      expect(canvasOrchestrator).toMatchObject({
+        id: 'canvas-orchestrator',
+        source: 'builtin',
+        name: 'Canvas Orchestrator',
+      })
+      expect(listed.find((agent) => agent.id === 'orchestrator')).toMatchObject({
+        description: 'Compatibility alias for Canvas Orchestrator.',
+      })
+    })
+  })
+
   it('lists built-in agents alongside enabled custom agents', async () => {
     await withAgents(async ({ handlers }) => {
       const saved = await handlers.get('agent.save')?.({}, customAgent())
       expect(saved).toMatchObject({ id: 'agent-storyboard', source: 'user', enabled: true })
 
       const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: false })) as AgentDefinition[]
-      expect(listed.map((agent) => agent.id)).toEqual(['orchestrator', 'canvas', 'tooling', 'pm', 'agent-storyboard'])
-      expect(listed.find((agent) => agent.id === 'orchestrator')).toMatchObject({ source: 'builtin', name: 'Orchestrator' })
+      expect(listed.map((agent) => agent.id)).toEqual(['general-purpose', 'canvas-orchestrator', 'orchestrator', 'canvas', 'tooling', 'pm', 'agent-storyboard'])
+      expect(listed.find((agent) => agent.id === 'general-purpose')).toMatchObject({ source: 'builtin', name: 'General Purpose' })
     })
   })
 
@@ -99,18 +127,52 @@ describe('M5 custom Agent settings IPC', () => {
     })
   })
 
-  it('protects built-in agents from edit and delete operations', async () => {
-    await withAgents(async ({ handlers }) => {
-      const editResult = await handlers.get('agent.save')?.({}, customAgent({ id: 'orchestrator', source: 'builtin', name: 'Mutated orchestrator' }))
-      expect(editResult).toMatchObject({
-        errorClass: 'agent_builtin_readonly',
-        message: 'Built-in agents are read-only.'
+  it('rejects malformed agent policy fields before persistence', async () => {
+    await withAgents(async ({ handlers, repo }) => {
+      const invalidTrigger = await handlers.get('agent.save')?.({}, customAgent({
+        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'workflowEvent', autoRun: false }
+      }))
+      expect(invalidTrigger).toMatchObject({
+        errorClass: 'agent_policy_invalid',
+        message: 'Agent configuration violates policy schema.'
       })
 
-      const deleteResult = await handlers.get('agent.delete')?.({}, { agentId: 'orchestrator' })
+      const invalidPermission = await handlers.get('agent.save')?.({}, {
+        ...customAgent(),
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'root' as never], requireAskForDestructive: true }
+      })
+      expect(invalidPermission).toMatchObject({ errorClass: 'agent_policy_invalid' })
+
+      const invalidContext = await handlers.get('agent.save')?.({}, customAgent({
+        contextPolicy: {
+          includeCanvasGraph: true,
+          includeSelectedAssets: false,
+          includeRecentMessages: true,
+          includeKnowledge: false,
+          maxContextTokens: 0
+        }
+      }))
+      expect(invalidContext).toMatchObject({ errorClass: 'agent_policy_invalid' })
+      expect(repo.list({ includeDisabled: true })).toEqual([])
+    })
+  })
+
+  it('persists built-in agent edits as overrides while still blocking delete', async () => {
+    await withAgents(async ({ handlers }) => {
+      const editResult = await handlers.get('agent.save')?.({}, customAgent({ id: 'canvas-orchestrator', source: 'builtin', name: 'Mutated canvas orchestrator' }))
+      expect(editResult).toMatchObject({
+        id: 'canvas-orchestrator',
+        source: 'builtin',
+        name: 'Mutated canvas orchestrator'
+      })
+
+      const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: true })) as AgentDefinition[]
+      expect(listed.find((agent) => agent.id === 'canvas-orchestrator')).toMatchObject({ name: 'Mutated canvas orchestrator' })
+
+      const deleteResult = await handlers.get('agent.delete')?.({}, { agentId: 'canvas-orchestrator' })
       expect(deleteResult).toMatchObject({
         errorClass: 'agent_builtin_readonly',
-        message: 'Built-in agents are read-only.'
+        message: 'Built-in agents cannot be deleted.'
       })
     })
   })
@@ -125,7 +187,7 @@ describe('M5 custom Agent settings IPC', () => {
       })
 
       const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: true })) as AgentDefinition[]
-      expect(listed.map((agent) => agent.id)).toEqual(['orchestrator', 'canvas', 'tooling', 'pm'])
+      expect(listed.map((agent) => agent.id)).toEqual(['general-purpose', 'canvas-orchestrator', 'orchestrator', 'canvas', 'tooling', 'pm'])
     })
   })
 })

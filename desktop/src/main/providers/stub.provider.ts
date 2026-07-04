@@ -12,9 +12,14 @@ export interface GatewayProviderProgressEvent {
   message?: string
 }
 
+/** Called with each incremental text token while the model streams. */
+export type GatewayDeltaCallback = (delta: string) => void
+
 export interface GatewayProviderContext {
   isCanceled?: () => boolean
   onProgress?: (event: GatewayProviderProgressEvent) => Promise<void> | void
+  /** Optional: invoked with each token delta as the model streams. */
+  onDelta?: GatewayDeltaCallback
 }
 
 export interface GatewayProvider {

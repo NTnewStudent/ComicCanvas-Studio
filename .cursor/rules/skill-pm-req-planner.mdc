@@ -1,0 +1,46 @@
+---
+alwaysApply: false
+---
+
+# skill: pm-req-planner
+
+把粗粒度功能需求转化为 EARS 验收标准 + 正确性属性的 requirements / design / tasks 三件套。涉及 IPC、共享契约、Agent、画布、队列、Provider、DB 或生成资产的大型需求，编码前使用。
+
+## 输出位置
+
+`specs/` 为全项目共享真源：
+
+- `specs/<feature-slug>/requirements.md`
+- `specs/<feature-slug>/design.md`
+- `specs/<feature-slug>/tasks.md`
+
+## requirements.md（EARS）
+
+```
+WHEN <触发> THE <系统> SHALL <行为>.
+IF <条件> THEN THE <系统> SHALL <行为>.
+WHILE <状态> THE <系统> SHALL <行为>.
+WHERE <场景> THE <系统> SHALL <行为>.
+FOR ALL <集合> ... SHALL ... （不变量 INV-x）
+```
+
+必须含：scope + non-goals、术语表、用户故事、验收标准、正确性属性。
+
+## design.md
+
+概述、架构图（mermaid）、组件与接口、数据模型、API/IPC 契约链接、测试策略、迁移方案。
+
+## ComicCanvas 生成类 AC
+
+- 本地 job 队列异步生成
+- completed/failed IPC 终态；handler 无同步资产返回
+- 资产落 appData，DB 存相对路径
+
+## 连接 / Agent AC
+
+- `shared/connection-matrix.ts` 唯一真源
+- 纯声明式 CanvasPlan + 白名单 sanitization
+
+## 模板
+
+参考 `.claude/skills/pm-req-planner/assets/requirements-template.md` 与 `design-template.md`。

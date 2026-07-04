@@ -42,11 +42,11 @@ describe('Task 33 audio node parity', () => {
       />
     )
 
-    expect(screen.getByRole('group', { name: 'Audio node Theme' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '音频节点 Theme' })).toBeInTheDocument()
     expect(screen.getByTestId('audio-node-player')).toHaveAttribute('src', 'cc-asset://asset/asset-audio')
     expect(screen.getByText('42s')).toBeInTheDocument()
     expect(screen.getByText('Mux 输入')).toBeInTheDocument()
-    expect(screen.getByText('音频引用：music')).toBeInTheDocument()
+    expect(screen.getByText('音频引用：音乐')).toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('textbox', { name: '音频名称' }), { target: { value: 'Narration' } })
     fireEvent.change(screen.getByRole('combobox', { name: '音频引用语义' }), { target: { value: 'voice' } })

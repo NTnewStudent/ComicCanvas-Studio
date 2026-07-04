@@ -4,15 +4,27 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
-import type { AgentRunStatus } from '../../../../shared/agents'
+import type { AgentDefinition, AgentResponse, AgentRunRequest, AgentRunStatus, AgentRunTicket, AgentToolApprovalInput, AgentTriggerKind } from '../../../../shared/agents'
 import type { JobResult } from '../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../shared/plan'
+import type { CanvasGraphSnapshot } from '../../../../shared/graph'
+import type { ToolDescriptor, ToolPermission } from '../../../../shared/tools'
+import type { AgentRunRepository } from '../db/repositories/agent-run.repo'
 import type { PersistedJobRecord } from '../db/repositories/job.repo'
 import type { ChatMessageRepository } from '../db/repositories/chat-message.repo'
 import type { JobEventBus } from '../jobs/events'
 import type { JobQueue } from '../jobs/queue'
+import { AgentLoopTerminalError, createAgentContextLoop, type AgentContextLoopState, type AgentToolApprovalRequest } from './context-loop'
+import type { AgentRegistry } from './registry'
 import type { CanvasPlanEventBus } from './plan-events'
 import { sanitizePlan } from './sanitize-plan'
+import { analyzeAgentIntent, formatIntentProgress, type AgentIntentAnalysis } from './intent-analysis'
+import { buildAgentContext } from '../knowledge/context-builder'
+import { buildSkillContext } from '../knowledge/skill-context'
+import type { SkillRegistry } from '../skills/registry'
+
+const DEFAULT_CHAT_AGENT_ID = 'general-purpose'
+const CANVAS_ORCHESTRATOR_AGENT_ID = 'canvas-orchestrator'
 
 export interface OrchestratorProgressDraft {
   type: 'progress'
@@ -20,8 +32,33 @@ export interface OrchestratorProgressDraft {
   progress: number
 }
 
+export type OrchestratorPlannerDraft =
+  | OrchestratorProgressDraft
+  | {
+      type: 'toolStarted'
+      callId: string
+      toolId: string
+      inputSummary: string
+    }
+  | {
+      type: 'toolCompleted'
+      callId: string
+      toolId: string
+      invocationId: string
+      status: 'completed' | 'failed' | 'denied'
+      summary: string
+    }
+  | {
+      type: 'permissionRequired'
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions: ToolPermission[]
+    }
+
 export interface OrchestratorPlanner {
-  proposePlan(input: OrchestratorPlannerInput): AsyncGenerator<OrchestratorProgressDraft, CanvasPlan> | Promise<CanvasPlan> | CanvasPlan
+  proposePlan(input: OrchestratorPlannerInput): AsyncGenerator<OrchestratorPlannerDraft, AgentResponse | CanvasPlan> | Promise<AgentResponse | CanvasPlan> | AgentResponse | CanvasPlan
+  resumeApprovedTool?(input: OrchestratorApprovalPlannerInput): AsyncGenerator<OrchestratorPlannerDraft, AgentResponse | CanvasPlan> | Promise<AgentResponse | CanvasPlan> | AgentResponse | CanvasPlan
 }
 
 export interface OrchestratorPlannerInput {
@@ -29,17 +66,52 @@ export interface OrchestratorPlannerInput {
   messageId: string
   message: string
   agentId: string
+  agent?: AgentDefinition
+  trigger?: AgentTriggerKind
+  loop?: AgentContextLoopState
+  /** Optional streaming delta callback forwarded to the gateway for live token delivery. */
+  onDelta?: (delta: string) => void
+}
+
+export interface OrchestratorApprovalPlannerInput extends OrchestratorPlannerInput {
+  agent: AgentDefinition
+  trigger: AgentTriggerKind
+  loop: AgentContextLoopState
+  approval: AgentToolApprovalRequest
+  approvedBy: string
 }
 
 export type OrchestratorEvent =
   | { type: 'progress'; runId: string; message: string; progress: number }
   | { type: 'plan'; runId: string; messageId: string; planId: string; plan: CanvasPlan }
+  | { type: 'response'; runId: string; messageId: string; response: AgentResponse }
+  | { type: 'toolStarted'; runId: string; messageId: string; callId: string; toolId: string; inputSummary: string }
+  | {
+      type: 'toolCompleted'
+      runId: string
+      messageId: string
+      callId: string
+      toolId: string
+      invocationId: string
+      status: 'completed' | 'failed' | 'denied'
+      summary: string
+    }
+  | {
+      type: 'permissionRequired'
+      runId: string
+      messageId: string
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions: ToolPermission[]
+    }
 
 export interface OrchestratorRunResult {
   runId: string
   messageId: string
-  planId: string
-  plan: CanvasPlan
+  response: AgentResponse
+  planId?: string
+  plan?: CanvasPlan
 }
 
 export interface OrchestratorRunOptions extends OrchestratorPlannerInput {
@@ -50,10 +122,12 @@ export interface OrchestratorRunOptions extends OrchestratorPlannerInput {
 export interface OrchestratorChatInput {
   message: string
   agentId?: string
+  trigger?: AgentTriggerKind
   requestedBy: string
 }
 
 export interface OrchestratorChatTicket {
+  runId: string
   jobId: string
   messageId: string
   status: 'pending'
@@ -63,18 +137,38 @@ export interface OrchestratorRuntimeOptions {
   queue: JobQueue
   events: JobEventBus
   planner: OrchestratorPlanner
+  registry?: AgentRegistry
+  listTools?: () => ToolDescriptor[]
+  agentRuns?: AgentRunRepository
   chatMessages?: ChatMessageRepository
   planEvents?: CanvasPlanEventBus
+  getCanvasGraph?: (workflowId?: string) => CanvasGraphSnapshot
+  getSelectedNodeIds?: () => string[]
   idFactory?: (prefix: 'message' | 'run') => string
   planIdFactory?: () => string
   workflowId?: string
   clock?: () => number
+  skillRegistry?: SkillRegistry
 }
 
 export interface OrchestratorRuntime {
   chatSend(input: OrchestratorChatInput): OrchestratorChatTicket
+  agentRun(input: AgentRunRequest): AgentRunTicket
+  approveTool(input: AgentToolApprovalInput): AgentRunTicket | { errorClass: string; message: string; retryable: false }
+  getRun(runId: string): { runId: string; status: AgentRunStatus; trace?: Record<string, unknown> } | null
   getPlan(messageId: string): CanvasPlan | null
   createJobHandler(): (job: PersistedJobRecord) => Promise<JobResult>
+}
+
+interface ApprovalResumePayload {
+  kind: 'approval'
+  runId: string
+  messageId: string
+  message: string
+  agentId: string
+  trigger: AgentTriggerKind
+  approval: AgentToolApprovalRequest
+  approvedBy: string
 }
 
 interface StoredRun {
@@ -82,25 +176,465 @@ interface StoredRun {
   messageId: string
   planId?: string
   status: AgentRunStatus
+  agentId?: string
+  jobId?: string
+  trigger?: AgentTriggerKind
+  errorClass?: string
+  droppedTools?: string[]
+  compactionSummary?: string | null
+  omittedMessages?: number
+  intentAnalysis?: AgentIntentAnalysis
+  pendingApproval?: AgentToolApprovalRequest
+  pausedState?: AgentContextLoopState
+  effectiveAgent?: AgentDefinition
+  response?: AgentResponse
+  startedAt?: number
+  completedAt?: number
+  turnCount?: number
+  usageSummary?: string
 }
 
-function isAsyncIterable(value: unknown): value is AsyncGenerator<OrchestratorProgressDraft, CanvasPlan> {
+function fallbackOrchestratorAgent(agentId: string): AgentDefinition {
+  if (agentId === DEFAULT_CHAT_AGENT_ID) {
+    return {
+      id: DEFAULT_CHAT_AGENT_ID,
+      source: 'builtin',
+      name: 'General Purpose',
+      description: 'Default conversation agent that understands, decomposes, clarifies, and delegates to local capabilities.',
+      instructions: 'First understand the user message, decompose requirements, and inspect local capabilities. Ask for clarification when ambiguous. Never create canvas nodes for greetings or low-signal requests.',
+      allowedTools: ['canvas.queryGraph'],
+      allowedSkills: '*',
+      gatewayPolicy: { allowedChannels: ['text'] },
+      contextPolicy: {
+        includeCanvasGraph: true,
+        includeSelectedAssets: true,
+        includeRecentMessages: true,
+        includeKnowledge: false,
+        maxContextTokens: 8000
+      },
+      permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'diagnostics'], requireAskForDestructive: true },
+      triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
+      maxTurns: 8,
+      effort: 'high',
+      enabled: true
+    }
+  }
+
+  return {
+    id: agentId,
+    source: 'builtin',
+    name: agentId === CANVAS_ORCHESTRATOR_AGENT_ID || agentId === 'orchestrator' ? 'Canvas Orchestrator' : agentId,
+    description: 'Fallback Agent definition for isolated orchestrator tests.',
+    instructions: 'Analyze the user request and produce safe ComicCanvas plans.',
+    allowedTools: '*',
+    allowedSkills: '*',
+    gatewayPolicy: { allowedChannels: ['text', 'image', 'video'] },
+    contextPolicy: {
+      includeCanvasGraph: true,
+      includeSelectedAssets: true,
+      includeRecentMessages: true,
+      includeKnowledge: false,
+      maxContextTokens: 8000
+    },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'file.read', 'network', 'provider.spend'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
+    maxTurns: 8,
+    effort: 'high',
+    enabled: true
+  }
+}
+
+function isAsyncIterable(value: unknown): value is AsyncGenerator<OrchestratorPlannerDraft, AgentResponse | CanvasPlan> {
   return typeof value === 'object' && value !== null && Symbol.asyncIterator in value
 }
 
-async function* plannerEvents(options: OrchestratorRunOptions): AsyncGenerator<OrchestratorProgressDraft, CanvasPlan> {
-  const proposed = options.planner.proposePlan({
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isAgentResponse(value: unknown): value is AgentResponse {
+  return isRecord(value)
+    && (value.type === 'answer' || value.type === 'clarification' || value.type === 'canvasPlan')
+}
+
+function responseFromCanvasPlan(plan: CanvasPlan): AgentResponse {
+  return { type: 'canvasPlan', plan: sanitizePlan(plan) }
+}
+
+function normalizeAgentResponse(value: AgentResponse | CanvasPlan): AgentResponse {
+  if (isAgentResponse(value)) {
+    return value.type === 'canvasPlan' ? responseFromCanvasPlan(value.plan) : value
+  }
+
+  return responseFromCanvasPlan(value)
+}
+
+function runFailureTrace(runId: string, messageId: string, previous: StoredRun | undefined, error: unknown): StoredRun {
+  if (error instanceof AgentLoopTerminalError) {
+    const status: AgentRunStatus = error.pendingApproval
+      ? 'approval_required'
+      : error.errorClass === 'agent_max_turns_exceeded' ? 'max_turns_exceeded' : 'failed'
+
+    return {
+      ...(previous ?? { runId, messageId }),
+      runId,
+      messageId,
+      status,
+      errorClass: error.errorClass,
+      droppedTools: error.droppedTools,
+      compactionSummary: error.compactionSummary,
+      omittedMessages: error.omittedMessages,
+      ...(error.pendingApproval ? { pendingApproval: error.pendingApproval } : {}),
+      ...(error.pausedState ? { pausedState: error.pausedState } : {})
+    }
+  }
+
+  return {
+    ...(previous ?? { runId, messageId }),
+    runId,
+    messageId,
+    status: 'failed',
+    errorClass: error instanceof Error ? error.message : 'agent_run_failed'
+  }
+}
+
+function applyContextPolicyOverride(agent: AgentDefinition, payload: Record<string, unknown>): AgentDefinition {
+  const override = payload.contextPolicyOverride
+
+  if (typeof override !== 'object' || override === null || Array.isArray(override)) {
+    return agent
+  }
+
+  return {
+    ...agent,
+    contextPolicy: {
+      ...agent.contextPolicy,
+      ...(override as Partial<AgentDefinition['contextPolicy']>)
+    }
+  }
+}
+
+function approvalError(errorClass: string, message: string): { errorClass: string; message: string; retryable: false } {
+  return { errorClass, message, retryable: false }
+}
+
+function clarificationResponse(summary: string, question: string, missing: string[] = [], dropped: string[] = []): AgentResponse {
+  return {
+    type: 'clarification',
+    summary,
+    question,
+    missing,
+    dropped
+  }
+}
+
+function weekdayName(date: Date): string {
+  return ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][date.getDay()] ?? '未知'
+}
+
+function generalQuestionResponse(message: string): AgentResponse {
+  const normalized = message.trim().toLowerCase()
+  let answer = '这是一个普通问题，我会按通用 Agent 模式回答；如果你希望我操作画布，请直接说明要创建的节点、素材或工作流。'
+
+  if (/今天星期几|今天周几|what day is it/iu.test(normalized)) {
+    answer = `今天是${weekdayName(new Date())}。`
+  } else if (/今天几号|今天日期|what date is it/iu.test(normalized)) {
+    answer = `今天是${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' }).format(new Date())}。`
+  } else if (/现在几点|what time is it/iu.test(normalized)) {
+    answer = `现在是${new Intl.DateTimeFormat('zh-CN', { timeStyle: 'short' }).format(new Date())}。`
+  }
+
+  return {
+    type: 'answer',
+    summary: '用户提出了普通问题，应由通用 Agent 直接回答。',
+    text: answer,
+    dropped: []
+  }
+}
+
+function directSimpleCanvasPlan(message: string): CanvasPlan {
+  if (/视频|video/iu.test(message)) {
+    return {
+      kind: 'plan',
+      summary: `Directly create one video reference node for: ${message}`,
+      nodes: [
+        {
+          ref: 'video-1',
+          type: 'video',
+          title: '视频节点',
+          data: {
+            label: '视频节点',
+            promptOverride: message,
+            modelId: 'stub-video',
+            orientation: 'landscape',
+            durationSeconds: 3,
+            firstFrameAssetId: null,
+            lastFrameAssetId: null,
+            assetId: null,
+            status: 'idle'
+          }
+        }
+      ],
+      edges: [],
+      runSteps: [],
+      question: null,
+      dropped: []
+    }
+  }
+
+  if (/图片|图像|image/iu.test(message)) {
+    return {
+      kind: 'plan',
+      summary: `Directly create one image reference node for: ${message}`,
+      nodes: [
+        {
+          ref: 'image-1',
+          type: 'image',
+          title: '图片节点',
+          data: {
+            label: '图片节点',
+            promptOverride: message,
+            modelId: 'stub-image',
+            orientation: 'landscape',
+            assetId: null,
+            status: 'idle'
+          }
+        }
+      ],
+      edges: [],
+      runSteps: [],
+      question: null,
+      dropped: []
+    }
+  }
+
+  return {
+    kind: 'plan',
+    summary: `Directly create one text node for: ${message}`,
+    nodes: [
+      {
+        ref: 'text-1',
+        type: 'text',
+        title: '文本节点',
+        data: {
+          label: '文本节点',
+          content: message
+        }
+      }
+    ],
+    edges: [],
+    runSteps: [],
+    question: null,
+    dropped: []
+  }
+}
+
+function runTrace(run: StoredRun): Record<string, unknown> {
+  const capabilityCheck = run.intentAnalysis
+    ? {
+        localCapabilities: run.intentAnalysis.localCapabilities,
+        selectedAgentId: run.intentAnalysis.recommendedAgentId,
+        executionMode: run.intentAnalysis.executionMode,
+        complexity: run.intentAnalysis.complexity
+      }
+    : undefined
+
+  return {
+    messageId: run.messageId,
+    ...(run.planId ? { planId: run.planId } : {}),
+    ...(run.agentId ? { agentId: run.agentId } : {}),
+    ...(run.jobId ? { jobId: run.jobId } : {}),
+    ...(run.trigger ? { trigger: run.trigger } : {}),
+    ...(run.errorClass ? { errorClass: run.errorClass } : {}),
+    ...(run.droppedTools ? { droppedTools: run.droppedTools } : {}),
+    ...(run.compactionSummary !== undefined ? { compactionSummary: run.compactionSummary } : {}),
+    ...(run.omittedMessages !== undefined ? { omittedMessages: run.omittedMessages } : {}),
+    ...(run.intentAnalysis ? { intentAnalysis: run.intentAnalysis } : {}),
+    ...(capabilityCheck ? { capabilityCheck } : {}),
+    ...(run.response && run.response.type !== 'canvasPlan' ? { response: run.response } : {}),
+    ...(run.pendingApproval ? { pendingApproval: run.pendingApproval } : {}),
+    ...(run.startedAt !== undefined ? { startedAt: run.startedAt } : {}),
+    ...(run.completedAt !== undefined ? { completedAt: run.completedAt } : {}),
+    ...(run.turnCount !== undefined ? { turnCount: run.turnCount } : {}),
+    ...(run.usageSummary ? { usageSummary: run.usageSummary } : {})
+  }
+}
+
+function responseText(response: AgentResponse): string | null {
+  if (response.type === 'answer') {
+    return response.text
+  }
+
+  if (response.type === 'clarification') {
+    return response.question
+  }
+
+  return null
+}
+
+function matchingApproval(run: StoredRun, input: AgentToolApprovalInput): AgentToolApprovalRequest | null {
+  if (run.status !== 'approval_required' || !run.pendingApproval || !run.pausedState) {
+    return null
+  }
+
+  if (run.pendingApproval.callId !== input.callId) {
+    return null
+  }
+
+  return run.pendingApproval
+}
+
+function approvalPayload(value: Record<string, unknown>): ApprovalResumePayload | null {
+  if (value.resumeKind !== 'approval') {
+    return null
+  }
+
+  if (
+    typeof value.runId !== 'string'
+    || typeof value.messageId !== 'string'
+    || typeof value.message !== 'string'
+    || typeof value.agentId !== 'string'
+    || typeof value.trigger !== 'string'
+    || typeof value.approvedBy !== 'string'
+    || typeof value.approval !== 'object'
+    || value.approval === null
+  ) {
+    return null
+  }
+
+  const approval = value.approval as AgentToolApprovalRequest
+
+  return {
+    kind: 'approval',
+    runId: value.runId,
+    messageId: value.messageId,
+    message: value.message,
+    agentId: value.agentId,
+    trigger: value.trigger as AgentTriggerKind,
+    approval,
+    approvedBy: value.approvedBy
+  }
+}
+
+function plannerDraftToEvent(
+  draft: OrchestratorPlannerDraft,
+  runId: string,
+  messageId: string
+): OrchestratorEvent {
+  if (draft.type === 'progress') {
+    return { type: 'progress', runId, message: draft.message, progress: draft.progress }
+  }
+
+  if (draft.type === 'toolStarted') {
+    return {
+      type: 'toolStarted',
+      runId,
+      messageId,
+      callId: draft.callId,
+      toolId: draft.toolId,
+      inputSummary: draft.inputSummary
+    }
+  }
+
+  if (draft.type === 'toolCompleted') {
+    return {
+      type: 'toolCompleted',
+      runId,
+      messageId,
+      callId: draft.callId,
+      toolId: draft.toolId,
+      invocationId: draft.invocationId,
+      status: draft.status,
+      summary: draft.summary
+    }
+  }
+
+  return {
+    type: 'permissionRequired',
+    runId,
+    messageId,
+    callId: draft.callId,
+    toolId: draft.toolId,
+    reason: draft.reason,
+    requiredPermissions: draft.requiredPermissions
+  }
+}
+
+async function* plannerEvents(options: OrchestratorRunOptions): AsyncGenerator<OrchestratorEvent, AgentResponse> {
+  const input: OrchestratorPlannerInput = {
     runId: options.runId,
     messageId: options.messageId,
     message: options.message,
     agentId: options.agentId
+  }
+
+  if (options.agent) {
+    input.agent = options.agent
+  }
+
+  if (options.trigger) {
+    input.trigger = options.trigger
+  }
+
+  if (options.loop) {
+    input.loop = options.loop
+  }
+
+  if (options.onDelta) {
+    input.onDelta = options.onDelta
+  }
+
+  const proposed = options.planner.proposePlan(input)
+
+  if (isAsyncIterable(proposed)) {
+    let next = await proposed.next()
+
+    while (!next.done) {
+      yield plannerDraftToEvent(next.value, options.runId, options.messageId)
+      next = await proposed.next()
+    }
+
+    return normalizeAgentResponse(next.value)
+  }
+
+  return normalizeAgentResponse(await proposed)
+}
+
+async function* approvalPlannerEvents(options: OrchestratorRunOptions & {
+  agent: AgentDefinition
+  trigger: AgentTriggerKind
+  loop: AgentContextLoopState
+  approval: AgentToolApprovalRequest
+  approvedBy: string
+}): AsyncGenerator<OrchestratorEvent, AgentResponse> {
+  if (!options.planner.resumeApprovedTool) {
+    throw new Error('agent_approval_resume_unavailable')
+  }
+
+  const proposed = options.planner.resumeApprovedTool({
+    runId: options.runId,
+    messageId: options.messageId,
+    message: options.message,
+    agentId: options.agentId,
+    agent: options.agent,
+    trigger: options.trigger,
+    loop: options.loop,
+    approval: options.approval,
+    approvedBy: options.approvedBy
   })
 
   if (isAsyncIterable(proposed)) {
-    return yield* proposed
+    let next = await proposed.next()
+
+    while (!next.done) {
+      yield plannerDraftToEvent(next.value, options.runId, options.messageId)
+      next = await proposed.next()
+    }
+
+    return normalizeAgentResponse(next.value)
   }
 
-  return proposed
+  return normalizeAgentResponse(await proposed)
 }
 
 /**
@@ -112,18 +646,47 @@ async function* plannerEvents(options: OrchestratorRunOptions): AsyncGenerator<O
  */
 export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
   return {
-    proposePlan(input): CanvasPlan {
+    proposePlan(input): AgentResponse {
       const message = input.message.trim()
+      const analysis = analyzeAgentIntent(message)
+
+      if (analysis.kind === 'general') {
+        return generalQuestionResponse(message)
+      }
+
+      if (analysis.kind !== 'canvasPlan') {
+        return clarificationResponse(
+          analysis.summary,
+          analysis.kind === 'smallTalk'
+            ? '你好，我可以先理解你的目标、拆解需求、检查本地画布能力。请告诉我你想创建什么内容或工作流。'
+            : '请补充你希望我完成的任务类型和目标产物：例如只聊想法、创建画布节点、生成图片/视频，或编排完整工作流。',
+          analysis.missing,
+          []
+        )
+      }
+
       const wantsComicDrama = /漫画|短剧|角色|场景|配音|音频|合成|comic|drama|storyboard|episode|voice/i.test(message)
 
+      if (analysis.executionMode === 'direct') {
+        return responseFromCanvasPlan(directSimpleCanvasPlan(message))
+      }
+
       if (!wantsComicDrama) {
-        return {
+        return responseFromCanvasPlan({
           kind: 'plan',
-          summary: `Create an image node for: ${message}`,
+          summary: `Create an image generation workflow for: ${message}`,
           nodes: [
             {
+              ref: 'prompt-1',
+              type: 'text',
+              title: '提示词',
+              data: {
+                content: message
+              }
+            },
+            {
               ref: 'image-1',
-              type: 'image',
+              type: 'imageConfigV2',
               title: '生成图片',
               data: {
                 promptOverride: message,
@@ -132,14 +695,14 @@ export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
               }
             }
           ],
-          edges: [],
+          edges: [{ source: 'prompt-1', target: 'image-1', edgeType: 'promptOrder' }],
           runSteps: [{ ref: 'image-1', action: 'imageRun' }],
           question: null,
           dropped: []
-        }
+        })
       }
 
-      return {
+      return responseFromCanvasPlan({
         kind: 'plan',
         summary: `Create a comic-drama canvas workflow for: ${message}`,
         nodes: [
@@ -170,15 +733,28 @@ export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
           },
           {
             ref: 'key-image',
-            type: 'mjImage',
-            title: '关键画面',
+            type: 'imageConfigV2',
+            title: '关键画面生成',
             data: {
-              prompt: message,
+              promptOverride: message,
               modelId: 'stub-image',
-              ratio: '16:9',
-              status: 'idle',
+              orientation: 'landscape',
+              status: 'idle'
+            }
+          },
+          {
+            ref: 'video-gen',
+            type: 'videoConfigV2',
+            title: '短视频生成',
+            data: {
+              promptOverride: message,
+              modelId: 'stub-video',
+              orientation: 'landscape',
+              durationSeconds: 5,
+              firstFrameAssetId: null,
+              lastFrameAssetId: null,
               assetId: null,
-              selectedIndex: 0
+              status: 'idle'
             }
           },
           {
@@ -220,19 +796,18 @@ export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
           { source: 'story', target: 'key-image', edgeType: 'promptOrder' },
           { source: 'character', target: 'key-image', edgeType: 'default' },
           { source: 'scene', target: 'key-image', edgeType: 'default' },
-          { source: 'key-image', target: 'compose', edgeType: 'default' },
+          { source: 'key-image', target: 'video-gen', edgeType: 'imageRole', imageRole: 'first_frame' },
+          { source: 'video-gen', target: 'compose', edgeType: 'default' },
           { source: 'voice', target: 'mux', edgeType: 'default' },
           { source: 'compose', target: 'mux', edgeType: 'default' }
         ],
         runSteps: [
-          { ref: 'key-image', action: 'mjImageRun' },
-          { ref: 'voice', action: 'audioRun' },
-          { ref: 'compose', action: 'videoComposeRun' },
-          { ref: 'mux', action: 'muxAudioVideoRun' }
+          { ref: 'key-image', action: 'imageRun' },
+          { ref: 'video-gen', action: 'videoRun' }
         ],
         question: null,
         dropped: []
-      }
+      })
     }
   }
 }
@@ -246,12 +821,15 @@ export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
  */
 export async function* runOrchestrator(options: OrchestratorRunOptions): AsyncGenerator<OrchestratorEvent, OrchestratorRunResult> {
   let state: 'start' | 'planning' | 'completed' = 'start'
-  let plan: CanvasPlan | undefined
-  let planId = ''
+  let response: AgentResponse | undefined
+  let planId: string | undefined
 
   while (true) {
     if (state === 'start') {
       yield { type: 'progress', runId: options.runId, message: 'Starting orchestration', progress: 5 }
+      const analysis = analyzeAgentIntent(options.message)
+      yield { type: 'progress', runId: options.runId, message: formatIntentProgress(analysis), progress: 15 }
+      yield { type: 'progress', runId: options.runId, message: `检查本地能力：${analysis.localCapabilities.join('、')}`, progress: 25 }
       state = 'planning'
       continue
     }
@@ -261,28 +839,184 @@ export async function* runOrchestrator(options: OrchestratorRunOptions): AsyncGe
       let next = await stream.next()
 
       while (!next.done) {
-        yield { type: 'progress', runId: options.runId, message: next.value.message, progress: next.value.progress }
+        yield next.value
         next = await stream.next()
       }
 
-      plan = sanitizePlan(next.value)
-      planId = options.planIdFactory()
-      yield { type: 'plan', runId: options.runId, messageId: options.messageId, planId, plan }
+      response = normalizeAgentResponse(next.value)
+      if (response.type === 'canvasPlan') {
+        const plan = sanitizePlan(response.plan)
+        response = { type: 'canvasPlan', plan }
+        planId = options.planIdFactory()
+        yield { type: 'plan', runId: options.runId, messageId: options.messageId, planId, plan }
+      } else {
+        yield { type: 'response', runId: options.runId, messageId: options.messageId, response }
+      }
       state = 'completed'
       continue
     }
 
-    if (!plan) {
+    if (!response) {
       throw new Error('agent_run_failed')
     }
 
     return {
       runId: options.runId,
       messageId: options.messageId,
+      response,
+      ...(planId ? { planId } : {}),
+      ...(response.type === 'canvasPlan' ? { plan: response.plan } : {})
+    }
+  }
+}
+
+export async function* runApprovalOrchestrator(options: OrchestratorRunOptions & {
+  agent: AgentDefinition
+  trigger: AgentTriggerKind
+  loop: AgentContextLoopState
+  approval: AgentToolApprovalRequest
+  approvedBy: string
+}): AsyncGenerator<OrchestratorEvent, OrchestratorRunResult> {
+  yield { type: 'progress', runId: options.runId, message: 'Resuming approved tool call', progress: 5 }
+  const stream = approvalPlannerEvents(options)
+  let next = await stream.next()
+
+  while (!next.done) {
+    yield next.value
+    next = await stream.next()
+  }
+
+  const response = normalizeAgentResponse(next.value)
+  if (response.type === 'canvasPlan') {
+    const plan = sanitizePlan(response.plan)
+    const planId = options.planIdFactory()
+    yield { type: 'plan', runId: options.runId, messageId: options.messageId, planId, plan }
+
+    return {
+      runId: options.runId,
+      messageId: options.messageId,
+      response: { type: 'canvasPlan', plan },
       planId,
       plan
     }
   }
+
+  yield { type: 'response', runId: options.runId, messageId: options.messageId, response }
+  return {
+    runId: options.runId,
+    messageId: options.messageId,
+    response
+  }
+}
+
+async function consumeRunStream(
+  stream: AsyncGenerator<OrchestratorEvent, OrchestratorRunResult>,
+  options: {
+    jobId: string
+    events: JobEventBus
+    plansByMessage: Map<string, CanvasPlan>
+    chatMessages?: ChatMessageRepository
+    planEvents?: CanvasPlanEventBus
+    runsById: Map<string, StoredRun>
+    setRun: (run: StoredRun) => void
+    agentId: string
+    trigger: AgentTriggerKind
+  }
+): Promise<OrchestratorRunResult> {
+  let turnCount = 0
+  let usageSummary: string | undefined
+  let next = await stream.next()
+
+  while (!next.done) {
+    if (next.value.type === 'progress') {
+      if (next.value.message.startsWith('用量：')) {
+        usageSummary = next.value.message
+      }
+      options.events.emitProgress({
+        channel: 'job.progress',
+        jobId: options.jobId,
+        progress: next.value.progress,
+        message: next.value.message,
+        emittedAt: Date.now()
+      })
+    } else if (next.value.type === 'toolStarted') {
+      turnCount += 1
+      options.planEvents?.emitToolStarted({
+        runId: next.value.runId,
+        messageId: next.value.messageId,
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        inputSummary: next.value.inputSummary
+      })
+    } else if (next.value.type === 'toolCompleted') {
+      options.planEvents?.emitToolCompleted({
+        runId: next.value.runId,
+        messageId: next.value.messageId,
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        invocationId: next.value.invocationId,
+        status: next.value.status,
+        summary: next.value.summary
+      })
+    } else if (next.value.type === 'permissionRequired') {
+      options.planEvents?.emitPermissionRequired({
+        runId: next.value.runId,
+        messageId: next.value.messageId,
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        reason: next.value.reason,
+        requiredPermissions: next.value.requiredPermissions
+      })
+    }
+
+    next = await stream.next()
+  }
+
+  if (next.value.response.type === 'canvasPlan' && next.value.plan && next.value.planId) {
+    options.plansByMessage.set(next.value.messageId, next.value.plan)
+    options.chatMessages?.updatePlan(next.value.messageId, JSON.stringify(next.value.plan), 'draft')
+    options.planEvents?.emitPlanReady({ messageId: next.value.messageId, planId: next.value.planId })
+  } else {
+    const response = next.value.response
+    if (response.type === 'canvasPlan') {
+      throw new Error('agent_canvas_plan_missing_terminal_metadata')
+    }
+
+    const assistantText = responseText(response)
+    if (assistantText) {
+      options.chatMessages?.create({
+        id: `${next.value.messageId}-assistant`,
+        agentRunId: next.value.runId,
+        role: 'assistant',
+        content: assistantText,
+        createdAt: Date.now()
+      })
+    }
+    options.planEvents?.emitResponseReady({
+      runId: next.value.runId,
+      messageId: next.value.messageId,
+      response
+    })
+  }
+
+  const previousRun = options.runsById.get(next.value.runId)
+  options.setRun({
+    ...(previousRun ?? { runId: next.value.runId, messageId: next.value.messageId }),
+    runId: next.value.runId,
+    messageId: next.value.messageId,
+    ...(next.value.planId ? { planId: next.value.planId } : {}),
+    response: next.value.response,
+    status: 'completed',
+    agentId: options.agentId,
+    trigger: options.trigger,
+    ...(previousRun?.intentAnalysis ? { intentAnalysis: previousRun.intentAnalysis } : {}),
+    ...(previousRun?.startedAt ? { startedAt: previousRun.startedAt } : {}),
+    completedAt: Date.now(),
+    turnCount,
+    ...(usageSummary ? { usageSummary } : {})
+  })
+
+  return next.value
 }
 
 /**
@@ -299,10 +1033,33 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
   const plansByMessage = new Map<string, CanvasPlan>()
   const runsById = new Map<string, StoredRun>()
 
+  function setRun(run: StoredRun): void {
+    runsById.set(run.runId, run)
+
+    if (!options.agentRuns) {
+      return
+    }
+
+    const existing = options.agentRuns.getById(run.runId)
+    const record = {
+      id: run.runId,
+      agentId: run.agentId ?? existing?.agentId ?? DEFAULT_CHAT_AGENT_ID,
+      status: run.status,
+      trace: runTrace(run),
+      createdAt: existing?.createdAt ?? clock(),
+      updatedAt: clock(),
+      ...(run.jobId ? { jobId: run.jobId } : {}),
+      ...(run.errorClass ? { errorClass: run.errorClass } : {})
+    }
+
+    options.agentRuns.upsert(record)
+  }
+
   return {
     chatSend(input) {
       const messageId = idFactory('message')
       const runId = idFactory('run')
+      const intentAnalysis = analyzeAgentIntent(input.message)
       const ticket = options.queue.enqueue({
         type: 'agent.run',
         targetId: messageId,
@@ -310,12 +1067,13 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           runId,
           messageId,
           message: input.message,
-          agentId: input.agentId ?? 'orchestrator'
+          agentId: input.agentId ?? DEFAULT_CHAT_AGENT_ID,
+          trigger: input.trigger ?? 'canvasChat'
         },
         requestedBy: { type: 'user', id: input.requestedBy }
       })
 
-      runsById.set(runId, { runId, messageId, status: 'pending' })
+      setRun({ runId, messageId, status: 'pending', agentId: input.agentId ?? DEFAULT_CHAT_AGENT_ID, jobId: ticket.jobId, trigger: input.trigger ?? 'canvasChat', intentAnalysis })
       options.chatMessages?.create({
         id: messageId,
         ...(options.workflowId ? { workflowId: options.workflowId } : {}),
@@ -325,7 +1083,93 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         createdAt: clock()
       })
 
-      return { jobId: ticket.jobId, messageId, status: 'pending' }
+      return { runId, jobId: ticket.jobId, messageId, status: 'pending' }
+    },
+    agentRun(input) {
+      const messageId = idFactory('message')
+      const runId = idFactory('run')
+      const agent = options.registry ? options.registry.get(input.agentId) : fallbackOrchestratorAgent(input.agentId)
+      const trigger = agent?.triggerPolicy.defaultTrigger ?? 'manual'
+      const intentAnalysis = analyzeAgentIntent(input.message)
+      const ticket = options.queue.enqueue({
+        type: 'agent.run',
+        targetId: messageId,
+        payload: {
+          runId,
+          messageId,
+          message: input.message,
+          agentId: input.agentId,
+          trigger,
+          ...(input.contextPolicyOverride ? { contextPolicyOverride: input.contextPolicyOverride } : {})
+        },
+        requestedBy: { type: 'user', id: 'agent.run' }
+      })
+
+      setRun({ runId, messageId, status: 'pending', agentId: input.agentId, jobId: ticket.jobId, trigger, intentAnalysis })
+      options.chatMessages?.create({
+        id: messageId,
+        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+        agentRunId: runId,
+        role: 'user',
+        content: input.message,
+        createdAt: clock()
+      })
+
+      return { runId, jobId: ticket.jobId, status: 'pending' }
+    },
+    approveTool(input) {
+      const run = runsById.get(input.runId)
+
+      if (!run) {
+        return approvalError('agent_not_found', 'Agent run was not found.')
+      }
+
+      const approval = matchingApproval(run, input)
+
+      if (!approval || !run.pausedState || !run.agentId || !run.trigger) {
+        return approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
+      }
+
+      const ticket = options.queue.enqueue({
+        type: 'agent.run',
+        targetId: run.messageId,
+        payload: {
+          resumeKind: 'approval',
+          runId: run.runId,
+          messageId: run.messageId,
+          message: run.pausedState.userMessage,
+          agentId: run.agentId,
+          trigger: run.trigger,
+          approval,
+          approvedBy: input.approvedBy
+        },
+        requestedBy: { type: 'user', id: input.approvedBy }
+      })
+
+      const nextRun: StoredRun = {
+        ...run,
+        status: 'pending',
+        jobId: ticket.jobId
+      }
+      delete nextRun.errorClass
+      setRun(nextRun)
+
+      return { runId: run.runId, jobId: ticket.jobId, status: 'pending' }
+    },
+    getRun(runId) {
+      const run = runsById.get(runId)
+
+      if (!run) {
+        const persisted = options.agentRuns?.getById(runId)
+
+        if (!persisted) {
+          return null
+        }
+
+        return { runId: persisted.id, status: persisted.status, trace: persisted.trace }
+      }
+
+      return { runId: run.runId, status: run.status, trace: runTrace(run) }
     },
     getPlan(messageId) {
       const storedPlan = plansByMessage.get(messageId)
@@ -349,43 +1193,159 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     },
     createJobHandler() {
       return async (job) => {
+        const approval = approvalPayload(job.payload)
+
+        if (approval) {
+          const run = runsById.get(approval.runId)
+          const resolvedAgent = options.registry ? options.registry.get(approval.agentId) : fallbackOrchestratorAgent(approval.agentId)
+
+          if (!run || !run.pausedState || !resolvedAgent) {
+            throw new Error('agent_approval_unavailable')
+          }
+
+          const agent = run.effectiveAgent ?? resolvedAgent
+          setRun({ ...run, status: 'running', jobId: job.id, effectiveAgent: agent })
+
+          try {
+            const stream = runApprovalOrchestrator({
+              runId: approval.runId,
+              messageId: approval.messageId,
+              message: approval.message,
+              agentId: approval.agentId,
+              agent,
+              trigger: approval.trigger,
+              loop: run.pausedState,
+              approval: approval.approval,
+              approvedBy: approval.approvedBy,
+              planner: options.planner,
+              planIdFactory
+            })
+            const result = await consumeRunStream(stream, {
+              jobId: job.id,
+              events: options.events,
+              plansByMessage,
+              ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
+              ...(options.planEvents ? { planEvents: options.planEvents } : {}),
+              runsById,
+              setRun,
+              agentId: approval.agentId,
+              trigger: approval.trigger
+            })
+
+            return {
+              kind: 'agentRun',
+              runId: result.runId,
+              ...(result.planId ? { planId: result.planId } : {}),
+              ...(result.response.type !== 'canvasPlan' ? { response: result.response } : {})
+            }
+          } catch (error) {
+            setRun(runFailureTrace(approval.runId, approval.messageId, runsById.get(approval.runId), error))
+            throw error
+          }
+        }
+
         const runId = typeof job.payload.runId === 'string' ? job.payload.runId : idFactory('run')
         const messageId = typeof job.payload.messageId === 'string' ? job.payload.messageId : job.id
         const message = typeof job.payload.message === 'string' ? job.payload.message : ''
-        const agentId = typeof job.payload.agentId === 'string' ? job.payload.agentId : 'orchestrator'
-
-        runsById.set(runId, { runId, messageId, status: 'running' })
-
-        const stream = runOrchestrator({
-          runId,
-          messageId,
-          message,
-          agentId,
-          planner: options.planner,
-          planIdFactory
-        })
-        let next = await stream.next()
-
-        while (!next.done) {
-          if (next.value.type === 'progress') {
-            options.events.emitProgress({
-              channel: 'job.progress',
-              jobId: job.id,
-              progress: next.value.progress,
-              message: next.value.message,
-              emittedAt: Date.now()
-            })
-          }
-
-          next = await stream.next()
+        const agentId = typeof job.payload.agentId === 'string' ? job.payload.agentId : DEFAULT_CHAT_AGENT_ID
+        const trigger = typeof job.payload.trigger === 'string' ? job.payload.trigger as AgentTriggerKind : 'canvasChat'
+        const intentAnalysis = analyzeAgentIntent(message)
+        const resolvedAgent = options.registry ? options.registry.get(agentId) : fallbackOrchestratorAgent(agentId)
+        if (!resolvedAgent) {
+          setRun({ runId, messageId, status: 'failed', agentId, trigger, intentAnalysis, errorClass: 'agent_not_found' })
+          throw new Error('agent_not_found')
         }
+        const agent = applyContextPolicyOverride(resolvedAgent, job.payload)
 
-        plansByMessage.set(messageId, next.value.plan)
-        options.chatMessages?.updatePlan(messageId, JSON.stringify(next.value.plan), 'draft')
-        options.planEvents?.emitPlanReady({ messageId, planId: next.value.planId })
-        runsById.set(runId, { runId, messageId, planId: next.value.planId, status: 'completed' })
+        if (!agent || !agent.enabled || !agent.triggerPolicy.allowedTriggers.includes(trigger)) {
+          setRun({ runId, messageId, status: 'failed', agentId, trigger, intentAnalysis, errorClass: 'agent_not_found' })
+          throw new Error('agent_not_found')
+        }
+        // Load recent workflow conversation so follow-up messages keep context.
+        const history = options.chatMessages && options.workflowId
+          ? options.chatMessages.listByWorkflowId(options.workflowId)
+              .filter((record) => record.id !== messageId && (record.role === 'user' || record.role === 'assistant') && record.content.trim().length > 0)
+              .slice(-10)
+              .map((record) => ({ role: record.role as 'user' | 'assistant', content: record.content }))
+          : []
 
-        return { kind: 'agentRun', runId, planId: next.value.planId }
+        // Build a bounded context pack (canvas summary, asset hints, recent messages).
+        const recentMessages = options.chatMessages && options.workflowId
+          ? options.chatMessages.listByWorkflowId(options.workflowId)
+              .filter((record) => record.id !== messageId && (record.role === 'user' || record.role === 'assistant'))
+          : []
+        const contextResult = buildAgentContext({
+          agentId,
+          policy: agent.contextPolicy,
+          workflowId: options.workflowId ?? 'default',
+          recentMessages,
+          ...(options.getCanvasGraph && agent.contextPolicy.includeCanvasGraph
+            ? {
+                canvas: {
+                  graph: options.getCanvasGraph(options.workflowId),
+                  ...(options.getSelectedNodeIds ? { selectedNodeIds: options.getSelectedNodeIds() } : {})
+                }
+              }
+            : {}),
+          tokenBudget: Math.floor(agent.contextPolicy.maxContextTokens * 0.4),
+          clock
+        })
+        const skillContext = options.skillRegistry
+          ? buildSkillContext(agent, options.skillRegistry, Math.floor(agent.contextPolicy.maxContextTokens * 0.2))
+          : ''
+        const additionalContext = [contextResult.rendered, skillContext].filter((section) => section.length > 0).join('\n\n')
+
+        const loop = createAgentContextLoop({
+          agent,
+          trigger,
+          message,
+          availableTools: options.listTools?.() ?? [],
+          ...(history.length > 0 ? { history } : {}),
+          ...(additionalContext ? { additionalContext } : {})
+        })
+
+        // Build a delta callback that fans token deltas to the renderer in real time.
+        const onDelta = options.planEvents
+          ? (delta: string) => { options.planEvents!.emitDelta({ runId, messageId, delta }) }
+          : undefined
+
+        setRun({ ...(runsById.get(runId) ?? { runId, messageId }), runId, messageId, status: 'running', agentId, trigger, intentAnalysis, effectiveAgent: agent, startedAt: clock() })
+
+        try {
+          const stream = runOrchestrator({
+            runId,
+            messageId,
+            message,
+            agentId,
+            agent,
+            trigger,
+            loop,
+            ...(onDelta ? { onDelta } : {}),
+            planner: options.planner,
+            planIdFactory
+          })
+          const result = await consumeRunStream(stream, {
+            jobId: job.id,
+            events: options.events,
+            plansByMessage,
+            ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
+            ...(options.planEvents ? { planEvents: options.planEvents } : {}),
+            runsById,
+            setRun,
+            agentId,
+            trigger
+          })
+
+          return {
+            kind: 'agentRun',
+            runId,
+            ...(result.planId ? { planId: result.planId } : {}),
+            ...(result.response.type !== 'canvasPlan' ? { response: result.response } : {})
+          }
+        } catch (error) {
+          setRun(runFailureTrace(runId, messageId, runsById.get(runId), error))
+          throw error
+        }
       }
     }
   }

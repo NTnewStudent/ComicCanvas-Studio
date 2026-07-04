@@ -76,13 +76,11 @@ describe('Task 37 image editor modal parity', () => {
           data={nodeData}
           selected
           assetSafeUrl="cc-asset://asset/asset-hero"
-          modelOptions={[{ id: 'stub-image', label: 'Stub image' }]}
           onApplyImageEdit={onApplyImageEdit}
         />
       </ReactFlowProvider>
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '配置图片节点' }))
     fireEvent.click(screen.getByRole('button', { name: '编辑图片资产' }))
 
     expect(screen.getByRole('dialog', { name: '编辑图片资产 Hero Image' })).toBeInTheDocument()

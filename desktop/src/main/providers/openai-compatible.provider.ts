@@ -5,9 +5,9 @@
 
 import { createHash } from 'node:crypto'
 
-import type { GatewayCapability, GatewayMediaMetadata, GatewayRequest, GatewayResult, GatewayUsage } from '../../../../shared/gateway'
+import type { GatewayCapability, GatewayChatMessage, GatewayMediaMetadata, GatewayRequest, GatewayResult, GatewayToolCall, GatewayUsage } from '../../../../shared/gateway'
 import { GatewayProviderError } from './registry'
-import type { GatewayProvider } from './stub.provider'
+import type { GatewayProvider, GatewayDeltaCallback } from './stub.provider'
 
 export interface OpenAICompatibleProviderOptions {
   /** Provider ID used by the registry. */
@@ -178,10 +178,88 @@ async function invokeImage(options: OpenAICompatibleProviderOptions, fetchImpl: 
 }
 
 function chatPayload(request: GatewayRequest): Record<string, unknown> {
-  return {
+  const messages: GatewayChatMessage[] = request.messages && request.messages.length > 0
+    ? request.messages
+    : [{ role: 'user', content: request.prompt }]
+
+  const payload: Record<string, unknown> = {
     model: request.modelKey,
-    messages: [{ role: 'user', content: request.prompt }],
+    messages,
     ...request.parameters
+  }
+
+  if (request.tools && request.tools.length > 0) {
+    payload.tools = request.tools
+    payload.tool_choice = request.toolChoice ?? 'auto'
+  }
+
+  return payload
+}
+
+function parseGatewayToolCalls(value: unknown): GatewayToolCall[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const calls: GatewayToolCall[] = []
+
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) {
+      continue
+    }
+
+    const record = entry as {
+      id?: unknown
+      type?: unknown
+      function?: { name?: unknown; arguments?: unknown }
+    }
+
+    if (record.type !== 'function' || typeof record.function?.name !== 'string') {
+      continue
+    }
+
+    calls.push({
+      id: typeof record.id === 'string' && record.id.length > 0 ? record.id : `tool-call-${calls.length + 1}`,
+      type: 'function',
+      function: {
+        name: record.function.name,
+        arguments: typeof record.function.arguments === 'string' ? record.function.arguments : stableJson(record.function.arguments)
+      }
+    })
+  }
+
+  return calls.length > 0 ? calls : undefined
+}
+
+function stableJson(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? {})
+  } catch {
+    return '{}'
+  }
+}
+
+function chatText(body: unknown): { text: string; toolCalls?: GatewayToolCall[]; usage?: GatewayUsage } {
+  const response = body as OpenAIChatResponse
+
+  if (!Array.isArray(response.choices)) {
+    throw providerError('provider_payload_invalid', 'Provider chat response did not contain choices', false)
+  }
+
+  const first = response.choices[0] as { message?: { content?: unknown; tool_calls?: unknown } } | undefined
+  const content = first?.message?.content
+  const text = typeof content === 'string' ? content : ''
+  const toolCalls = parseGatewayToolCalls(first?.message?.tool_calls)
+
+  if (text.length === 0 && !toolCalls) {
+    throw providerError('provider_payload_invalid', 'Provider chat response did not include text or tool calls', false)
+  }
+
+  const usage = parseUsage(response.usage)
+  return {
+    text,
+    ...(toolCalls ? { toolCalls } : {}),
+    ...(usage ? { usage } : {})
   }
 }
 
@@ -204,32 +282,97 @@ function parseUsage(usage: unknown): GatewayUsage | undefined {
   return Object.keys(parsed).length > 0 ? parsed : undefined
 }
 
-function chatText(body: unknown): { text: string; usage?: GatewayUsage } {
-  const response = body as OpenAIChatResponse
-
-  if (!Array.isArray(response.choices)) {
-    throw providerError('provider_payload_invalid', 'Provider chat response did not contain choices', false)
-  }
-
-  const first = response.choices[0] as { message?: { content?: unknown } } | undefined
-  const content = first?.message?.content
-
-  if (typeof content !== 'string') {
-    throw providerError('provider_payload_invalid', 'Provider chat response did not include text', false)
-  }
-
-  const usage = parseUsage(response.usage)
-  return usage ? { text: content, usage } : { text: content }
-}
-
 async function invokeText(options: OpenAICompatibleProviderOptions, fetchImpl: typeof fetch, request: GatewayRequest): Promise<GatewayResult> {
   const body = await fetchJson(fetchImpl, options.apiKey, `${trimTrailingSlash(options.baseUrl)}/chat/completions`, chatPayload(request))
   const result = chatText(body)
 
   return {
     kind: 'text',
-    ...result
+    text: result.text,
+    ...(result.toolCalls ? { toolCalls: result.toolCalls } : {}),
+    ...(result.usage ? { usage: result.usage } : {})
   }
+}
+
+/**
+ * Streams a chat completion via SSE, invoking onDelta for each token and
+ * returning the assembled full text with usage once the stream ends.
+ */
+async function invokeTextStreaming(
+  options: OpenAICompatibleProviderOptions,
+  fetchImpl: typeof fetch,
+  request: GatewayRequest,
+  onDelta: GatewayDeltaCallback
+): Promise<GatewayResult> {
+  const payload = { ...chatPayload(request), stream: true, stream_options: { include_usage: true } }
+  const response = await fetchImpl(`${trimTrailingSlash(options.baseUrl)}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${options.apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    const errorBody = await readJson(response)
+    throw providerError('provider_request_failed', errorMessageFromBody(errorBody, `Provider request failed with ${response.status}`, options.apiKey), true)
+  }
+
+  if (!response.body) {
+    throw providerError('provider_payload_invalid', 'Provider returned no body for streaming request', false)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  let fullText = ''
+  let usage: GatewayUsage | undefined
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+
+      let newlineIdx: number
+      while ((newlineIdx = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, newlineIdx).trim()
+        buf = buf.slice(newlineIdx + 1)
+
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (data === '[DONE]') break
+
+        try {
+          const chunk = JSON.parse(data) as {
+            choices?: Array<{ delta?: { content?: string } }>
+            usage?: unknown
+          }
+          // Accumulate usage from the final chunk (stream_options.include_usage).
+          if (chunk.usage) {
+            usage = parseUsage(chunk.usage) ?? usage
+          }
+          const delta = chunk.choices?.[0]?.delta?.content
+          if (typeof delta === 'string' && delta.length > 0) {
+            fullText += delta
+            onDelta(delta)
+          }
+        } catch {
+          // Skip unparseable SSE lines (comments, keepalives).
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (fullText.length === 0) {
+    throw providerError('provider_payload_invalid', 'Provider streaming response produced no text', false)
+  }
+
+  return { kind: 'text', text: fullText, ...(usage ? { usage } : {}) }
 }
 
 /**
@@ -250,10 +393,13 @@ export function createOpenAICompatibleProvider(options: OpenAICompatibleProvider
       image: options.modelKeys.image ?? '',
       video: options.modelKeys.video ?? ''
     },
-    async invoke(request) {
+    async invoke(request, context) {
       assertSupported(options, request)
 
       if (request.channel === 'text') {
+        if (context?.onDelta && !(request.tools && request.tools.length > 0)) {
+          return invokeTextStreaming(options, fetchImpl, request, context.onDelta)
+        }
         return invokeText(options, fetchImpl, request)
       }
 

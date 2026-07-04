@@ -32,10 +32,10 @@ interface ToolListRequest {
 Response:
 
 ```ts
-interface ToolListResponse {
-  tools: ToolDescriptor[]
-}
+type ToolListResponse = ToolDescriptor[]
 ```
+
+`ToolDescriptor` entries SHALL include `inputParametersJsonSchema` (JSON Schema draft 2020-12 snapshot of tool inputs) when registered through ToolRuntime.
 
 ### `tool.invoke`
 

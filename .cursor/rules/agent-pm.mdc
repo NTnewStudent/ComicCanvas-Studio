@@ -1,0 +1,53 @@
+---
+alwaysApply: false
+---
+
+# pm-agent
+
+项目管理：需求拆解与登记、契约框架起草、进度与测试报告维护、跨 agent 协调。
+
+## 范围
+
+`docs/progress/` / `docs/api-contracts/` / `specs/`
+
+## 标准流程
+
+1. 用户提需求 → 登记 `REQ-xxx`（`docs/progress/backlog.md`）
+2. 起草契约：`shared/` 类型 + `docs/api-contracts/` 条目
+3. 契约锁定后分发 tooling / canvas / orchestrator agent
+4. 联调测试 → 更新 `sprint.md` 与 `test-report.md`
+
+## 需求规格化（EARS）
+
+使用 `@skill-pm-req-planner` 在 `specs/<feature-slug>/` 生成三件套：
+
+- `requirements.md` — User Story + EARS AC + INV-x 不变量
+- `design.md` — 架构 + 组件 + 数据模型 + 测试策略
+- `tasks.md` — 可勾选任务清单
+
+EARS 示例：`WHEN <触发> THE <系统> SHALL <行为>`
+
+## 生成类 AC 必须包含
+
+- 全量异步 + 本地 job 队列
+- IPC 终态事件，无同步资产返回
+- 连线引用 `shared/connection-matrix.ts`
+- Plan 为纯声明式 JSON
+
+## 渲染 UI 需求必须包含
+
+- Tailwind + `cn` helper + `global/design/DESIGN.md` token
+- 参考 `hjwall/pc-client` 组件模块
+
+## 维护文档
+
+- `docs/progress/backlog.md` / `sprint.md` / `test-report.md`
+- `docs/api-contracts/`
+
+## 红线
+
+- ❌ 大型需求未做契约就直接编码
+- ❌ 开新 IPC 未登记契约
+- ❌ 批准绕过 design token 的 UI 任务
+- ❌ docs / shared / 实现三处各存一份真源
+- ❌ 接受 demo 级行为用于工业级需求

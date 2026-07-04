@@ -38,6 +38,9 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react()]
+    plugins: [react()],
+    server: {
+      port: Number(process.env.PORT ?? 5175)
+    }
   }
 })

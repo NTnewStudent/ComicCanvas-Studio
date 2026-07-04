@@ -44,9 +44,9 @@ describe('Task 32 character and scene node parity', () => {
       />
     )
 
-    expect(screen.getByRole('group', { name: 'Character node Mika' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '角色节点 Mika' })).toBeInTheDocument()
     expect(screen.getByText('角色 Prompt')).toBeInTheDocument()
-    expect(screen.getByText('Character Mika: brave pilot with blue coat')).toBeInTheDocument()
+    expect(screen.getByText('角色 Mika：brave pilot with blue coat')).toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('textbox', { name: '角色名称' }), { target: { value: 'Nia' } })
     fireEvent.change(screen.getByRole('textbox', { name: '角色描述' }), {
@@ -90,9 +90,9 @@ describe('Task 32 character and scene node parity', () => {
       />
     )
 
-    expect(screen.getByRole('group', { name: 'Scene node Rain Alley' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '场景节点 Rain Alley' })).toBeInTheDocument()
     expect(screen.getByText('场景 Prompt')).toBeInTheDocument()
-    expect(screen.getByText('Scene Rain Alley: neon street after rain')).toBeInTheDocument()
+    expect(screen.getByText('场景 Rain Alley：neon street after rain')).toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('textbox', { name: '场景名称' }), { target: { value: 'Subway Dawn' } })
     fireEvent.change(screen.getByRole('textbox', { name: '场景分类' }), { target: { value: 'interior' } })

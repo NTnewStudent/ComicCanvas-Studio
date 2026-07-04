@@ -11,6 +11,7 @@ export interface GatewaySettingsApi {
   saveGateway: (input: GatewayConfigInput) => Promise<GatewayConfigView>
   deleteGateway: (request: IpcRequestMap['gateway.delete']) => Promise<IpcResponseMap['gateway.delete']>
   testGateway: (request: IpcRequestMap['gateway.test']) => Promise<IpcResponseMap['gateway.test']>
+  fetchGatewayModels: (request: IpcRequestMap['gateway.fetchModels']) => Promise<IpcResponseMap['gateway.fetchModels']>
 }
 
 type LoadState = 'loading' | 'ready' | 'error'
@@ -168,8 +169,8 @@ export function GatewayList({ api = gatewayApi() }: GatewayListProps): JSX.Eleme
         </div>
       )}
 
-      {editing === 'new' && <GatewayForm saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
-      {editing !== null && editing !== 'new' && <GatewayForm gateway={editing} saving={saving} onSubmit={save} onCancel={() => setEditing(null)} />}
+      {editing === 'new' && <GatewayForm saving={saving} fetchModels={api.fetchGatewayModels} onSubmit={save} onCancel={() => setEditing(null)} />}
+      {editing !== null && editing !== 'new' && <GatewayForm gateway={editing} saving={saving} fetchModels={api.fetchGatewayModels} onSubmit={save} onCancel={() => setEditing(null)} />}
 
       {loadState === 'loading' && <p className="text-[13px] text-text-muted">网关加载中...</p>}
       {loadState === 'error' && <p className="text-[13px] text-semantic-negative">网关设置无法加载。</p>}

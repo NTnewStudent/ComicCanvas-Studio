@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { Bot, BrainCircuit, Save, ShieldCheck, Wrench, X } from 'lucide-react'
 
-import type { AgentContextPolicy, AgentDefinition, AgentEffort, AgentGatewayPolicy, AgentPermissionPolicy } from '../../../../../shared/agents'
+import type { AgentContextPolicy, AgentDefinition, AgentEffort, AgentGatewayPolicy, AgentPermissionPolicy, AgentTriggerKind, AgentTriggerPolicy } from '../../../../../shared/agents'
 import type { ToolPermissionKind } from '../../../../../shared/tools'
 import { cn } from '../lib/cn'
 
@@ -25,12 +25,20 @@ const toolOptions = [
 const permissionOptions: Array<{ value: ToolPermissionKind; label: string }> = [
   { value: 'canvas.read', label: '画布读取' },
   { value: 'canvas.write', label: '画布写入' },
+  { value: 'file.read', label: '文件读取' },
+  { value: 'network', label: '网络访问' },
   { value: 'provider.spend', label: '供应商消费' },
   { value: 'diagnostics', label: '诊断' },
   { value: 'destructive', label: '破坏性操作' }
 ]
 
 const channelOptions: AgentGatewayPolicy['allowedChannels'] = ['text', 'image', 'video']
+const triggerOptions: Array<{ value: AgentTriggerKind; label: string }> = [
+  { value: 'manual', label: '手动运行' },
+  { value: 'mention', label: '@提及' },
+  { value: 'canvasChat', label: '画布对话' },
+  { value: 'workflowEvent', label: '工作流事件' }
+]
 
 function slugAgentId(name: string): string {
   const slug = name
@@ -95,6 +103,10 @@ function defaultPermissionPolicy(agent?: AgentDefinition): AgentPermissionPolicy
   return agent?.permissionPolicy ?? { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true }
 }
 
+function defaultTriggerPolicy(agent?: AgentDefinition): AgentTriggerPolicy {
+  return agent?.triggerPolicy ?? { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false }
+}
+
 /**
  * Renders the custom agent create/edit form.
  * @param props - Existing agent, submit handler, cancel handler, and saving flag.
@@ -106,12 +118,14 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
   const [name, setName] = useState(agent?.name ?? '')
   const [description, setDescription] = useState(agent?.description ?? '')
   const [instructions, setInstructions] = useState(agent?.instructions ?? '')
+  const [allowAllTools, setAllowAllTools] = useState(agent?.allowedTools === '*')
   const [selectedTools, setSelectedTools] = useState<string[]>(initialTools(agent))
   const [allowedSkills, setAllowedSkills] = useState(initialSkills(agent))
   const [modelId, setModelId] = useState(agent?.gatewayPolicy.modelId ?? '')
   const [allowedChannels, setAllowedChannels] = useState<AgentGatewayPolicy['allowedChannels']>(agent?.gatewayPolicy.allowedChannels ?? ['text'])
   const [contextPolicy, setContextPolicy] = useState<AgentContextPolicy>(defaultContextPolicy(agent))
   const [permissionPolicy, setPermissionPolicy] = useState<AgentPermissionPolicy>(defaultPermissionPolicy(agent))
+  const [triggerPolicy, setTriggerPolicy] = useState<AgentTriggerPolicy>(defaultTriggerPolicy(agent))
   const [maxTurns, setMaxTurns] = useState(agent?.maxTurns ?? 6)
   const [effort, setEffort] = useState<AgentEffort>(agent?.effort ?? 'medium')
   const [enabled, setEnabled] = useState(agent?.enabled ?? true)
@@ -129,9 +143,23 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
     }))
   }
 
+  function updateTriggerKind(kind: AgentTriggerKind, checked: boolean): void {
+    setTriggerPolicy((current) => {
+      const allowedTriggers = toggleItem(current.allowedTriggers, kind, checked) as AgentTriggerKind[]
+      const defaultTrigger = allowedTriggers.includes(current.defaultTrigger) ? current.defaultTrigger : (allowedTriggers[0] ?? 'manual')
+
+      return { ...current, allowedTriggers, defaultTrigger }
+    })
+  }
+
   function submitForm(): void {
     if (name.trim().length === 0 || instructions.trim().length === 0) {
       setError('名称和指令为必填项。')
+      return
+    }
+
+    if (triggerPolicy.allowedTriggers.length === 0) {
+      setError('至少选择一个调用时机。')
       return
     }
 
@@ -144,11 +172,11 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
     setError(null)
     void onSubmit({
       id: generatedId,
-      source: 'user',
+      source: agent?.source ?? 'user',
       name: name.trim(),
       description: description.trim(),
       instructions: instructions.trim(),
-      allowedTools: selectedTools,
+      allowedTools: allowAllTools ? '*' : selectedTools,
       allowedSkills: parseSkills(allowedSkills),
       gatewayPolicy,
       contextPolicy: {
@@ -156,6 +184,7 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
         maxContextTokens: Math.max(512, Math.trunc(contextPolicy.maxContextTokens))
       },
       permissionPolicy,
+      triggerPolicy,
       maxTurns: safeMaxTurns,
       effort,
       enabled
@@ -229,12 +258,23 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
             工具访问
           </span>
         </legend>
+        <label className="inline-flex items-center gap-2 rounded-lg border border-border-input bg-bg-card px-3 py-2 text-[13px] font-medium text-text-secondary">
+          <input
+            type="checkbox"
+            aria-label="允许所有工具"
+            checked={allowAllTools}
+            onChange={(event) => setAllowAllTools(event.target.checked)}
+            className="h-4 w-4 accent-[var(--cc-accent-gold)]"
+          />
+          允许所有工具
+        </label>
         <div className="grid gap-2 md:grid-cols-2">
           {toolOptions.map((tool) => (
-            <label key={tool.id} className="flex items-start gap-2 rounded-lg border border-border-input bg-bg-card px-3 py-2 text-[13px] text-text-secondary">
+            <label key={tool.id} className={cn('flex items-start gap-2 rounded-lg border border-border-input bg-bg-card px-3 py-2 text-[13px] text-text-secondary', allowAllTools && 'opacity-55')}>
               <input
                 type="checkbox"
                 aria-label={tool.label}
+                disabled={allowAllTools}
                 checked={selectedTools.includes(tool.id)}
                 onChange={(event) => setSelectedTools((current) => toggleItem(current, tool.id, event.target.checked))}
                 className="mt-0.5 h-4 w-4 accent-[var(--cc-accent-gold)]"
@@ -313,6 +353,52 @@ export function AgentForm({ agent, onSubmit, onCancel, saving = false }: AgentFo
             ))}
           </div>
         </div>
+      </fieldset>
+
+      <fieldset className="grid gap-3 rounded-lg border border-border-secondary bg-bg-input/60 p-3 md:grid-cols-2">
+        <legend className="px-1 text-[12px] font-semibold text-text-secondary">
+          <span className="inline-flex items-center gap-1.5">
+            <Bot className="h-3.5 w-3.5 text-brand" />
+            调用时机
+          </span>
+        </legend>
+        <div className="flex flex-col gap-2 text-[12px] font-medium text-text-muted">
+          可触发入口
+          <div className="flex flex-wrap gap-2">
+            {triggerOptions.map((trigger) => (
+              <label key={trigger.value} className="inline-flex items-center gap-2 rounded-pill border border-border-input bg-bg-card px-3 py-1.5 text-[13px] text-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={triggerPolicy.allowedTriggers.includes(trigger.value)}
+                  onChange={(event) => updateTriggerKind(trigger.value, event.target.checked)}
+                  className="h-4 w-4 accent-[var(--cc-accent-gold)]"
+                />
+                {trigger.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+          默认入口
+          <select
+            value={triggerPolicy.defaultTrigger}
+            onChange={(event) => setTriggerPolicy((current) => ({ ...current, defaultTrigger: event.target.value as AgentTriggerKind }))}
+            className="min-h-10 rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+          >
+            {triggerPolicy.allowedTriggers.map((trigger) => (
+              <option key={trigger} value={trigger}>{trigger}</option>
+            ))}
+          </select>
+        </label>
+        <label className="inline-flex items-center gap-2 text-[13px] font-medium text-text-secondary md:col-span-2">
+          <input
+            type="checkbox"
+            checked={triggerPolicy.autoRun}
+            onChange={(event) => setTriggerPolicy((current) => ({ ...current, autoRun: event.target.checked }))}
+            className="h-4 w-4 accent-[var(--cc-accent-gold)]"
+          />
+          触发后自动运行
+        </label>
       </fieldset>
 
       <fieldset className="grid gap-3 rounded-lg border border-border-secondary bg-bg-input/60 p-3 md:grid-cols-2">

@@ -3,6 +3,8 @@
  * @see docs/api-contracts/jobs.md
  */
 
+import type { AgentResponse } from './agents'
+
 export type JobType =
   | 'canvas.generateImage'
   | 'canvas.generateVideo'
@@ -51,7 +53,7 @@ export interface JobError {
 export type JobResult =
   | { kind: 'asset'; assetId: string; metadata?: Record<string, unknown> }
   | { kind: 'text'; text: string; usage?: Record<string, unknown> }
-  | { kind: 'agentRun'; runId: string; planId?: string }
+  | { kind: 'agentRun'; runId: string; planId?: string; response?: AgentResponse }
   | { kind: 'report'; summary: string; data?: Record<string, unknown> }
 
 export interface JobRecord {

@@ -28,6 +28,7 @@ import type {
   AssetTrashRequest,
   AssetTrashResponse,
 } from '../../../../../shared/assets'
+import { assetDisplayUrl } from './asset-url'
 import { cn } from '../lib/cn'
 
 /**
@@ -36,6 +37,7 @@ import { cn } from '../lib/cn'
  */
 export interface AssetLibraryApi {
   listAssets: (input?: AssetListRequest) => Promise<AssetRecord[]>
+  pickAssetImportFiles?: () => Promise<{ paths: string[] }>
   importAsset: (input: AssetImportRequest) => Promise<AssetRecord>
   getAssetFolders: () => Promise<AssetFolder[]>
   createAssetFolder: (input: AssetFolderCreateRequest) => Promise<AssetFolder>
@@ -120,6 +122,37 @@ function assetLabel(asset: AssetRecord): string {
   return `${titleize(basename(asset.relativePath))}${dimensions}`
 }
 
+type AssetVisualOrientation = 'landscape' | 'portrait' | 'square'
+
+function assetVisualOrientation(asset: AssetRecord): AssetVisualOrientation {
+  if (
+    asset.metadata.orientation === 'landscape' ||
+    asset.metadata.orientation === 'portrait' ||
+    asset.metadata.orientation === 'square'
+  ) {
+    return asset.metadata.orientation
+  }
+  if (asset.metadata.width && asset.metadata.height) {
+    if (asset.metadata.width > asset.metadata.height * 1.08) return 'landscape'
+    if (asset.metadata.height > asset.metadata.width * 1.08) return 'portrait'
+  }
+  return 'square'
+}
+
+function assetPreviewModalClass(asset: AssetRecord): string {
+  const orientation = assetVisualOrientation(asset)
+  if (orientation === 'portrait') return 'max-w-3xl'
+  if (orientation === 'landscape') return 'max-w-6xl'
+  return 'max-w-5xl'
+}
+
+function assetPreviewFrameClass(asset: AssetRecord): string {
+  const orientation = assetVisualOrientation(asset)
+  if (orientation === 'portrait') return 'max-h-[calc(90vh-5rem)] max-w-[min(72vw,720px)]'
+  if (orientation === 'landscape') return 'max-h-[calc(90vh-5rem)] max-w-full'
+  return 'max-h-[calc(90vh-5rem)] max-w-[min(80vw,900px)]'
+}
+
 function inferMediaTypeFromFile(file: File): AssetMediaType {
   if (file.type.startsWith('image/')) return 'image'
   if (file.type.startsWith('video/')) return 'video'
@@ -136,9 +169,23 @@ function inferMediaTypeFromFile(file: File): AssetMediaType {
   return 'other'
 }
 
+function inferMediaTypeFromPath(sourcePath: string): AssetMediaType {
+  const name = sourcePath.toLowerCase()
+  if (/\.(png|jpe?g|webp|gif|bmp|svg)$/u.test(name)) return 'image'
+  if (/\.(mp4|webm|mov|avi|mkv)$/u.test(name)) return 'video'
+  if (/\.(mp3|wav|m4a|aac|flac|ogg)$/u.test(name)) return 'audio'
+  if (/\.(txt|md|json|csv)$/u.test(name)) return 'text'
+  if (/\.(pdf|docx?)$/u.test(name)) return 'document'
+  return 'other'
+}
+
 function fileSourcePath(file: File): string | null {
   const fileWithPath = file as File & { path?: unknown }
   return typeof fileWithPath.path === 'string' && fileWithPath.path.length > 0 ? fileWithPath.path : null
+}
+
+function fileNameFromPath(sourcePath: string): string {
+  return sourcePath.split(/[\\/]/u).pop() || sourcePath
 }
 
 function folderName(folders: AssetFolder[], folderId: string | null): string {
@@ -479,6 +526,72 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
     setMessage(failedName ? `导入完成，${failedName} 失败。` : `已导入 ${imported.length} 个资产`)
   }
 
+  async function importSelectedPaths(sourcePaths: string[]): Promise<void> {
+    if (sourcePaths.length === 0) return
+
+    setUploadState({
+      busy: true,
+      done: 0,
+      total: sourcePaths.length,
+      currentName: fileNameFromPath(sourcePaths[0] ?? ''),
+      failedName: null,
+    })
+
+    const imported: AssetRecord[] = []
+    let failedName: string | null = null
+
+    for (const [index, sourcePath] of sourcePaths.entries()) {
+      const currentName = fileNameFromPath(sourcePath)
+      setUploadState({
+        busy: true,
+        done: index,
+        total: sourcePaths.length,
+        currentName,
+        failedName,
+      })
+
+      try {
+        const asset = await api.importAsset({
+          sourcePath,
+          mediaType: inferMediaTypeFromPath(sourcePath),
+          ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+          ...(selectedCategoryId ? { categoryIds: [selectedCategoryId] } : {}),
+        })
+        imported.push(asset)
+      } catch {
+        // Import failures are per-file so a batch can still finish remaining files.
+        failedName = currentName
+      }
+    }
+
+    if (imported.length > 0) {
+      setAssets((current) => [...imported, ...current])
+    }
+
+    setUploadState({
+      busy: false,
+      done: sourcePaths.length,
+      total: sourcePaths.length,
+      currentName: null,
+      failedName,
+    })
+    setMessage(failedName ? `导入完成，${failedName} 失败。` : `已导入 ${imported.length} 个资产`)
+  }
+
+  async function handleUploadClick(): Promise<void> {
+    if (api.pickAssetImportFiles) {
+      try {
+        const result = await api.pickAssetImportFiles()
+        await importSelectedPaths(result.paths)
+        return
+      } catch {
+        // Fall through to the hidden file input when the native picker is unavailable.
+      }
+    }
+
+    uploadInputRef.current?.click()
+  }
+
   async function moveAsset(asset: AssetRecord, folderId: string | null): Promise<void> {
     try {
       const moved = await api.moveAsset({ assetId: asset.id, folderId })
@@ -624,7 +737,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
   }
 
   return (
-    <section className="flex h-full flex-col">
+    <section className="flex h-full flex-col bg-bg-base text-text-base">
       {/* ── 顶部筛选栏：胶囊类型标签 + 搜索 + 排序（对齐 hjwall AssetFilterBar） ── */}
       <div className="flex items-center justify-between px-4 py-3">
         {/* 左侧：胶囊类型标签 */}
@@ -669,7 +782,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
           <button
             type="button"
             disabled={uploadState.busy}
-            onClick={() => uploadInputRef.current?.click()}
+            onClick={() => void handleUploadClick()}
             className="inline-flex h-8 items-center gap-1.5 rounded-pill border border-border-secondary bg-bg-card px-3.5 text-[13px] font-bold text-text-secondary transition hover:bg-bg-hover hover:text-text-base disabled:cursor-wait disabled:opacity-60"
           >
             <Upload className="h-3.5 w-3.5" />
@@ -1054,7 +1167,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                       }
                       openPreview(asset)
                     }}
-                    className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-xl border border-transparent transition-all duration-200 ease-luxury cc-anim-fade-in-up hover:border-brand/30 hover:shadow-float hover:ring-1 hover:ring-white/20"
+                    className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-all duration-200 ease-luxury cc-anim-fade-in-up hover:border-border-primary hover:bg-bg-hover hover:shadow-float"
                     style={{ animationDelay: `${Math.min(idx, 8) * 40}ms` }}
                   >
                     {batchMode && (
@@ -1069,15 +1182,15 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                     )}
 
                     {/* 缩略图 */}
-                    <div className="relative z-0 h-full w-full overflow-hidden">
+                    <div className="relative z-0 h-full w-full overflow-hidden bg-bg-input">
                       {asset.mediaType === 'image' ? (
                         <img
-                          src={asset.safeUrl}
+                          src={assetDisplayUrl(asset)}
                           alt={label}
-                          className="h-full w-full object-cover transition-transform duration-300 ease-luxury group-hover:scale-105"
+                          className="h-full w-full object-contain transition-transform duration-300 ease-luxury group-hover:scale-105"
                         />
                       ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-elevated transition-transform duration-300 ease-luxury group-hover:scale-105">
+                        <div className="flex h-full w-full flex-col items-center justify-center bg-bg-input transition-transform duration-300 ease-luxury group-hover:scale-105">
                           <span className="text-4xl">
                             {MEDIA_TYPE_ICONS[asset.mediaType] ?? MEDIA_TYPE_ICONS.other}
                           </span>
@@ -1089,9 +1202,9 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                     </div>
 
                     {/* Hover 遮罩 — 文件名 + 大小（对齐 hjwall AssetCard 底部滑入） */}
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-full bg-gradient-to-t from-black/80 to-transparent p-3 transition-all duration-300 ease-luxury group-hover:translate-y-0">
-                      <p className="truncate text-xs font-normal text-white">{asset.id}</p>
-                      <p className="text-[12px] text-white/70">
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 translate-y-full border-t border-border-secondary bg-bg-panel/95 p-3 shadow-card backdrop-blur-sm transition-all duration-300 ease-luxury group-hover:translate-y-0">
+                      <p className="truncate text-xs font-medium text-text-base">{asset.id}</p>
+                      <p className="text-[12px] text-text-muted">
                         {formatFileSize(asset.metadata.sizeBytes)}
                       </p>
                     </div>
@@ -1108,7 +1221,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                             void trashAsset(asset)
                           }
                         }}
-                        className="rounded-md bg-black/60 p-1.5 text-semantic-negative transition hover:bg-black/80"
+                        className="rounded-md border border-semantic-negative/40 bg-bg-panel/95 p-1.5 text-semantic-negative shadow-card transition hover:bg-bg-hover"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -1116,7 +1229,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
 
                     {/* 移动下拉（底部，hover 时可见） */}
                     <div className="absolute inset-x-0 bottom-0 z-20 hidden group-hover:block">
-                      <div className="translate-y-full bg-black/70 p-2 transition-all duration-300 ease-luxury group-hover:translate-y-0">
+                      <div className="translate-y-full border-t border-border-secondary bg-bg-panel/95 p-2 shadow-card backdrop-blur-sm transition-all duration-300 ease-luxury group-hover:translate-y-0">
                         <select
                           aria-label={`移动 ${label}`}
                           value={asset.folderId ?? '__root__'}
@@ -1127,7 +1240,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                             )
                           }
                           onClick={(e) => e.stopPropagation()}
-                          className="h-7 w-full rounded-md border border-border-secondary bg-bg-card px-2 text-[11px] text-text-base outline-none"
+                          className="h-7 w-full rounded-md border border-border-input bg-bg-input px-2 text-[11px] text-text-base outline-none focus:border-border-primary"
                         >
                           <option value="__root__">全部资产</option>
                           {folders.map((folder) => (
@@ -1153,12 +1266,12 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                   <div
                     key={asset.id}
                     onClick={() => openPreview(asset)}
-                    className="group flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-2 transition-all duration-200 ease-luxury hover:border-border-secondary hover:bg-bg-card hover:shadow-sm"
+                    className="group flex cursor-pointer items-center gap-3 rounded-lg border border-border-secondary bg-bg-card px-3 py-2 shadow-card transition-all duration-200 ease-luxury hover:border-border-primary hover:bg-bg-hover hover:shadow-float"
                   >
                     {/* 缩略图 */}
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-secondary bg-bg-input">
                       {asset.mediaType === 'image' ? (
-                        <img src={asset.safeUrl} alt={label} className="h-full w-full object-cover" />
+                        <img src={assetDisplayUrl(asset)} alt={label} className="h-full w-full object-contain" />
                       ) : (
                         <span className="text-lg">
                           {MEDIA_TYPE_ICONS[asset.mediaType] ?? MEDIA_TYPE_ICONS.other}
@@ -1227,14 +1340,18 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
       {/* ── 资产预览弹窗（对齐 hjwall AssetPreviewModal） ── */}
       {previewAsset && (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="asset-preview-title"
-          className="cc-anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          role="presentation"
+          className="cc-anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-bg-base/80 p-4 backdrop-blur-sm"
           onClick={() => setPreviewAsset(null)}
         >
           <div
-            className="cc-anim-fade-in-up relative max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-xl border border-border-secondary bg-bg-elevated shadow-pop"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="asset-preview-title"
+            className={cn(
+              'cc-anim-fade-in-up relative max-h-[90vh] w-full overflow-hidden rounded-2xl border border-border-primary bg-bg-panel text-text-base shadow-pop',
+              assetPreviewModalClass(previewAsset),
+            )}
             onClick={(e) => e.stopPropagation()}
           >
             {/* 预览头部 */}
@@ -1246,7 +1363,7 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
                 type="button"
                 aria-label="关闭预览"
                 onClick={() => setPreviewAsset(null)}
-                className="rounded-md p-2 text-text-secondary transition hover:bg-bg-card hover:text-text-base"
+                className="rounded-md border border-transparent p-2 text-text-secondary transition hover:border-border-secondary hover:bg-bg-hover hover:text-text-base"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -1341,17 +1458,17 @@ export function AssetPanel({ api = defaultApi() }: AssetPanelProps): JSX.Element
             </div>
 
             {/* 预览内容 */}
-            <div className="flex max-h-[calc(90vh-3.5rem)] items-center justify-center bg-black/50 p-4">
+            <div className="flex max-h-[calc(90vh-3.5rem)] items-center justify-center bg-bg-surface p-4">
               {previewAsset.mediaType === 'image' ? (
                 <img
-                  src={previewAsset.safeUrl}
+                  src={assetDisplayUrl(previewAsset)}
                   alt={assetLabel(previewAsset)}
-                  className="max-h-[calc(90vh-5rem)] max-w-full object-contain"
+                  className={cn('object-contain', assetPreviewFrameClass(previewAsset))}
                 />
               ) : previewAsset.mediaType === 'video' ? (
                 <video
                   key={previewAsset.id}
-                  src={previewAsset.safeUrl}
+                  src={assetDisplayUrl(previewAsset)}
                   controls
                   playsInline
                   className="max-h-[calc(90vh-5rem)] w-full max-w-full rounded-md"

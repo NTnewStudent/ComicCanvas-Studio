@@ -3,14 +3,39 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
+import type { AgentNonCanvasResponse } from '../../../../shared/agents'
+import type { IpcEventMap } from '../../../../shared/ipc'
+
 export interface CanvasPlanReadyEvent {
   messageId: string
   planId: string
 }
 
+export interface AgentResponseReadyEvent {
+  runId: string
+  messageId: string
+  response: AgentNonCanvasResponse
+}
+
+export interface AgentDeltaEvent {
+  runId: string
+  messageId: string
+  delta: string
+}
+
+export type AgentToolStartedEvent = IpcEventMap['agent.toolStarted']
+export type AgentToolCompletedEvent = IpcEventMap['agent.toolCompleted']
+export type AgentPermissionRequiredEvent = IpcEventMap['agent.permissionRequired']
+
 export interface CanvasPlanEventBus {
   emitPlanReady(event: CanvasPlanReadyEvent): void
+  emitResponseReady(event: AgentResponseReadyEvent): void
+  emitDelta(event: AgentDeltaEvent): void
+  emitToolStarted(event: AgentToolStartedEvent): void
+  emitToolCompleted(event: AgentToolCompletedEvent): void
+  emitPermissionRequired(event: AgentPermissionRequiredEvent): void
   getPlanReadyEvents(): CanvasPlanReadyEvent[]
+  getResponseReadyEvents(): AgentResponseReadyEvent[]
 }
 
 /**
@@ -21,6 +46,7 @@ export interface CanvasPlanEventBus {
  */
 export function createCanvasPlanEventBus(): CanvasPlanEventBus {
   const readyByMessage = new Map<string, CanvasPlanReadyEvent>()
+  const responseByMessage = new Map<string, AgentResponseReadyEvent>()
 
   return {
     emitPlanReady(event) {
@@ -31,8 +57,30 @@ export function createCanvasPlanEventBus(): CanvasPlanEventBus {
 
       readyByMessage.set(event.messageId, event)
     },
+    emitResponseReady(event) {
+      if (responseByMessage.has(event.messageId)) {
+        throw new Error('agent_response_ready_duplicate')
+      }
+      responseByMessage.set(event.messageId, event)
+    },
+    emitDelta(event: AgentDeltaEvent): void {
+      // In-memory bus: no storage needed for deltas (they are fire-and-forget tokens).
+      void event
+    },
+    emitToolStarted(event: AgentToolStartedEvent): void {
+      void event
+    },
+    emitToolCompleted(event: AgentToolCompletedEvent): void {
+      void event
+    },
+    emitPermissionRequired(event: AgentPermissionRequiredEvent): void {
+      void event
+    },
     getPlanReadyEvents() {
       return Array.from(readyByMessage.values())
+    },
+    getResponseReadyEvents() {
+      return Array.from(responseByMessage.values())
     }
   }
 }

@@ -66,9 +66,9 @@ function MuxAudioVideoNodeComponent({
   return (
     <article
       role="group"
-      aria-label={`Mux Audio Video node ${data.label}`}
+      aria-label={`音视频合成节点 ${data.label}`}
       className={cn(
-        'relative flex w-[320px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'relative flex h-full min-h-[470px] w-full min-w-[380px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
@@ -76,8 +76,8 @@ function MuxAudioVideoNodeComponent({
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={NODE_MIN_WIDTH.video}
-        minHeight={NODE_MIN_HEIGHT.video}
+        minWidth={NODE_MIN_WIDTH.muxAudioVideo}
+        minHeight={NODE_MIN_HEIGHT.muxAudioVideo}
         lineClassName={NODE_RESIZER_CLASS_NAMES.line}
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
@@ -85,7 +85,7 @@ function MuxAudioVideoNodeComponent({
       <header className="flex items-center gap-2">
         <Tv2 className="h-4 w-4 text-brand" />
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">Mux Audio Video</div>
+          <div className="text-[11px] font-semibold uppercase text-text-muted">音视频合成</div>
           <div className="truncate text-[15px] font-semibold text-text-base">{data.label}</div>
         </div>
         <span className="rounded-sm bg-bg-input px-2 py-1 text-[11px] text-text-muted">{data.status}</span>
@@ -112,15 +112,15 @@ function MuxAudioVideoNodeComponent({
           />
         ) : (
           <div className="flex aspect-video items-center justify-center text-[13px] text-text-muted">
-            Mux 输出等待队列回写
+            音视频输出等待队列回写
           </div>
         )}
       </div>
 
       <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">
-        Mux 模型
+        音视频合成模型
         <input
-          aria-label="Mux 模型"
+          aria-label="音视频合成模型"
           className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
           value={data.modelId ?? ''}
           onChange={(event) => update({ modelId: event.target.value })}

@@ -148,7 +148,23 @@ describe('M4 built-in canvas tools', () => {
   it('updates node data, deletes nodes with attached edges, and enqueues runNode jobs only', async () => {
     let graph: CanvasGraphSnapshot = {
       ...cloneGraph(),
-      edges: [{ id: 'edge-1', source: 'text-1', target: 'image-1', data: { edgeType: 'promptOrder', createdAt: 1 } }]
+      nodes: [
+        ...cloneGraph().nodes,
+        {
+          id: 'image-config-1',
+          type: 'imageConfigV2',
+          position: { x: 640, y: 0 },
+          data: {
+            label: 'Image config',
+            promptOverride: '',
+            modelId: 'stub-image',
+            orientation: 'landscape',
+            assetId: null,
+            status: 'idle',
+          },
+        },
+      ],
+      edges: [{ id: 'edge-1', source: 'text-1', target: 'image-config-1', data: { edgeType: 'promptOrder', createdAt: 1 } }]
     }
     const enqueued: unknown[] = []
     const tools = createCanvasTools({
@@ -171,30 +187,30 @@ describe('M4 built-in canvas tools', () => {
 
     const update = await runtime.invoke({
       toolId: 'canvas.updateNodeData',
-      input: { nodeId: 'image-1', data: { promptOverride: 'gold spaceship above moon', status: 'pending' } },
+      input: { nodeId: 'image-config-1', data: { promptOverride: 'gold spaceship above moon', status: 'pending' } },
       actor,
       traceId: 'trace-update'
     })
-    expect(update.output).toMatchObject({ nodeId: 'image-1' })
-    expect(graph.nodes.find((node) => node.id === 'image-1')?.data).toMatchObject({
+    expect(update.output).toMatchObject({ nodeId: 'image-config-1' })
+    expect(graph.nodes.find((node) => node.id === 'image-config-1')?.data).toMatchObject({
       promptOverride: 'gold spaceship above moon',
       status: 'pending'
     })
 
-    const ticket = await runtime.invoke({ toolId: 'canvas.runNode', input: { nodeId: 'image-1' }, actor, traceId: 'trace-run' })
+    const ticket = await runtime.invoke({ toolId: 'canvas.runNode', input: { nodeId: 'image-config-1' }, actor, traceId: 'trace-run' })
     expect(ticket.output).toEqual({ jobId: 'job-image-1', status: 'pending', createdAt: 1_782_810_000_300 })
     expect(enqueued).toEqual([
       {
         type: 'canvas.generateImage',
-        targetId: 'image-1',
-        payload: { nodeId: 'image-1' },
+        targetId: 'image-config-1',
+        payload: { nodeId: 'image-config-1' },
         requestedBy: actor
       }
     ])
 
     const deleted = await runtime.invoke({ toolId: 'canvas.deleteNode', input: { nodeId: 'text-1' }, actor, traceId: 'trace-delete' })
     expect(deleted.output).toEqual({ nodeId: 'text-1', deletedEdgeIds: ['edge-1'] })
-    expect(graph.nodes.map((node) => node.id)).toEqual(['image-1'])
+    expect(graph.nodes.map((node) => node.id)).toEqual(['image-1', 'image-config-1'])
     expect(graph.edges).toEqual([])
   })
 

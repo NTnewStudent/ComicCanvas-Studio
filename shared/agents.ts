@@ -4,12 +4,13 @@
  */
 
 import type { ToolPermissionKind } from './tools'
+import type { CanvasPlan } from './plan'
 
 export type AgentSource = 'builtin' | 'user'
 
 export type AgentEffort = 'low' | 'medium' | 'high'
 
-export type AgentRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'aborted' | 'max_turns_exceeded'
+export type AgentRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'aborted' | 'max_turns_exceeded' | 'approval_required'
 
 export interface AgentGatewayPolicy {
   gatewayId?: string
@@ -30,6 +31,14 @@ export interface AgentPermissionPolicy {
   requireAskForDestructive: boolean
 }
 
+export type AgentTriggerKind = 'manual' | 'mention' | 'canvasChat' | 'workflowEvent'
+
+export interface AgentTriggerPolicy {
+  allowedTriggers: AgentTriggerKind[]
+  defaultTrigger: AgentTriggerKind
+  autoRun: boolean
+}
+
 export interface AgentDefinition {
   id: string
   source: AgentSource
@@ -41,6 +50,7 @@ export interface AgentDefinition {
   gatewayPolicy: AgentGatewayPolicy
   contextPolicy: AgentContextPolicy
   permissionPolicy: AgentPermissionPolicy
+  triggerPolicy: AgentTriggerPolicy
   maxTurns: number
   effort: AgentEffort
   enabled: boolean
@@ -56,6 +66,35 @@ export interface AgentRunTicket {
   runId: string
   jobId: string
   status: 'pending'
+}
+
+export interface AgentAnswerResponse {
+  type: 'answer'
+  summary: string
+  text: string
+  dropped: string[]
+}
+
+export interface AgentClarificationResponse {
+  type: 'clarification'
+  summary: string
+  question: string
+  missing: string[]
+  dropped: string[]
+}
+
+export interface AgentCanvasPlanResponse {
+  type: 'canvasPlan'
+  plan: CanvasPlan
+}
+
+export type AgentResponse = AgentAnswerResponse | AgentClarificationResponse | AgentCanvasPlanResponse
+export type AgentNonCanvasResponse = AgentAnswerResponse | AgentClarificationResponse
+
+export interface AgentToolApprovalInput {
+  runId: string
+  callId: string
+  approvedBy: string
 }
 
 export interface SubAgentSpec {

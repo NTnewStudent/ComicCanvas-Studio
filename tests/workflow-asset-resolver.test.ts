@@ -89,4 +89,45 @@ describe('REQ-106 workflow asset URL resolver', () => {
       source: 'local',
     })
   })
+
+  it('uploads local assets without s3Key when cloud URL assurance is available', async () => {
+    const uploads: string[] = []
+    const resolver = createWorkflowAssetResolver({
+      getStorageConfig: () => ({
+        provider: 'cos',
+        endpoint: 'https://cos.ap-shanghai.myqcloud.com',
+        bucket: 'comiccanvas',
+        accessKeyId: 'ak-test',
+        secretAccessKey: 'sk-test',
+        publicUrlPrefix: 'https://cdn.example.test/media',
+      }),
+      createStorageProvider: () => ({
+        id: 'cos',
+        name: 'COS test provider',
+        upload: async () => 'https://cdn.example.test/media/unused.png',
+        query: async () => 'https://cdn.example.test/media/unused-query.png',
+        rename: async () => 'https://cdn.example.test/media/renamed.png',
+        delete: async () => undefined,
+        testConnection: async () => true,
+      }),
+      cloudUrlService: {
+        async ensureAssetRecordCloudUrl(input) {
+          uploads.push(input.id)
+          return {
+            asset: { ...input, url: 'https://cdn.example.test/media/assets/asset-1.png', s3Key: 'assets/asset-1.png' },
+            url: 'https://cdn.example.test/media/assets/asset-1.png',
+            source: 'cloud',
+            action: 'uploaded',
+            s3Key: 'assets/asset-1.png',
+          }
+        },
+      },
+    })
+
+    await expect(resolver.resolveAssetUrl(asset({}))).resolves.toEqual({
+      url: 'https://cdn.example.test/media/assets/asset-1.png',
+      source: 'cloud',
+    })
+    expect(uploads).toEqual(['asset-1'])
+  })
 })

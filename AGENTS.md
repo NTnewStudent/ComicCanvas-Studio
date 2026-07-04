@@ -1,191 +1,209 @@
 ---
 description:
-alwaysApply: true
+alwaysApply: false
 ---
 
-# ComicCanvas Studio
+# AGENTS_KIRO.md
 
-**AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，本地优先）
+**ComicCanvas Studio — Kiro IDE 治理入口**
 
-两条核心能力：
-1. **画布**：用户手动操作 React Flow 画布，节点化生成图片 / 视频
+本文件是 `AGENTS.md` 的 Kiro 环境迁移版，面向在 **Kiro IDE** 中开发本项目的场景。
+原始 `AGENTS.md`（Codex/GPT 原生）与 `.claude/`（Claude Code）**保持原样，未修改**。
+
+> Kiro 配置层的完整文件结构见 `.kiro/README.md`。
+
+---
+
+## 项目身份
+
+**ComicCanvas Studio — AIGC 漫剧画布 + Agent 自动编排桌面客户端**（Electron + TypeScript + Node.js + SQLite，混合存储：媒体文件上云 + 项目文件本地）
+
+核心价值：
+1. **画布**：用户手动操作 React Flow 画布，节点化生成图片 / 视频（text/image/video 三节点）
 2. **Agent**：自然语言驱动 Agent 自动「生成节点 → 连线 → 串行执行任务」
 
----
-
-## 技术栈
-
-| 层 | 选型 |
-|----|------|
-| 桌面外壳 | Electron + TypeScript 5+（strict）|
-| 渲染层 | React 18 + Vite 5 + @xyflow/react + Zustand v4 + TanStack Query v5 + Tailwind |
-| 主进程 | Node.js 20+ |
-| 数据库 | SQLite（better-sqlite3 + Drizzle ORM），DB 抽象层可切 MySQL |
-| 任务队列 | 进程内持久化队列（落 SQLite `jobs` 表），无 BullMQ / Redis |
-| 实时 | Electron IPC 事件（无 WebSocket）|
-| Agent | AsyncGenerator 主循环 + 统一 Tool 接口（参考 cc-haha 设计）|
-| 资产 | 本地 `appData/assets/`，DB 存相对路径，渲染走 `cc-asset://` 安全协议 |
+**产品定位**：以「漫剧（comic drama）制作」为主——围绕「文本 → 生图 → 生视频」这条漫剧生产链路组织画布与 Agent 能力。
 
 ---
 
-## 仓库结构
+## 工程形态
+
+| 层 | 路径 | 技术栈 |
+| :--- | :--- | :--- |
+| Electron 主进程 + Agent 运行时 + 本地服务 | `desktop/src/main/` | Node.js 20+ / TS strict |
+| 渲染层（画布 UI） | `desktop/src/renderer/` | React 18 / Vite 5 / @xyflow/react / Zustand / TanStack Query |
+| 数据持久化 | `desktop/src/main/db/` | SQLite（better-sqlite3 + Drizzle），DB 抽象层（可切 MySQL）|
+| 任务队列 + 模型适配 | `desktop/src/main/jobs/`、`desktop/src/main/providers/` | 进程内持久化队列 + 模型网关适配器 |
+| 共享契约 | `shared/` | 连接矩阵 / Plan 类型 / IPC 契约（前后端唯一真源）|
+
+> 包管理：**Bun 1.3.14**（`.bun-version` + `bun.lock`）。不引入 `package-lock.json`、`npm run` 或 `npx`。
+
+> ⚠️ 无 Redis / 无 BullMQ / 无 WebSocket：进程内持久化任务队列 + Electron IPC 事件替代。
+> ⚠️ 媒体文件通过 S3 兼容存储（StorageProvider 接口），DB 存云端 URL；项目文件（画布 JSON、工作流数据）保持本地存储。
+
+---
+
+## Kiro 治理层结构
 
 ```
-comic-canvas/
-├── AGENTS.md / AGENTS.md          # 本文件（项目规则） / 编码行为准则
-├── .Codex/                       # Codex 治理层
-│   ├── settings.json              # 权限配置（LTM 自动捕获已停用）
-│   ├── README.md                  # 治理层导航
-│   ├── agents/                    # 4 个子 agent 定义（自包含）
-│   │   ├── orchestrator-agent.md
-│   │   ├── canvas-agent.md
-│   │   ├── tooling-agent.md
-│   │   └── pm-agent.md
-│   ├── rules/                     # alwaysApply 或按 globs 自动激活
-│   │   ├── coding-standards.md    → alwaysApply
-│   │   ├── electron-node.md       → desktop/src/main|preload/**
-│   │   ├── agent-runtime.md       → desktop/src/main/agent/**
-│   │   ├── canvas-engine.md       → desktop/src/renderer/canvas/**
-│   │   ├── tool-contracts.md      → desktop/src/main/tools/**
-│   │   ├── data-persistence.md    → desktop/src/main/db/**
-│   │   └── tests.md               → **/*.{test,spec}.{ts,tsx}
-│   ├── commands/                  # 斜杠命令（/orchestrator /canvas /tooling /pm）
-│   ├── skills/                    # pm-req-planner / canvas-node-designer / skill-creator
-│   └── specs/                     # 需求/设计/任务三件套
-│       └── canvas-agent-orchestration/
-├── ltm/                           # 历史遗留目录；当前不再使用 LTM
-├── shared/                        # 前后端唯一真源契约
-│   ├── connection-matrix.ts       # 节点连接矩阵
-│   ├── plan.ts                    # 声明式 CanvasPlan 类型
-│   ├── nodes.ts                   # 节点 / 边类型
-│   └── ipc.ts                     # IPC 通道契约
-├── desktop/
-│   └── src/
-│       ├── main/                  # 主进程（Node）
-│       │   ├── agent/             # Agent 主循环 + 编排
-│       │   ├── tools/             # 统一 Tool 接口 + Canvas 工具集
-│       │   ├── jobs/              # 任务队列 + JobWorker
-│       │   ├── providers/         # 模型网关适配器（image/video/text）
-│       │   ├── db/                # Drizzle schema + 仓储层
-│       │   ├── assets/            # 本地资产管线
-│       │   └── ipc/               # IPC handler
-│       ├── preload/               # contextBridge 白名单 API
-│       └── renderer/              # 渲染层（React）
-│           └── canvas/            # React Flow 画布
-└── docs/
-    ├── research-report.md
-    ├── architecture/
-    ├── api-contracts/             # IPC / 服务契约（契约先行）
-    └── progress/                  # 需求 / 迭代 / 测试报告
+.kiro/
+├── README.md                        # 完整导航
+├── steering/
+│   ├── [始终加载]
+│   │   ├── project-identity.md      # 项目身份、核心契约、全局禁止
+│   │   ├── coding-standards.md      # 通用编码规范
+│   │   └── ltm-operations.md        # LTM 记忆操作
+│   │
+│   ├── [文件匹配自动加载]
+│   │   ├── electron-node.md         # desktop/src/main/**, desktop/src/preload/**
+│   │   ├── agent-runtime.md         # desktop/src/main/agent/**
+│   │   ├── canvas-engine.md         # desktop/src/renderer/canvas/**
+│   │   ├── tool-contracts.md        # desktop/src/main/tools/**
+│   │   ├── data-persistence.md      # desktop/src/main/db/**
+│   │   ├── tests.md                 # **/*.test.ts, **/*.spec.ts
+│   │   └── ltm-memory-format.md     # ltm/**
+│   │
+│   └── [手动激活，chat 中用 # 引用]
+│       ├── agent-orchestrator.md    # orchestrator-agent 角色
+│       ├── agent-canvas.md          # canvas-agent 角色
+│       ├── agent-tooling.md         # tooling-agent 角色
+│       ├── agent-pm.md              # pm-agent 角色
+│       ├── skill-canvas-node-designer.md
+│       ├── skill-pm-req-planner.md
+│       └── skill-creator.md
+│
+└── hooks/
+    ├── ltm-capture-on-stop.json     # agentStop → ltm.py capture-turn
+    └── ltm-checkpoint-post-task.json # postTaskExecution → ltm checkpoint
 ```
 
 ---
 
-## Agent 角色
+## 🎭 Agent 分工（Kiro 激活方式）
 
-| Agent | 职责 | 文件范围 | 激活方式 |
-|-------|------|----------|---------|
-| **orchestrator-agent** | 自然语言 → CanvasPlan 编排 | `main/agent/` + `shared/plan.ts` | `@orchestrator-agent` |
-| **canvas-agent** | React Flow 画布 / 节点 / 连线 | `renderer/canvas/` | `@canvas-agent` |
-| **tooling-agent** | Agent 运行时 / Tool / Queue / DB | `main/**` | `@tooling-agent` |
-| **pm-agent** | 需求 / 契约 / 进度 / 测试 | `docs/` + `.Codex/specs/` | `@pm-agent` |
-
-完整角色定义在 `.Codex/agents/<name>.md`（自包含）。
+| Agent | 角色 | Kiro chat 引用 | 对应源文件 |
+| :--- | :--- | :--- | :--- |
+| **orchestrator-agent** | 自然语言 → 声明式 Canvas Plan，编排全链路 | `#agent-orchestrator` | `.codex/agents/orchestrator-agent.toml` |
+| **canvas-agent** | 渲染层画布 / 节点 / 连线 / React Flow 实现 | `#agent-canvas` | `.codex/agents/canvas-agent.toml` |
+| **tooling-agent** | Agent 运行时 / Tool 接口 / 任务队列 / 模型适配 / DB | `#agent-tooling` | `.codex/agents/tooling-agent.toml` |
+| **pm-agent** | 需求拆解、契约协调、进度、测试 | `#agent-pm` | `.codex/agents/pm-agent.toml` |
 
 ---
 
-## 核心契约
+## 🔴 上岗前必读（按角色）
 
-### 节点连接矩阵（`shared/connection-matrix.ts`，唯一真源）
-
-三种节点：`text` / `image` / `video`。
-
-| 上游 | 允许下游 |
-|------|---------|
-| text | image, video |
-| image | image, video |
-| video | video |
-
-### CanvasPlan（`shared/plan.ts`）
-
-```typescript
-interface CanvasPlan {
-  kind: 'plan' | 'clarify'
-  summary: string
-  nodes: { ref: string; type: string; title: string; data: Record<string, unknown> }[]
-  edges: { source: string; target: string; edgeType: string }[]
-  runSteps: { ref: string; action: RunAction }[]
-  question: string | null
-  dropped: string[]
-}
-type RunAction = 'imageRun' | 'videoRun' | 'textPolish'
+### orchestrator-agent
 ```
+本文件
++ #agent-orchestrator（Kiro chat 引用）
++ specs/canvas-agent-orchestration/
+```
+对应 Codex：`AGENTS.md` + `.codex/agents/orchestrator-agent.toml` + `specs/canvas-agent-orchestration/`
 
-### Tools & Agents 系统（`shared/tools-agents.ts`）
+### canvas-agent
+```
+本文件
++ #agent-canvas（Kiro chat 引用）
++ global/design/DESIGN.md
++ shared/（connection-matrix.ts / plan.ts / nodes.ts）
+```
+对应 Codex：`AGENTS.md` + `.codex/agents/canvas-agent.toml` + `global/design/DESIGN.md` + `shared/`
 
-- **统一 Tool 接口**：手动操作与 Agent 编排共用同一套 Tool 实现（区别只在触发源）。
-- **Canvas 工具集**：queryGraph / proposePlan / createNode / connectNodes / updateNodeData / deleteNode(ask) / runNode。
-- **super-agent**：`allowedTools: '*'`，默认对话入口，持有全部工具。
-- **spawnSubAgent**：内联定义模式 spawn 子 agent 跑长任务；权限 ⊆ 父级，递归深度 ≤ `MAX_SPAWN_DEPTH(2)`。
-- **网关热拔插**：`GatewayConfig`（OpenAI 兼容），设置页改 URL/Key 后重新初始化 Provider，不重启。
-- **资产文件夹**：`AssetFolder`，图片/视频分类 + 用户自定义嵌套文件夹。
-- 详见 `docs/api-contracts/tools-agents.md`。
+### tooling-agent
+```
+本文件
++ #agent-tooling（Kiro chat 引用）
++ docs/api-contracts/
+```
+对应 Codex：`AGENTS.md` + `.codex/agents/tooling-agent.toml` + `docs/api-contracts/`
 
-### IPC 通道（`shared/ipc.ts`，命名格式 `domain.action`）
-
-- canvas.*：`chatSend` / `chatGetPlan` / `runNode` / `saveGraph` / `loadGraph`
-- job.*：`subscribe` / `progress` / `completed` / `failed`
-- settings.*：`getGateways` / `saveGateway` / `getAgents` / `saveAgent` / `getTools` / `toggleTool`
-- asset.*：`getFolders` / `createFolder` / `moveAsset` / `deleteAsset`
+### pm-agent
+```
+本文件
++ #agent-pm（Kiro chat 引用）
++ specs/
++ docs/progress/
+```
+对应 Codex：`AGENTS.md` + `.codex/agents/pm-agent.toml` + `specs/` + `docs/progress/`
 
 ---
 
-## 全局禁止
+## 📊 共享真源（Source of Truth）
 
-- ❌ Canvas Plan 里出现可执行代码 / 脚本字符串
-- ❌ 前后端各自维护连接矩阵副本（只消费 `shared/connection-matrix.ts`）
-- ❌ 生图/生视频走同步阻塞路径（必须入任务队列，IPC 事件回推终态）
-- ❌ `contextIsolation: false` 或 `nodeIntegration: true`
-- ❌ TypeScript `any`（用 `unknown` + 类型收窄）
+与 `AGENTS.md` 完全一致，不另设副本：
+
+| 文档 | 用途 | 写入方 |
+| :--- | :--- | :--- |
+| `docs/api-contracts/` | IPC / 服务契约 | pm-agent 起草，tooling-agent 主改 |
+| `global/design/DESIGN.md` | 全局 UI/UX 设计系统、前端视觉 token | canvas-agent 主消费，pm-agent 协调 |
+| `shared/connection-matrix.ts` | 节点连接矩阵（唯一真源）| tooling-agent + canvas-agent |
+| `shared/plan.ts` | 声明式 Canvas Plan 类型 | orchestrator-agent |
+| `specs/` | 项目级 requirements / design / tasks spec | pm-agent 主改，全体消费 |
+| `docs/progress/` | 需求 / 迭代 / 测试报告 | pm-agent |
+| `docs/architecture/` | 系统架构 | 全体 |
+
+---
+
+## 🚫 全局禁止
+
+与 `AGENTS.md` 完全一致：
+
+- ❌ 直接引用 hjwall / cc-haha 的源码文件（仅参考其设计与契约）
+- ❌ 把可执行代码塞进 Canvas Plan（必须是白名单清洗后的纯声明式 JSON）
+- ❌ 前后端各自维护一份连接矩阵副本（必须消费 `shared/connection-matrix.ts`）
+- ❌ 生图/生视频走同步阻塞路径（必须入本地任务队列，IPC 事件回推终态）
+- ❌ 渲染进程开启 `nodeIntegration`、关闭 `contextIsolation`
+- ❌ 使用 `any`（用 `unknown` + 类型收窄）
 - ❌ 未在 `docs/api-contracts/` 登记契约就开新 IPC 通道
 - ❌ 密钥明文存储 / 写进日志 / 写进 LTM
 - ❌ DB 查询散落业务层（走仓储层）
-- ❌ 渲染层 `setInterval` 轮询资产状态
 - ❌ 子 agent 提权（工具集超出父 agent）/ 递归深度超 `MAX_SPAWN_DEPTH(2)`
 - ❌ `runNode` 同步等待生成；第三方网关轮询在 JobWorker 内部做，不阻塞入队入口
+- ❌ 媒体文件直接存本地而不上传到已配置的 S3 存储（必须通过 StorageProvider 接口上传）
+- ❌ 在代码中硬编码 S3 端点/密钥（必须通过设置页配置，密钥用 safeStorage 加密）
 
 ---
 
-## 编码规范
+## Skill 速查（Kiro 手动激活）
 
-- 所有导出函数/类/方法必须有 JSDoc（意图、参数、返回、异常）
-- 所有 IPC/服务方法标注契约锚点：`@see docs/api-contracts/...`
-- 所有异常 throw/catch 必须有行内注释说明原因，禁止吞异常
-- 纯逻辑（矩阵校验、prompt 拼接、orientation 判定）放 `lib/` 纯函数，不依赖框架运行时
-- IPC handler 薄（Zod 校验 + 转调）、service 厚
-
----
-
-## 项目记录
-
-当前项目不再使用 LTM。不要在工作开始、结束、检查进度或保存检查点时运行
-`ltm/bin/ltm.py`，也不要依赖 `ltm/runtime/active-context.json`。任务状态以
-`specs/`、`docs/progress/`、git 状态和用户最新指令为准。
+| Skill | Kiro chat 引用 | 用途 | 对应源文件 |
+| :--- | :--- | :--- | :--- |
+| canvas-node-designer | `#skill-canvas-node-designer` | 新增/修改节点类型，保持六处一致 | `.agents/skills/canvas-node-designer/SKILL.md` |
+| pm-req-planner | `#skill-pm-req-planner` | EARS 需求规格化三件套 | `.agents/skills/pm-req-planner/SKILL.md` |
+| comiccanvas-skill-creator | `#skill-creator` | 创建新 Kiro steering skill | `.agents/skills/skill-creator/SKILL.md` |
 
 ---
 
-## 命令速查
+## LTM 项目记录
+
+本项目沿用 hjwall 的 **LTM 项目记录模式**（`ltm/`）。
+
+Kiro 侧通过 `hooks/ltm-capture-on-stop.json` 自动在每次 agent 停止时触发 `ltm.py capture-turn`，等价于 `.claude/settings.json` 的 Stop 钩子和 `.codex/config.toml` 的 `[[hooks.Stop]]`。
 
 ```bash
-# 子 agent 切换
-@orchestrator-agent   # 编排 + CanvasPlan
-@canvas-agent         # 画布 + 节点
-@tooling-agent        # 主进程 + Tool + DB
-@pm-agent             # 需求 + 契约 + 进度
+# 恢复工作记忆
+python ltm/bin/ltm.py files --limit 10
+python ltm/bin/ltm.py sessions --limit 5
 
-# 斜杠命令
-/orchestrator         # 同上，Codex slash command
-/canvas
-/tooling
-/pm
+# 保存检查点
+python ltm/bin/ltm.py checkpoint --from-json <path>
+python ltm/bin/ltm.py regenerate
+
+# Windows 上查 ltm/config.json 确认 python_cmd（python 或 py）
 ```
+
+---
+
+## 三套系统对照表
+
+| 能力 | Codex（原生） | Claude Code（兼容） | Kiro（本文件）|
+| :--- | :--- | :--- | :--- |
+| 项目入口 | `AGENTS.md` + `.codex/config.toml` | `CLAUDE.md` + `.claude/README.md` | `AGENTS_KIRO.md`（本文件）|
+| Agent 定义 | `.codex/agents/*.toml` | `.claude/agents/*.md` | `.kiro/steering/agent-*.md`（manual）|
+| 代码规则 | `.codex/config.toml` 全局指令 | `.claude/rules/*.md`（globs）| `.kiro/steering/*.md`（fileMatch）|
+| Skills | `.agents/skills/*/SKILL.md` | `.claude/skills/*/SKILL.md` | `.kiro/steering/skill-*.md`（manual）|
+| Stop 钩子 | `.codex/config.toml [[hooks.Stop]]` | `.claude/settings.json` | `.kiro/hooks/ltm-capture-on-stop.json` |
+| Spec 存档 | `specs/`（共享真源） | `specs/`（共享真源）| `specs/`（共享真源）|
+
+> 三套系统共享同一个 `specs/` 目录——这是唯一的产品 spec 真源。
+> `.codex/` `.claude/` `.kiro/` 都只是工具运行时/配置层，不承载产品 spec。

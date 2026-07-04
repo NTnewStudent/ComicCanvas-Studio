@@ -6,7 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type { AssetChangedEvent, IpcEventChannel, IpcEventMap, IpcRequestMap, IpcResponseMap, StorageConfigInput, StorageConnectionTestResult, WorkflowSummaryView } from '../../../shared/ipc'
-import type { JobTerminalEvent } from '../../../shared/jobs'
+import type { JobProgressEvent, JobTerminalEvent } from '../../../shared/jobs'
 
 export interface ComicCanvasApi {
   health(): Promise<{ status: 'ok' | 'degraded' | 'failed'; checkedAt: number }>
@@ -17,12 +17,20 @@ export interface ComicCanvasApi {
   listAgents(): Promise<IpcResponseMap['agent.list']>
   saveAgent(input: IpcRequestMap['agent.save']): Promise<IpcResponseMap['agent.save']>
   deleteAgent(input: IpcRequestMap['agent.delete']): Promise<IpcResponseMap['agent.delete']>
+  runAgent(input: IpcRequestMap['agent.run']): Promise<IpcResponseMap['agent.run']>
+  getAgentRun(input: IpcRequestMap['agent.getRun']): Promise<IpcResponseMap['agent.getRun']>
+  approveAgentTool(input: IpcRequestMap['agent.approveTool']): Promise<IpcResponseMap['agent.approveTool']>
+  spawnSubAgent(input: IpcRequestMap['agent.spawn']): Promise<IpcResponseMap['agent.spawn']>
+  listSkills(input?: IpcRequestMap['skill.list']): Promise<IpcResponseMap['skill.list']>
+  getSkillMetadata(input: IpcRequestMap['skill.getMetadata']): Promise<IpcResponseMap['skill.getMetadata']>
+  reloadSkills(input?: IpcRequestMap['skill.reload']): Promise<IpcResponseMap['skill.reload']>
   listGateways(): Promise<IpcResponseMap['gateway.list']>
   saveGateway(input: IpcRequestMap['gateway.save']): Promise<IpcResponseMap['gateway.save']>
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
   testGateway(input: IpcRequestMap['gateway.test']): Promise<IpcResponseMap['gateway.test']>
   reloadGateways(input: IpcRequestMap['gateway.reload']): Promise<IpcResponseMap['gateway.reload']>
   listGatewayModels(input?: IpcRequestMap['gateway.models']): Promise<IpcResponseMap['gateway.models']>
+  fetchGatewayModels(input: IpcRequestMap['gateway.fetchModels']): Promise<IpcResponseMap['gateway.fetchModels']>
   listStyles(input?: IpcRequestMap['style.list']): Promise<IpcResponseMap['style.list']>
   saveStyle(input: IpcRequestMap['style.save']): Promise<IpcResponseMap['style.save']>
   deleteStyle(input: IpcRequestMap['style.delete']): Promise<IpcResponseMap['style.delete']>
@@ -37,6 +45,7 @@ export interface ComicCanvasApi {
   disableTool(input: IpcRequestMap['tool.disable']): Promise<IpcResponseMap['tool.disable']>
   invokeTool(input: IpcRequestMap['tool.invoke']): Promise<IpcResponseMap['tool.invoke']>
   listAssets(input?: IpcRequestMap['asset.list']): Promise<IpcResponseMap['asset.list']>
+  pickAssetImportFiles(): Promise<IpcResponseMap['asset.pickImportFiles']>
   importAsset(input: IpcRequestMap['asset.import']): Promise<IpcResponseMap['asset.import']>
   moveAsset(input: IpcRequestMap['asset.move']): Promise<IpcResponseMap['asset.move']>
   renameAsset(input: IpcRequestMap['asset.rename']): Promise<IpcResponseMap['asset.rename']>
@@ -51,8 +60,14 @@ export interface ComicCanvasApi {
   removeAssetCategory(input: IpcRequestMap['asset.removeCategory']): Promise<IpcResponseMap['asset.removeCategory']>
   onJobCompleted(handler: (event: Extract<JobTerminalEvent, { channel: 'job.completed' }>) => void): () => void
   onJobFailed(handler: (event: Extract<JobTerminalEvent, { channel: 'job.failed' }>) => void): () => void
+  onJobProgress(handler: (event: JobProgressEvent) => void): () => void
   onAssetChanged(handler: (event: AssetChangedEvent) => void): () => void
   onCanvasPlanReady(handler: (event: IpcEventMap['canvas.planReady']) => void): () => void
+  onAgentResponseReady(handler: (event: IpcEventMap['agent.responseReady']) => void): () => void
+  onAgentDelta(handler: (event: IpcEventMap['agent.delta']) => void): () => void
+  onAgentToolStarted(handler: (event: IpcEventMap['agent.toolStarted']) => void): () => void
+  onAgentToolCompleted(handler: (event: IpcEventMap['agent.toolCompleted']) => void): () => void
+  onAgentPermissionRequired(handler: (event: IpcEventMap['agent.permissionRequired']) => void): () => void
   saveGraph(input: IpcRequestMap['canvas.saveGraph']): Promise<IpcResponseMap['canvas.saveGraph']>
   validateGraph(input: IpcRequestMap['canvas.validateGraph']): Promise<IpcResponseMap['canvas.validateGraph']>
   loadGraph(input: IpcRequestMap['canvas.loadGraph']): Promise<IpcResponseMap['canvas.loadGraph']>
@@ -75,7 +90,7 @@ export interface ComicCanvasApi {
   testStorageConnection(input: StorageConfigInput): Promise<StorageConnectionTestResult>
 }
 
-type SubscribableEventChannel = Extract<IpcEventChannel, 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady'>
+type SubscribableEventChannel = Extract<IpcEventChannel, 'job.progress' | 'job.completed' | 'job.failed' | 'asset.changed' | 'canvas.planReady' | 'agent.responseReady' | 'agent.delta' | 'agent.toolStarted' | 'agent.toolCompleted' | 'agent.permissionRequired'>
 
 /**
  * Invokes a whitelisted main-process channel from typed preload APIs only.
@@ -96,12 +111,20 @@ function invokeMain<TChannel extends 'canvas.chatGetPlan'>(channel: TChannel, re
 function invokeMain<TChannel extends 'agent.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.run'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.getRun'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.approveTool'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.spawn'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'skill.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'skill.getMetadata'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'skill.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.test'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.models'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'gateway.fetchModels'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'style.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -116,6 +139,7 @@ function invokeMain<TChannel extends 'tool.enable'>(channel: TChannel, request: 
 function invokeMain<TChannel extends 'tool.disable'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'tool.invoke'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'asset.pickImportFiles'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.import'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.move'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'asset.rename'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -237,6 +261,41 @@ const api: ComicCanvasApi = {
    */
   deleteAgent: (input) => invokeMain('agent.delete', input),
   /**
+   * Starts an asynchronous Agent run.
+   * @param input - Agent ID, user message, and optional context override.
+   * @returns Pending Agent run ticket.
+   * @throws Error when the main process rejects the Agent run request.
+   * @see docs/api-contracts/agents.md
+   */
+  runAgent: (input) => invokeMain('agent.run', input),
+  /**
+   * Reads the current Agent run status and trace.
+   * @param input - Agent run lookup request.
+   * @returns Agent run status and trace metadata.
+   * @throws Error when the main process rejects the run lookup request.
+   * @see docs/api-contracts/agents.md
+   */
+  getAgentRun: (input) => invokeMain('agent.getRun', input),
+  /**
+   * Approves a paused Agent tool call.
+   * @param input - Pending Agent run call approval.
+   * @returns Pending resume job ticket or a safe error.
+   * @throws Error when the main process rejects the approval request.
+   * @see docs/api-contracts/agents.md
+   */
+  approveAgentTool: (input) => invokeMain('agent.approveTool', input),
+  /**
+   * Spawns an isolated sub-agent through the whitelisted Agent IPC contract.
+   * @param input - Sub-agent spec and parent depth.
+   * @returns Sub-agent terminal result with trace metadata.
+   * @throws Error when the main process rejects the spawn request.
+   * @see docs/api-contracts/agents.md
+   */
+  spawnSubAgent: (input) => invokeMain('agent.spawn', input),
+  listSkills: (input) => invokeMain('skill.list', input ?? {}),
+  getSkillMetadata: (input) => invokeMain('skill.getMetadata', input),
+  reloadSkills: (input) => invokeMain('skill.reload', input ?? {}),
+  /**
    * Lists configured gateway providers.
    * @returns Gateway configuration views.
    * @throws Error when the main process rejects the gateway list request.
@@ -283,6 +342,14 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/gateway-providers.md
    */
   listGatewayModels: (input = {}) => invokeMain('gateway.models', input),
+  /**
+   * Fetches model IDs from an OpenAI-compatible gateway `/models` endpoint.
+   * @param input - Existing gateway or form-level base URL/auth data.
+   * @returns Renderer-safe fetched model records.
+   * @throws Error when the main process rejects the model fetch request.
+   * @see docs/api-contracts/gateway-providers.md
+   */
+  fetchGatewayModels: (input) => invokeMain('gateway.fetchModels', input),
   /**
    * Lists style presets visible to renderer style selectors.
    * @param input - Optional disabled preset inclusion flag.
@@ -393,6 +460,13 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/assets-files.md
    */
   listAssets: (input = {}) => invokeMain('asset.list', input),
+  /**
+   * Opens a main-process file picker and returns absolute local paths for import.
+   * @returns Selected local file paths, or an empty list when canceled.
+   * @throws Error when the main process rejects the picker request.
+   * @see docs/api-contracts/assets-files.md
+   */
+  pickAssetImportFiles: () => invokeMain('asset.pickImportFiles', {}),
   /**
    * Imports one local file into the managed asset library.
    * @param input - Local source path and classified media type.
@@ -505,6 +579,15 @@ const api: ComicCanvasApi = {
    */
   onJobFailed: (handler) => subscribeMain('job.failed', handler),
   /**
+   * Subscribes to job progress events for visible Agent/tool thinking summaries.
+   * @param handler - Event payload handler.
+   * @returns Unsubscribe callback.
+   * @throws Error when Electron listener registration fails.
+   * @see docs/api-contracts/jobs.md
+   * @see docs/api-contracts/agents.md
+   */
+  onJobProgress: (handler) => subscribeMain('job.progress', handler),
+  /**
    * Subscribes to asset library change events.
    * @param handler - Event payload handler.
    * @returns Unsubscribe callback.
@@ -520,6 +603,25 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/canvas-plan.md
    */
   onCanvasPlanReady: (handler) => subscribeMain('canvas.planReady', handler),
+  /**
+   * Subscribes to Agent answer/clarification readiness events after async runs complete.
+   * @param handler - Event payload handler.
+   * @returns Unsubscribe callback.
+   * @throws Error when Electron listener registration fails.
+   * @see docs/api-contracts/agents.md
+   */
+  onAgentResponseReady: (handler) => subscribeMain('agent.responseReady', handler),
+  /**
+   * Subscribes to streaming token delta events while the model generates a response.
+   * @param handler - Event payload handler receiving incremental text.
+   * @returns Unsubscribe callback.
+   * @throws Error when Electron listener registration fails.
+   * @see docs/api-contracts/agents.md
+   */
+  onAgentDelta: (handler) => subscribeMain('agent.delta', handler),
+  onAgentToolStarted: (handler) => subscribeMain('agent.toolStarted', handler),
+  onAgentToolCompleted: (handler) => subscribeMain('agent.toolCompleted', handler),
+  onAgentPermissionRequired: (handler) => subscribeMain('agent.permissionRequired', handler),
   /**
    * Persists a canvas graph snapshot for the given project.
    * @param input - Save request including project ID and graph snapshot.

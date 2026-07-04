@@ -1,5 +1,6 @@
 import type { AssetRecord } from '../../../../../../shared/assets'
 import type { CanvasNodeData, NodeType, ReferenceAsset } from '../../../../../../shared/nodes'
+import { assetDisplayUrl } from '../../assets/asset-url'
 
 export type AssetNodeInsertMode = 'image' | 'character' | 'scene'
 
@@ -50,17 +51,18 @@ export function buildAssetNodeInsertion(request: AssetNodeInsertionRequest): Ass
   }
 
   const label = assetName(asset) || `${mode} ${sequence}`
+  const displayUrl = assetDisplayUrl(asset)
   if (mode === 'character') {
     return {
       assetId: asset.id,
-      safeUrl: asset.safeUrl,
+      safeUrl: displayUrl,
       node: {
         type: 'character',
         data: {
           label,
           description: '',
           assetId: asset.id,
-          url: asset.safeUrl,
+          url: displayUrl,
           tags: []
         }
       }
@@ -70,14 +72,14 @@ export function buildAssetNodeInsertion(request: AssetNodeInsertionRequest): Ass
   if (mode === 'scene') {
     return {
       assetId: asset.id,
-      safeUrl: asset.safeUrl,
+      safeUrl: displayUrl,
       node: {
         type: 'scene',
         data: {
           label,
           description: '',
           assetId: asset.id,
-          url: asset.safeUrl,
+          url: displayUrl,
           category: ''
         }
       }
@@ -86,7 +88,7 @@ export function buildAssetNodeInsertion(request: AssetNodeInsertionRequest): Ass
 
   return {
     assetId: asset.id,
-    safeUrl: asset.safeUrl,
+    safeUrl: displayUrl,
     node: {
       type: 'image',
       data: {
@@ -96,7 +98,7 @@ export function buildAssetNodeInsertion(request: AssetNodeInsertionRequest): Ass
         orientation: asset.metadata.orientation ?? 'landscape',
         assetId: asset.id,
         status: 'done',
-        url: asset.safeUrl
+        url: displayUrl
       }
     }
   }
@@ -118,13 +120,14 @@ export function buildReferenceAssetPatch(request: ReferenceAssetPatchRequest): R
   if (currentReferences.some((reference) => reference.id === asset.id)) {
     return { referenceAssets: currentReferences }
   }
+  const displayUrl = assetDisplayUrl(asset)
 
   return {
     referenceAssets: [
       ...currentReferences,
       {
         id: asset.id,
-        url: asset.safeUrl,
+        url: displayUrl,
         type: 'image',
         name: assetName(asset)
       }

@@ -26,8 +26,16 @@ const modelPlan: CanvasPlan = {
   summary: 'Create one image node for a spaceship scene.',
   nodes: [
     {
+      ref: 'prompt-1',
+      type: 'text',
+      title: 'Prompt',
+      data: {
+        content: '宇宙飞船穿过金色星云'
+      }
+    },
+    {
       ref: 'image-1',
-      type: 'image',
+      type: 'imageConfigV2',
       title: 'Spaceship image',
       data: {
         promptOverride: '宇宙飞船穿过金色星云',
@@ -37,7 +45,7 @@ const modelPlan: CanvasPlan = {
       }
     }
   ],
-  edges: [],
+  edges: [{ source: 'prompt-1', target: 'image-1', edgeType: 'promptOrder' }],
   runSteps: [{ ref: 'image-1', action: 'imageRun' }],
   question: null,
   dropped: []
@@ -122,7 +130,7 @@ describe('M4 agent orchestration smoke path', () => {
       })
 
       const ticket = runtime.chatSend({ message: '生成一个图片节点，内容是：宇宙飞船', agentId: 'orchestrator', requestedBy: 'user-1' })
-      expect(ticket).toEqual({ jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
+      expect(ticket).toEqual({ runId: 'run-1', jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
       expect(JSON.stringify(ticket)).not.toMatch(/asset|bytes|cc-asset|[A-Za-z]:\\\\/u)
       expect(runtime.getPlan('message-1')).toBeNull()
 
@@ -137,7 +145,7 @@ describe('M4 agent orchestration smoke path', () => {
       expect(applyResult.runSteps).toEqual([{ ref: 'image-1', nodeId: 'plan-node-image-1', action: 'imageRun' }])
       expect(runNode).toHaveBeenCalledWith('plan-node-image-1')
       expect(store.getState().nodes.find((node) => node.id === 'plan-node-image-1')).toMatchObject({
-        type: 'image',
+        type: 'imageConfigV2',
         data: { status: 'pending', assetId: null }
       })
 
@@ -153,7 +161,7 @@ describe('M4 agent orchestration smoke path', () => {
       }
 
       expect(store.getState().nodes.find((node) => node.id === 'plan-node-image-1')).toMatchObject({
-        type: 'image',
+        type: 'imageConfigV2',
         data: { status: 'done', assetId: 'asset-image-1' }
       })
       expect(controller.currentRunner?.active).toBe(false)

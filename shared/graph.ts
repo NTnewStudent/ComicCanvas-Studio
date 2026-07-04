@@ -48,6 +48,10 @@ export interface CanvasGraphNode {
   type: NodeType
   /** Canvas layout position. */
   position: CanvasGraphPosition
+  /** Optional canvas layout width captured from React Flow node resizing. */
+  width?: number
+  /** Optional canvas layout height captured from React Flow node resizing. */
+  height?: number
   /** Shared node data payload. */
   data: CanvasNodeData
 }

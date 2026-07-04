@@ -6,23 +6,24 @@
 import { Handle, NodeResizer, Position } from '@xyflow/react'
 import React from 'react'
 
+import { defaultCanvasNodeSize } from '../../../../../../shared/node-layout'
 import type { CanvasNodeData, NodeStatus, NodeType } from '../../../../../../shared/nodes'
 import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
 import { cn } from '../../lib/cn'
 
 const nodeTypeLabel: Record<NodeType, string> = {
-  text: 'Text',
-  image: 'Image',
-  video: 'Video',
-  character: 'Character',
-  scene: 'Scene',
-  audio: 'Audio',
-  imageConfigV2: 'Image Config V2',
-  videoConfigV2: 'Video Config V2',
-  videoCompose: 'Video Compose',
-  superResolution: 'Super Resolution',
-  muxAudioVideo: 'Mux Audio Video',
-  mjImage: 'MJ Image',
+  text: '文本',
+  image: '图片',
+  video: '视频',
+  character: '角色',
+  scene: '场景',
+  audio: '音频',
+  imageConfigV2: '图片生成 V2',
+  videoConfigV2: '视频生成 V2',
+  videoCompose: '视频合成',
+  superResolution: '视频超分',
+  muxAudioVideo: '音视频合成',
+  mjImage: 'MJ 图片',
 }
 
 type EditableField = 'description' | 'prompt' | 'modelId' | 'assetId' | 'category'
@@ -47,16 +48,16 @@ function readStatus(data: CanvasNodeData): NodeStatus | null {
 
 function readLabel(data: CanvasNodeData): string {
   const value = (data as unknown as Record<string, unknown>).label
-  return typeof value === 'string' && value.trim().length > 0 ? value : 'Untitled'
+  return typeof value === 'string' && value.trim().length > 0 ? value : '未命名'
 }
 
 function primaryText(type: NodeType, data: CanvasNodeData): string {
   if (type === 'character' || type === 'scene') return readString(data, 'description')
   if (type === 'mjImage') return readString(data, 'prompt')
-  if (type === 'audio') return readString(data, 'assetId') || 'No audio asset selected'
-  if (type === 'videoCompose') return 'Orders and combines connected video inputs'
-  if (type === 'superResolution') return 'Enhances connected video resolution'
-  if (type === 'muxAudioVideo') return 'Combines connected video and audio inputs'
+  if (type === 'audio') return readString(data, 'assetId') || '未选择音频资产'
+  if (type === 'videoCompose') return '按顺序合成已连接的视频输入'
+  if (type === 'superResolution') return '提升已连接视频的分辨率'
+  if (type === 'muxAudioVideo') return '合成已连接的视频和音频输入'
   return ''
 }
 
@@ -71,11 +72,11 @@ function editableFields(type: NodeType): EditableField[] {
 }
 
 function fieldLabel(field: EditableField): string {
-  if (field === 'description') return 'Description'
+  if (field === 'description') return '描述'
   if (field === 'prompt') return 'Prompt'
-  if (field === 'modelId') return 'Model'
-  if (field === 'assetId') return 'Asset ID'
-  return 'Category'
+  if (field === 'modelId') return '模型'
+  if (field === 'assetId') return '资产 ID'
+  return '分类'
 }
 
 function MigratedNodeComponent({ id, type, data, selected = false, onChange }: MigratedNodeProps): JSX.Element {
@@ -84,6 +85,7 @@ function MigratedNodeComponent({ id, type, data, selected = false, onChange }: M
   const status = readStatus(data)
   const summary = primaryText(type, data)
   const fields = editableFields(type)
+  const size = defaultCanvasNodeSize(type)
 
   function updateField(field: EditableField, value: string): void {
     onChange?.(id, { [field]: field === 'assetId' && value.trim().length === 0 ? null : value } as Partial<CanvasNodeData>)
@@ -92,18 +94,19 @@ function MigratedNodeComponent({ id, type, data, selected = false, onChange }: M
   return (
     <article
       role="group"
-      aria-label={`${typeLabel} node ${label}`}
+      aria-label={`${typeLabel}节点 ${label}`}
       className={cn(
-        'relative flex min-h-[188px] w-[300px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'relative flex h-full w-full flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
         selected && 'border-border-primary shadow-active'
       )}
+      style={{ minWidth: size.width, minHeight: size.height }}
       data-node-id={id}
       data-node-type={type}
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={NODE_MIN_WIDTH.text}
-        minHeight={NODE_MIN_HEIGHT.text}
+        minWidth={NODE_MIN_WIDTH[type]}
+        minHeight={NODE_MIN_HEIGHT[type]}
         lineClassName={NODE_RESIZER_CLASS_NAMES.line}
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
@@ -121,7 +124,7 @@ function MigratedNodeComponent({ id, type, data, selected = false, onChange }: M
       </header>
 
       <div className="min-h-10 rounded-sm border border-border-input bg-bg-input px-3 py-2 text-[13px] leading-relaxed text-text-secondary">
-        {summary || 'Connect this node to contribute context or tool inputs.'}
+        {summary || '连接此节点以提供上下文或工具输入。'}
       </div>
 
       <div className="flex flex-col gap-2">

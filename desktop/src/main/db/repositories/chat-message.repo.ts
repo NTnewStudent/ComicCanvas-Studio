@@ -11,8 +11,8 @@ export interface ChatMessageCreateRecord {
   agentRunId?: string
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
-  planJson?: string
-  applyStatus?: string
+  planJson?: string | null
+  applyStatus?: string | null
   createdAt: number
 }
 
@@ -46,8 +46,8 @@ function toRecord(row: ChatMessageRow): ChatMessageRecord {
 
   if (row.workflow_id) record.workflowId = row.workflow_id
   if (row.agent_run_id) record.agentRunId = row.agent_run_id
-  if (row.plan_json) record.planJson = row.plan_json
-  if (row.apply_status) record.applyStatus = row.apply_status
+  record.planJson = row.plan_json
+  record.applyStatus = row.apply_status
 
   return record
 }

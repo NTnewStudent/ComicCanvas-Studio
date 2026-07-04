@@ -8,7 +8,7 @@
  * 1. 顶部悬浮操作栏（hover/selected 时显示上传 + 资产库按钮）
  * 2. 标签行（图标 + 标题 + RunStatusBadge）
  * 3. 预览卡（四态切换：空态 / 生成中 / 完成 / 错误）
- * 4. 选中 Toolbar（960px 宽：MentionTextarea + 素材缩略图 + 状态芯片 + 设置芯片 + 生成按钮）
+ * 4. 选中 Toolbar（视口约束宽度：MentionTextarea + 素材缩略图 + 状态芯片 + 设置芯片 + 生成按钮）
  * 5. Handle（左右各一）
  * 6. 全屏视频预览 portal
  *
@@ -26,7 +26,7 @@ import {
   type CSSProperties,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
 import { useStore } from 'zustand'
 import {
   Clapperboard,
@@ -56,20 +56,19 @@ import {
   V2_VIDEO_WIDTH_PORTRAIT,
   V2_VIDEO_WIDTH_LANDSCAPE,
   V2_VIDEO_ASPECT_RATIO,
+  NODE_MIN_HEIGHT,
+  NODE_MIN_WIDTH,
+  NODE_RESIZER_CLASS_NAMES,
+  NODE_UI_CLASS_NAMES,
   isPortraitRatio,
 } from '../lib/node-sizing'
 import RunStatusBadge from '../components/RunStatusBadge'
 import Chip from '../components/Chip'
 import PopoverMenu from '../components/PopoverMenu'
 import MentionTextarea from '../components/MentionTextarea'
-import { createCanvasEdge } from '../lib/canvas-edge-creation'
+import type { CanvasMentionTarget } from '../lib/canvas-mention-links'
+import { createMentionReferenceEdge, mentionTargetsForNodes, pruneMentionReferenceEdges } from '../lib/canvas-mention-links'
 import { canvasStore } from '../store/canvas.store'
-
-interface MentionTarget {
-  id: string
-  name: string
-  type: string
-}
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────
 
@@ -200,7 +199,7 @@ interface ToolbarProps {
   generating: boolean
   stylePresets: StylePresetView[]
   styleLoadState: 'idle' | 'loading' | 'ready' | 'error'
-  mentionTargets: MentionTarget[]
+  mentionTargets: CanvasMentionTarget[]
   onUpdateData: (patch: Partial<VideoNodeData>) => void
   onMentionSelect?: (mentionedNodeId: string, sourceNodeId: string) => void
   onMentionsChange?: (currentMentionIds: string[], sourceNodeId: string) => void
@@ -291,7 +290,7 @@ const VideoToolbar: FC<ToolbarProps> = ({
   return (
     <div
       data-testid="video-config-v2-toolbar"
-      className="nodrag nowheel relative w-[960px] overflow-visible rounded-[24px] border border-border-primary bg-bg-panel p-4 shadow-card"
+      className={NODE_UI_CLASS_NAMES.toolbar}
     >
       {/* ── 提示词输入 ── */}
       <MentionTextarea
@@ -530,20 +529,11 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
   const status = d.status
   const previewState = derivePreviewState(url, status)
   const generating = previewState === 'generating'
-  const mentionTargets = useMemo<MentionTarget[]>(
-    () => canvasNodes
-      .filter((node) => node.id !== id)
-      .map((node) => ({
-        id: node.id,
-        name: node.data.label || node.id,
-        type: node.type,
-      })),
-    [canvasNodes, id],
-  )
+  const mentionTargets = useMemo(() => mentionTargetsForNodes(canvasNodes, id), [canvasNodes, id])
 
-  // 预览卡尺寸：无结果时固定 9:16，有结果时按实际比例
+  // 预览卡比例：无结果时固定 9:16，有结果时按实际比例
   const displayRatio: VideoRatio = hasResult ? ratio : '9:16'
-  const { width: cardWidth, height: cardHeight } = getCardDimensions(displayRatio)
+  const { width: cardWidth } = getCardDimensions(displayRatio)
 
   const errorMessage = status === 'error' ? '视频生成失败' : undefined
 
@@ -553,37 +543,6 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
       canvasStore.getState().updateNodeData(id, patch)
     },
     [id],
-  )
-
-  // ── @mention 自动连线管理 ──
-  const handleMentionSelect = useCallback(
-    (mentionedNodeId: string, srcNodeId: string) => {
-      createCanvasEdge({
-        store: canvasStore,
-        request: {
-          source: mentionedNodeId,
-          target: srcNodeId,
-          reason: 'mention',
-          markCreatedByMention: true,
-        },
-      })
-    },
-    [],
-  )
-
-  const handleMentionsChange = useCallback(
-    (currentMentionIds: string[], srcNodeId: string) => {
-      const state = canvasStore.getState()
-      const filtered = state.edges.filter((edge) => {
-        if (edge.target !== srcNodeId) return true
-        if (!edge.data.createdByMention) return true
-        return currentMentionIds.includes(edge.source)
-      })
-      if (filtered.length !== state.edges.length) {
-        state.setEdges(filtered)
-      }
-    },
-    [],
   )
 
   // ── 视频播放控制 ──
@@ -699,18 +658,24 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
 
   // ── 预览卡样式 ──
   const previewCardStyle: CSSProperties = {
-    width: cardWidth,
-    height: cardHeight,
     position: 'relative',
     cursor: 'pointer',
   }
 
   return (
     <div
-      className="relative flex flex-col select-none items-center"
+      className="relative flex h-full min-h-[560px] w-full min-w-[380px] flex-col items-center select-none"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      <NodeResizer
+        isVisible={selected ?? false}
+        minWidth={NODE_MIN_WIDTH.videoConfigV2}
+        minHeight={NODE_MIN_HEIGHT.videoConfigV2}
+        lineClassName={NODE_RESIZER_CLASS_NAMES.line}
+        handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
+      />
+
       {/* ── 顶部悬浮操作栏 ── */}
       {showControls && (
         <div
@@ -753,9 +718,9 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
 
       {/* ── 标签行 ── */}
       <article
-        className="relative flex flex-col items-center p-0"
+        className="relative flex h-full w-full flex-col items-center p-0"
       >
-        <header className="flex w-full items-center gap-[5px] self-start px-3 pt-2.5 pb-1.5 text-[12px] text-text-muted">
+        <header className="flex min-h-8 w-full shrink-0 items-center gap-[5px] self-start px-3 pb-1.5 pt-2.5 text-[12px] text-text-muted">
           <Film className="h-3.5 w-3.5 text-text-muted" />
           <span className="font-semibold text-text-muted">
             {d.label || '视频配置'}
@@ -764,11 +729,11 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
         </header>
 
         {/* ── 预览卡 ── */}
-        <div className="relative px-3 pb-3" style={{ width: cardWidth + 24 }}>
+        <div className="relative flex min-h-0 w-full flex-1 px-3 pb-3" style={{ minWidth: cardWidth + 24 }}>
           <div
             data-testid="video-v2-preview"
             className={cn(
-              'group relative overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+              'group relative h-full min-h-0 w-full overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
               selected && 'border-border-primary shadow-active',
             )}
             style={previewCardStyle}
@@ -914,8 +879,8 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
             styleLoadState={styleLoadState}
             mentionTargets={mentionTargets}
             onUpdateData={updateData}
-            onMentionSelect={handleMentionSelect}
-            onMentionsChange={handleMentionsChange}
+            onMentionSelect={createMentionReferenceEdge}
+            onMentionsChange={pruneMentionReferenceEdges}
             {...(onRun ? { onRun } : {})}
           />
         </div>

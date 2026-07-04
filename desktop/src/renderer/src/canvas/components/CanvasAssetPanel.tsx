@@ -3,6 +3,7 @@ import { Folder, Image, Loader2, Music, Search, Video, X } from 'lucide-react'
 
 import type { AssetCategory, AssetFolder, AssetListRequest, AssetRecord } from '../../../../../../shared/assets'
 import type { AssetLibraryApi } from '../../assets/AssetPanel'
+import { assetDisplayUrl } from '../../assets/asset-url'
 import { cn } from '../../lib/cn'
 
 export type CanvasAssetInsertMode = 'image' | 'video' | 'audio' | 'character' | 'scene' | 'reference'
@@ -180,7 +181,7 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
     const mode = asset.mediaType === 'image' ? insertMode : toInsertType(asset.mediaType)
     onInsertAsset({
       id: asset.id,
-      url: asset.safeUrl,
+      url: assetDisplayUrl(asset),
       type: toInsertType(asset.mediaType),
       name: assetDisplayName(asset),
       mode
@@ -189,7 +190,7 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
 
   return (
     <div
-      className="nopan nodrag nowheel pointer-events-auto absolute right-0 top-0 z-30 flex h-full w-[320px] flex-col border-l border-border-primary bg-bg-panel"
+      className="nopan nodrag nowheel pointer-events-auto absolute right-0 top-0 z-30 flex h-full w-[320px] flex-col border-l border-border-primary bg-bg-panel text-text-base shadow-pop"
       aria-label="画布资产库面板"
     >
       {/* Header */}
@@ -215,7 +216,7 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="搜索资产..."
-            className="min-h-8 w-full rounded-md border border-border-input bg-bg-input py-1.5 pl-8 pr-3 text-[13px] text-text-base outline-none transition-shadow placeholder:text-text-muted focus:shadow-active"
+            className="min-h-8 w-full rounded-md border border-border-input bg-bg-input py-1.5 pl-8 pr-3 text-[13px] text-text-base outline-none transition-colors placeholder:text-text-muted focus:border-border-primary focus:shadow-card"
           />
         </div>
       </div>
@@ -319,7 +320,7 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
         </button>
 
         {showFolders && (
-          <div className="mt-1 max-h-[140px] overflow-y-auto rounded-md border border-border-secondary bg-bg-card p-1">
+          <div className="mt-1 max-h-[140px] overflow-y-auto rounded-lg border border-border-secondary bg-bg-card p-1 shadow-card">
             {folderState === 'loading' && (
               <p className="flex items-center gap-1.5 px-2 py-1.5 text-[12px] text-text-muted">
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -403,12 +404,12 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
                   type="button"
                   onClick={() => handleInsert(asset)}
                   aria-label={`插入资产 ${displayName}`}
-                  className="group flex flex-col gap-1.5 rounded-lg border border-border-secondary bg-bg-card p-2 text-left transition-colors hover:border-border-primary hover:bg-bg-input"
+                  className="group flex flex-col gap-1.5 rounded-lg border border-border-secondary bg-bg-card p-2 text-left shadow-card transition-all duration-200 ease-luxury hover:border-border-primary hover:bg-bg-hover hover:shadow-float"
                 >
-                  <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md border border-border-input bg-bg-surface">
+                  <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md border border-border-input bg-bg-input">
                     {asset.mediaType === 'image' ? (
                       <img
-                        src={asset.safeUrl}
+                        src={assetDisplayUrl(asset)}
                         alt={label}
                         className="h-full w-full object-contain"
                         loading="lazy"

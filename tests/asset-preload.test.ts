@@ -8,6 +8,8 @@ describe('M5 asset preload bridge', () => {
 
     expect(source).toContain('listAssets')
     expect(source).toContain("invokeMain('asset.list'")
+    expect(source).toContain('pickAssetImportFiles')
+    expect(source).toContain("invokeMain('asset.pickImportFiles'")
     expect(source).toContain('moveAsset')
     expect(source).toContain("invokeMain('asset.move'")
     expect(source).toContain('renameAsset')

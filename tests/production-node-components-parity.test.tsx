@@ -93,8 +93,8 @@ describe('Task 27 production node components parity', () => {
       </>
     )
 
-    expect(screen.getByRole('group', { name: 'Character node Mika' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Scene node Rain Alley' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '角色节点 Mika' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '场景节点 Rain Alley' })).toBeInTheDocument()
     expect(screen.getByText('brave pilot with blue coat')).toBeInTheDocument()
     expect(screen.getByText('neon street after rain')).toBeInTheDocument()
 
@@ -140,16 +140,16 @@ describe('Task 27 production node components parity', () => {
       </>
     )
 
-    expect(screen.getByRole('group', { name: 'Audio node Theme' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Video Compose node Compose' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Super Resolution node Upscale' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Mux Audio Video node Mux' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '音频节点 Theme' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '视频合成节点 Compose' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '视频超分节点 Upscale' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '音视频合成节点 Mux' })).toBeInTheDocument()
     expect(screen.getByText('42s')).toBeInTheDocument()
     expect(screen.getByText('video-1')).toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('combobox', { name: '转场' }), { target: { value: 'crossfade' } })
     fireEvent.change(screen.getByRole('combobox', { name: '目标分辨率' }), { target: { value: '4k' } })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Mux 模型' }), { target: { value: 'mux-fast' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '音视频合成模型' }), { target: { value: 'mux-fast' } })
 
     expect(onComposeChange).toHaveBeenLastCalledWith('compose-1', { transitionName: 'crossfade' })
     expect(onSuperChange).toHaveBeenLastCalledWith('super-1', { resolution: '4k' })

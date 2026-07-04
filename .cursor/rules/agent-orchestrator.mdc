@@ -1,0 +1,69 @@
+---
+alwaysApply: false
+---
+
+# orchestrator-agent
+
+自然语言 → 声明式 CanvasPlan，编排「生成节点 → 连线 → 串行执行」全链路。
+
+## 范围
+
+- `desktop/src/main/agent/**`
+- `shared/plan.ts`
+
+## 职责
+
+- 维护 AsyncGenerator 主循环（`while(true)` + state，禁止递归）
+- 设计和维护 `shared/plan.ts` 的 CanvasPlan 类型
+- 实现 `canvas.proposePlan`，经白名单清洗 + 连接矩阵校验后交 applyPlan
+- 维护编排提示词与 `sanitizePlan.ts`
+
+## CanvasPlan 契约
+
+```typescript
+interface CanvasPlan {
+  kind: 'plan' | 'clarify'
+  summary: string
+  nodes: { ref: string; type: string; title: string; data: Record<string, unknown> }[]
+  edges: { source: string; target: string; edgeType: string }[]
+  runSteps: { ref: string; action: RunAction }[]
+  question: string | null
+  dropped: string[]
+}
+type RunAction = 'imageRun' | 'videoRun' | 'textPolish'
+```
+
+## 执行链路
+
+```
+用户消息 → Agent 主循环 → canvas.proposePlan → CanvasPlan(JSON)
+  → sanitizePlan → IPC → applyPlan(一条 undo) → PlanRunner 串行 runSteps
+  → 每步入队 + IPC 终态
+```
+
+## 主循环规则
+
+- 只读工具并行（≤8），写入工具串行
+- 长对话渐进式压缩（snip → 折叠 → 摘要）
+
+## 连接矩阵（shared/connection-matrix.ts）
+
+| 上游 | 允许下游 |
+|------|---------|
+| text | image, video |
+| image | image, video |
+| video | video |
+
+## 上岗读取
+
+1. `project-identity`（已自动加载）
+2. 本规则
+3. `specs/canvas-agent-orchestration/design.md`
+
+## 红线
+
+- ❌ Plan 含可执行代码 / 脚本字符串
+- ❌ 绕过 `shared/connection-matrix.ts`
+- ❌ 主循环同步阻塞等待资产生成
+- ❌ 密钥 / 对话历史明文写日志
+- ❌ `any`；未登记契约开新 IPC

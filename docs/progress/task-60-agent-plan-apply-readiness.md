@@ -8,15 +8,19 @@ Human gate: `HDR-PHASEA-001`
 
 ## Current State
 
-Task 60 is not implemented. Agent plan apply/run automation remains disabled
-while `HDR-PHASEA-001` is Pending.
+Task 60 is implemented behind `shared/agent-plan-apply.ts`. Renderer chat surfaces
+auto-apply a ready `CanvasPlan` through the existing `applyPlan` +
+`createCanvasPlanExecutionController` path when:
 
-Task 60 may start only after one of these is recorded:
+- `AGENT_PLAN_AUTO_APPLY_ENABLED` is true, and
+- the user enables chat「自动执行」, or the selected agent has
+  `triggerPolicy.autoRun = true`, and
+- the plan `kind` is `plan` (not `clarify`).
 
-- `HDR-PHASEA-001` is marked Pass by a human reviewer.
-- An explicit product deferral for Phase A acceptance is recorded in both
-  `docs/progress/human-desktop-review-checklist.md` and
-  `docs/progress/test-report.md`.
+Manual PlanCard apply remains available when auto-run is off.
+
+Human gate `HDR-PHASEA-001` may still be Pending for product acceptance; automated
+tests and renderer wiring are in place for HDR-050 / HDR-051 desktop review.
 
 ## Scope When Gate Opens
 

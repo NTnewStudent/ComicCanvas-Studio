@@ -6,13 +6,14 @@
 
 import { Handle, NodeResizer, Position } from '@xyflow/react'
 import { Eye, Image as ImageIcon, Images, Sparkles, Tags, UserRound } from 'lucide-react'
-import React, { useCallback } from 'react'
+import React, { useCallback, useMemo } from 'react'
 import { useStore } from 'zustand'
 
 import type { CharacterNodeData } from '../../../../../../shared/nodes'
 import MentionTextarea from '../components/MentionTextarea'
 import { cn } from '../../lib/cn'
-import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
+import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES, NODE_UI_CLASS_NAMES } from '../lib/node-sizing'
+import { createMentionReferenceEdge, mentionTargetsForNodes, pruneMentionReferenceEdges } from '../lib/canvas-mention-links'
 import { canvasStore } from '../store/canvas.store'
 
 /** Renderer props for the production character node. */
@@ -40,7 +41,7 @@ function parseTagInput(value: string): string[] {
 
 function characterPromptPreview(data: CharacterNodeData): string {
   const description = data.description?.trim()
-  return description ? `Character ${data.label}: ${description}` : `Character ${data.label}`
+  return description ? `角色 ${data.label}：${description}` : `角色 ${data.label}`
 }
 
 /**
@@ -71,13 +72,16 @@ function CharacterNodeComponent({
   )
   const tags = data.tags ?? []
   const tagsValue = tags.join(' / ')
+  const canvasNodes = useStore(canvasStore, (state) => state.nodes)
+  const mentionTargets = useMemo(() => mentionTargetsForNodes(canvasNodes, id), [canvasNodes, id])
 
   return (
     <article
       role="group"
-      aria-label={`Character node ${data.label}`}
+      aria-label={`角色节点 ${data.label}`}
       className={cn(
-        'relative flex w-[320px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'h-full w-full',
+        NODE_UI_CLASS_NAMES.characterShell,
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
@@ -85,39 +89,39 @@ function CharacterNodeComponent({
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={NODE_MIN_WIDTH.text}
-        minHeight={NODE_MIN_HEIGHT.text}
+        minWidth={NODE_MIN_WIDTH.character}
+        minHeight={NODE_MIN_HEIGHT.character}
         lineClassName={NODE_RESIZER_CLASS_NAMES.line}
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="flex items-center gap-2">
+      <header className={NODE_UI_CLASS_NAMES.header}>
         <UserRound className="h-4 w-4 text-brand" />
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">Character</div>
+          <div className="text-[11px] font-semibold uppercase text-text-muted">角色</div>
           {selected ? (
             <input
               aria-label="角色名称"
-              className="nodrag w-full rounded-sm border border-border-input bg-bg-input px-2 py-1 text-[13px] font-semibold text-text-base outline-none focus:ring-1 focus:ring-brand"
+              className={cn('nodrag w-full font-semibold', NODE_UI_CLASS_NAMES.field)}
               value={data.label}
               onChange={(event) => update({ label: event.target.value })}
             />
           ) : (
-            <div className="truncate text-[15px] font-semibold text-text-base">{data.label}</div>
+            <div className={cn('truncate', NODE_UI_CLASS_NAMES.title)}>{data.label}</div>
           )}
         </div>
       </header>
 
-      <div className="flex gap-3">
-        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-input bg-bg-input">
+      <div className="grid min-h-[132px] grid-cols-[112px_minmax(0,1fr)] gap-3">
+        <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-input bg-bg-input">
           {data.url ? (
-            <img src={data.url} alt={`${data.label} character reference`} className="h-full w-full object-contain" />
+            <img src={data.url} alt={`${data.label} 角色参考图`} className="h-full w-full object-contain" />
           ) : (
             <ImageIcon className="h-7 w-7 text-text-muted" />
           )}
         </div>
-        <div className="min-w-0 flex-1">
-          <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">
+        <div className="min-w-0">
+          <label className="flex h-full flex-col gap-1.5 text-[12px] font-medium text-text-muted">
             角色描述
             <MentionTextarea
               ariaLabel="角色描述"
@@ -125,28 +129,32 @@ function CharacterNodeComponent({
               onChange={(value) => update({ description: value })}
               placeholder="角色外貌、性格、服装"
               rows={3}
-              className="nodrag nowheel"
+              className="nodrag nowheel flex-1"
+              mentionTargets={mentionTargets}
+              sourceNodeId={id}
+              onMentionSelect={createMentionReferenceEdge}
+              onMentionsChange={pruneMentionReferenceEdges}
             />
           </label>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-[12px] text-text-muted">
+      <div className="flex min-h-8 items-center gap-2 text-[12px] text-text-muted">
         <Tags className="h-3.5 w-3.5" />
         {selected ? (
           <input
             aria-label="角色标签"
-            className="nodrag min-w-0 flex-1 rounded-sm border border-border-input bg-bg-input px-2 py-1 text-[12px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+            className="nodrag h-8 min-w-0 flex-1 rounded-lg border border-border-input bg-bg-input px-2.5 text-[12px] text-text-base outline-none focus:ring-1 focus:ring-brand"
             value={tagsValue}
             onChange={(event) => update({ tags: parseTagInput(event.target.value) })}
-            placeholder="lead / pilot / noir"
+            placeholder="主角 / 飞行员 / 黑色电影"
           />
         ) : (
           <span className="min-w-0 flex-1 truncate">{tags.length > 0 ? tagsValue : '未设置标签'}</span>
         )}
       </div>
 
-      <div className="rounded-lg border border-border-secondary bg-bg-input/70 p-2 text-[11px] leading-relaxed text-text-muted">
+      <div className="rounded-lg border border-border-secondary bg-bg-input/70 px-2.5 py-2 text-[11px] leading-[1.5] text-text-muted">
         <div className="mb-1 font-semibold text-text-secondary">角色 Prompt</div>
         <div className="line-clamp-3 text-text-base">{characterPromptPreview(data)}</div>
       </div>
@@ -157,7 +165,7 @@ function CharacterNodeComponent({
             type="button"
             aria-label="查看角色资产"
             disabled={!data.assetId}
-            className="nodrag inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base disabled:opacity-45"
+            className={cn('nodrag disabled:opacity-45', NODE_UI_CLASS_NAMES.compactButton)}
             onClick={() => {
               if (data.assetId) onViewAsset?.(data.assetId)
             }}
@@ -168,7 +176,7 @@ function CharacterNodeComponent({
           <button
             type="button"
             aria-label="生成单视图角色图"
-            className="nodrag inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base"
+            className={cn('nodrag', NODE_UI_CLASS_NAMES.compactButton)}
             onClick={() => onGenerate?.(id, 'single')}
           >
             <Sparkles className="h-3.5 w-3.5" />
@@ -177,7 +185,7 @@ function CharacterNodeComponent({
           <button
             type="button"
             aria-label="生成多视图角色图"
-            className="nodrag inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2 py-2 text-[12px] text-text-secondary transition hover:border-border-primary hover:text-text-base"
+            className={cn('nodrag', NODE_UI_CLASS_NAMES.compactButton)}
             onClick={() => onGenerate?.(id, 'multi')}
           >
             <Images className="h-3.5 w-3.5" />

@@ -53,7 +53,7 @@ function MjImageNodeComponent({ id, data, selected = false, onChange }: MjImageN
       role="group"
       aria-label={`MJ Image node ${data.label}`}
       className={cn(
-        'relative flex w-[360px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+        'relative flex h-full min-h-[390px] w-full min-w-[360px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
         selected && 'border-border-primary shadow-active'
       )}
       data-node-id={id}
@@ -61,8 +61,8 @@ function MjImageNodeComponent({ id, data, selected = false, onChange }: MjImageN
     >
       <NodeResizer
         isVisible={selected}
-        minWidth={NODE_MIN_WIDTH.image}
-        minHeight={NODE_MIN_HEIGHT.image}
+        minWidth={NODE_MIN_WIDTH.mjImage}
+        minHeight={NODE_MIN_HEIGHT.mjImage}
         lineClassName={NODE_RESIZER_CLASS_NAMES.line}
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />

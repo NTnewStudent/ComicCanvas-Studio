@@ -10,11 +10,6 @@ export type RunAction =
   | 'imageRun'
   | 'videoRun'
   | 'textPolish'
-  | 'audioRun'
-  | 'mjImageRun'
-  | 'videoComposeRun'
-  | 'superResolutionRun'
-  | 'muxAudioVideoRun'
 
 export interface PlanNode {
   /** Plan 内部引用 ID */

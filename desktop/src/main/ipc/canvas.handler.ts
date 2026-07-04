@@ -34,6 +34,8 @@ import { getCurrentStorageConfig } from './storage.handler'
 import { storageFactory } from '../storage/storage-factory'
 import type { WorkflowModelCatalog } from '../../../../shared/workflow-node-definitions'
 
+const DEFAULT_CHAT_AGENT_ID = 'general-purpose'
+
 function createPendingTicket(jobId: string): JobTicket {
   return {
     jobId,
@@ -196,7 +198,8 @@ function validationContext(deps: CanvasHandlerDependencies, workflowId: string):
 async function resolveNodeReferences(
   nodeId: string,
   deps: CanvasHandlerDependencies,
-  workflowId = 'default'
+  workflowId = 'default',
+  skipReferenceKeys: ReadonlySet<string> = new Set()
 ): Promise<Array<{ assetId: string; role: string; url: string; mediaType: string }>> {
   const graphStore = deps.graphStore
   const assets = deps.assets
@@ -221,11 +224,13 @@ async function resolveNodeReferences(
       seen.add(refAsset.id)
 
       const assetRecord = assets?.getById(refAsset.id)
+      const role = 'reference'
+      if (skipReferenceKeys.has(`${refAsset.id}:${role}`)) continue
       const resolved = assetRecord ? await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord) : null
       const url = resolved?.url ?? refAsset.url ?? ''
       result.push({
         assetId: refAsset.id,
-        role: 'reference',
+        role,
         url,
         mediaType: refAsset.type
       })
@@ -235,12 +240,13 @@ async function resolveNodeReferences(
   // 2. Resolve firstFrame/lastFrame from VideoNodeData asset IDs
   if (typeof nodeData.firstFrameAssetId === 'string' && nodeData.firstFrameAssetId.length > 0) {
     const assetRecord = assets?.getById(nodeData.firstFrameAssetId)
-    if (assetRecord && !seen.has(assetRecord.id)) {
+    const role = 'first_frame'
+    if (assetRecord && !seen.has(assetRecord.id) && !skipReferenceKeys.has(`${assetRecord.id}:${role}`)) {
       seen.add(assetRecord.id)
       const resolved = await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord)
       result.push({
         assetId: assetRecord.id,
-        role: 'first_frame',
+        role,
         url: resolved.url,
         mediaType: assetRecord.mediaType
       })
@@ -248,12 +254,13 @@ async function resolveNodeReferences(
   }
   if (typeof nodeData.lastFrameAssetId === 'string' && nodeData.lastFrameAssetId.length > 0) {
     const assetRecord = assets?.getById(nodeData.lastFrameAssetId)
-    if (assetRecord && !seen.has(assetRecord.id)) {
+    const role = 'last_frame'
+    if (assetRecord && !seen.has(assetRecord.id) && !skipReferenceKeys.has(`${assetRecord.id}:${role}`)) {
       seen.add(assetRecord.id)
       const resolved = await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord)
       result.push({
         assetId: assetRecord.id,
-        role: 'last_frame',
+        role,
         url: resolved.url,
         mediaType: assetRecord.mediaType
       })
@@ -273,6 +280,7 @@ async function resolveNodeReferences(
 
     const assetRecord = assets?.getById(sourceData.assetId)
     if (assetRecord) {
+      if (skipReferenceKeys.has(`${assetRecord.id}:${edge.data.imageRole}`)) continue
       const resolved = await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord)
       result.push({
         assetId: assetRecord.id,
@@ -301,6 +309,10 @@ function runtimeAssetResolver(deps: CanvasHandlerDependencies): WorkflowAssetRes
     getStorageConfig: getCurrentStorageConfig,
     createStorageProvider: (config) => storageFactory.create(config)
   })
+}
+
+function generationJobTypeForNode(type: NodeType): JobType {
+  return type === 'video' || type === 'videoConfigV2' ? 'canvas.generateVideo' : 'canvas.generateImage'
 }
 
 interface CanvasRunDescriptor {
@@ -333,6 +345,22 @@ async function referencePayloadFromSnapshot(
     refs.push({ assetId: ref.assetId, role: ref.role, ...(url ? { url } : {}), mediaType: ref.mediaType })
   }
   return refs
+}
+
+function dedupeReferences<T extends { assetId: string; role: string }>(references: T[]): T[] {
+  const result: T[] = []
+  const seen = new Set<string>()
+  for (const reference of references) {
+    const key = `${reference.assetId}:${reference.role}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(reference)
+  }
+  return result
+}
+
+function referenceKeys(references: readonly { assetId: string; role: string }[]): Set<string> {
+  return new Set(references.map((reference) => `${reference.assetId}:${reference.role}`))
 }
 
 async function inputRefFromNode(node: CanvasGraphNode, deps: CanvasHandlerDependencies): Promise<RuntimeInputRef | null> {
@@ -505,13 +533,14 @@ async function buildRunDescriptor(
     styles: deps.styles?.list({ includeDisabled: true }) ?? [],
     projectDefaultStylePresetId: deps.styles?.getProjectDefault(workflowId) ?? null,
   })
-  const references = [
-    ...await referencePayloadFromSnapshot(runtimeSnapshot.references, deps),
-    ...await resolveNodeReferences(nodeId, deps, workflowId),
-  ]
+  const snapshotReferences = await referencePayloadFromSnapshot(runtimeSnapshot.references, deps)
+  const references = dedupeReferences([
+    ...snapshotReferences,
+    ...await resolveNodeReferences(nodeId, deps, workflowId, referenceKeys(snapshotReferences)),
+  ])
 
   return {
-    type: isVideoMedia ? 'canvas.generateVideo' : 'canvas.generateImage',
+    type: generationJobTypeForNode(node.type),
     payload: {
       nodeId,
       nodeType: node.type,
@@ -569,12 +598,12 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     const agentId = isObject(request) && typeof request.agentId === 'string' ? request.agentId : undefined
 
     if (!dependencies.orchestrator) {
-      return { jobId: 'job-agent-unavailable', messageId: 'message-unavailable', status: 'pending' as const }
+      return { runId: 'run-agent-unavailable', jobId: 'job-agent-unavailable', messageId: 'message-unavailable', status: 'pending' as const }
     }
 
     return dependencies.orchestrator.chatSend({
       message,
-      ...(agentId ? { agentId } : {}),
+      agentId: agentId ?? DEFAULT_CHAT_AGENT_ID,
       requestedBy: dependencies.currentUserId ?? 'user-local'
     })
   })

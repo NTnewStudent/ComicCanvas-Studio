@@ -37,7 +37,7 @@ function ImageRoleEdge(props: EdgeProps): JSX.Element {
       <EdgeLabelControls labelX={labelX} labelY={labelY}>
         <span
           className="rounded-full border border-border-secondary bg-bg-card px-2.5 py-1 text-[11px] font-semibold text-text-base shadow-card"
-          title="Image role"
+          title="图片角色"
         >
           {roleLabels[role]}
         </span>

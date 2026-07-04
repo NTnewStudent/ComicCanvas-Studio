@@ -1,0 +1,46 @@
+---
+alwaysApply: false
+---
+
+# skill: comiccanvas-skill-creator
+
+为 ComicCanvas 创建新的仓库级 Cursor rule 或跨 IDE skill 时使用。
+
+## 输出位置
+
+1. **Cursor Rule**：`.cursor/rules/skill-<name>.mdc`（`alwaysApply: false`，**无** `description` → 纯手动 `@skill-<name>`）
+2. **Cursor Subagent**（可选）：`.cursor/agents/<name>.md`（YAML frontmatter + prompt 正文）
+3. **Claude Code**：`.claude/skills/<skill-name>/SKILL.md`
+4. **Codex/Agents**（可选）：`.agents/skills/<skill-name>/SKILL.md`
+
+## Cursor rule 结构
+
+```yaml
+---
+alwaysApply: false
+---
+```
+
+正文：标题、何时使用、输入、步骤、必须产出、ComicCanvas 约束。
+
+## Claude/Codex SKILL.md frontmatter
+
+```yaml
+---
+name: <kebab-case-name>
+description: <触发范围；何时应/不应使用>
+---
+```
+
+## ComicCanvas 约束（每个新 skill 必须涵盖）
+
+- 通过 job 队列异步生成
+- `shared/connection-matrix.ts` 连接唯一真源
+- 纯声明式 CanvasPlan 输出
+- 新 IPC/服务接口前先在 `docs/api-contracts/` 登记
+
+## 维护规则
+
+- 每个 skill 聚焦一项任务
+- 优先指令而非脚本
+- 若取代已有 skill，在各 IDE 配置层同步更新映射（见 `.cursor/README.md`）

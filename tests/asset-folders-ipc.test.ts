@@ -46,6 +46,7 @@ describe('M5 asset folder IPC', () => {
       'asset.import',
       'asset.list',
       'asset.move',
+      'asset.pickImportFiles',
       'asset.removeCategory',
       'asset.rename',
       'asset.trash',

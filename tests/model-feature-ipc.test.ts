@@ -41,6 +41,8 @@ describe('Task 51 model catalog IPC', () => {
     expect(source).toContain('listGatewayModels')
     expect(source).toContain("invokeMain('gateway.models'")
     expect(source).toContain("function invokeMain<TChannel extends 'gateway.models'>")
+    expect(source).toContain('fetchGatewayModels')
+    expect(source).toContain("invokeMain('gateway.fetchModels'")
   })
 
   it('registers and returns renderer-safe model catalog from enabled gateways', async () => {
@@ -65,6 +67,45 @@ describe('Task 51 model catalog IPC', () => {
     })
     expect(serialized).not.toContain('should-not-render')
     expect(serialized).not.toContain('vault:')
+  })
+
+  it('fetches OpenAI-compatible model IDs through gateway.fetchModels without leaking secrets', async () => {
+    const originalFetch = globalThis.fetch
+    const requests: Array<{ url: string; auth?: string }> = []
+    globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined
+      requests.push(headers?.Authorization ? { url: String(url), auth: headers.Authorization } : { url: String(url) })
+      return Promise.resolve(new Response(JSON.stringify({
+        data: [
+          { id: 'gpt-4.1-mini', owned_by: 'openai', created: 1 },
+          { id: 'gpt-image-1' },
+          { id: 'gpt-4.1-mini' },
+        ],
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    }) as typeof fetch
+
+    try {
+      const { ipcMain, handlers } = createFakeIpcMain()
+      registerGatewayHandlers(ipcMain)
+
+      expect(Array.from(handlers.keys()).sort()).toContain('gateway.fetchModels' satisfies IpcInvokeChannel)
+      const result = await handlers.get('gateway.fetchModels')?.({}, {
+        baseUrl: 'https://api.openai.example/v1/',
+        auth: { mode: 'apiKey', secret: 'sk-hidden' },
+      })
+      const serialized = JSON.stringify(result)
+
+      expect(requests).toEqual([{ url: 'https://api.openai.example/v1/models', auth: 'Bearer sk-hidden' }])
+      expect(result).toEqual({
+        models: [
+          { id: 'gpt-4.1-mini', ownedBy: 'openai', created: 1 },
+          { id: 'gpt-image-1' },
+        ],
+      })
+      expect(serialized).not.toContain('sk-hidden')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('feeds the current model catalog into strict canvas validation dynamically', async () => {

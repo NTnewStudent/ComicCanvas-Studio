@@ -20,6 +20,7 @@ import type { AssetCreateFolderRecord, AssetRepository } from '../db/repositorie
 import type { IpcRegistrar } from './types'
 import { copyFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, extname, join, posix } from 'node:path'
+import { dialog } from 'electron'
 import { getCurrentStorageConfig } from './storage.handler'
 import { storageFactory } from '../storage/storage-factory'
 import { inferImportedAssetMetadata } from '../assets/import-metadata'
@@ -263,6 +264,18 @@ function assertSupportedImportExtension(extension: string): void {
 export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandlerOptions = {}): void {
   const clock = options.clock ?? Date.now
   const idFactory = options.idFactory ?? ((prefix: AssetIdPrefix) => `${prefix}-${crypto.randomUUID()}`)
+
+  ipcMain.handle('asset.pickImportFiles', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择资产文件',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '资产文件', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'mp4', 'webm', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'txt', 'md', 'json', 'pdf'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    })
+    return { paths: result.canceled ? [] : result.filePaths }
+  })
 
   ipcMain.handle('asset.import', async (_event, request) => {
     const folderId = nullableStringField(request, 'folderId')

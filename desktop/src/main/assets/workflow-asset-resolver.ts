@@ -6,6 +6,7 @@
 import type { AssetRecord } from '../../../../shared/assets'
 import type { StorageConfig } from '../storage/storage-config'
 import type { StorageProvider } from '../storage/storage-provider'
+import type { AssetCloudUrlService } from './asset-cloud-url'
 
 export interface WorkflowResolvedAssetUrl {
   url: string
@@ -20,6 +21,7 @@ export interface WorkflowAssetResolver {
 export interface WorkflowAssetResolverOptions {
   getStorageConfig?: () => StorageConfig | null
   createStorageProvider?: (config: StorageConfig) => StorageProvider
+  cloudUrlService?: Pick<AssetCloudUrlService, 'ensureAssetRecordCloudUrl'>
 }
 
 function localSafeUrl(asset: AssetRecord): string {
@@ -72,13 +74,19 @@ export function createWorkflowAssetResolver(options: WorkflowAssetResolverOption
     async resolveAssetUrl(asset) {
       const fallback = { url: localSafeUrl(asset), source: 'local' as const }
       const config = options.getStorageConfig?.() ?? null
-      if (!config || !asset.s3Key || !options.createStorageProvider) {
+      if (!config) {
         return fallback
       }
 
       try {
-        const provider = options.createStorageProvider(config)
-        const refreshed = await provider.query(asset.s3Key)
+        const refreshed = asset.s3Key && options.createStorageProvider
+          ? await options.createStorageProvider(config).query(asset.s3Key)
+          : (await options.cloudUrlService?.ensureAssetRecordCloudUrl(asset))?.url
+
+        if (!refreshed) {
+          return fallback
+        }
+
         if (!isAllowedCloudUrl(refreshed, config)) {
           return fallback
         }

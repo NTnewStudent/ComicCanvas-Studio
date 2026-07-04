@@ -8,6 +8,7 @@ import { Search, UserRound, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { AssetCategory } from '../../../../../../shared/assets'
+import { CenteredCanvasPanel } from './CenteredCanvasPanel'
 
 export interface CharacterLibraryPanelProps {
   open: boolean
@@ -42,10 +43,7 @@ export function CharacterLibraryPanel({
   if (!open) return null
 
   return (
-    <section
-      aria-label="角色分类面板"
-      className="nopan nodrag nowheel pointer-events-auto absolute left-[72px] top-4 z-30 flex max-h-[min(620px,calc(100vh-96px))] w-[360px] flex-col overflow-hidden rounded-xl border border-border-primary bg-bg-panel shadow-pop"
-    >
+    <CenteredCanvasPanel ariaLabel="角色分类面板" className="w-[min(760px,calc(100vw-56px))]" onClose={onClose}>
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-secondary px-4">
         <div className="flex items-center gap-2">
           <UserRound className="h-4 w-4 text-brand" />
@@ -117,6 +115,6 @@ export function CharacterLibraryPanel({
           </div>
         )}
       </div>
-    </section>
+    </CenteredCanvasPanel>
   )
 }

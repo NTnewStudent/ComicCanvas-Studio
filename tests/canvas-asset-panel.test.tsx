@@ -44,7 +44,12 @@ afterEach(() => {
 
 describe('CanvasAssetPanel categorized insertion', () => {
   it('filters categorized images and inserts them with the selected canvas mode', async () => {
-    const listAssets = vi.fn().mockResolvedValue([asset])
+    const uploadedAsset: AssetRecord = {
+      ...asset,
+      url: 'https://assets.example.com/asset-hero.png',
+      s3Key: 'assets/2026-06/asset-hero.png'
+    }
+    const listAssets = vi.fn().mockResolvedValue([uploadedAsset])
     window.comicCanvas = {
       getAssetFolders: vi.fn().mockResolvedValue(emptyFolders),
       getAssetCategories: vi.fn().mockResolvedValue([category]),
@@ -54,15 +59,19 @@ describe('CanvasAssetPanel categorized insertion', () => {
 
     render(<CanvasAssetPanel open onClose={vi.fn()} onInsertAsset={onInsertAsset} />)
 
+    expect(screen.getByLabelText('画布资产库面板')).toHaveClass('bg-bg-panel', 'shadow-pop')
+
     fireEvent.click(await screen.findByRole('button', { name: '分类 角色' }))
     await waitFor(() => expect(listAssets).toHaveBeenLastCalledWith({ categoryId: 'category-role', mediaType: 'image' }))
 
     fireEvent.click(screen.getByRole('button', { name: '插入为角色' }))
-    fireEvent.click(screen.getByRole('button', { name: '插入资产 主角参考' }))
+    const assetButton = screen.getByRole('button', { name: '插入资产 主角参考' })
+    expect(assetButton).toHaveClass('bg-bg-card', 'shadow-card')
+    fireEvent.click(assetButton)
 
     expect(onInsertAsset).toHaveBeenCalledWith({
       id: 'asset-hero',
-      url: 'cc-asset://asset/asset-hero',
+      url: 'https://assets.example.com/asset-hero.png',
       type: 'image',
       name: '主角参考',
       mode: 'character'
