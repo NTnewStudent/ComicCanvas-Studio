@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { JobCreateInput } from '../shared/jobs'
 import { registerCanvasHandlers } from '../desktop/src/main/ipc/canvas.handler'
+import type { AssetRepository } from '../desktop/src/main/db/repositories/asset.repo'
 
 type Handler = (_event: unknown, request: unknown) => unknown
 
@@ -19,7 +20,59 @@ function createFakeIpcMain(): { handlers: Map<string, Handler>; ipcMain: { handl
 }
 
 describe('REQ-096 migrated node run dispatch', () => {
-  it('enqueues audio nodes as typed audio jobs with media metadata', () => {
+  it('enqueues text nodes as typed text polish jobs with current content', async () => {
+    const enqueued: JobCreateInput[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'text-1',
+              type: 'text',
+              position: { x: 0, y: 0 },
+              data: {
+                label: 'Opening beat',
+                content: 'rough line',
+                polishModelId: 'text-polish-local',
+              },
+            },
+          ],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-text-polish-1', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'text-1' })).resolves.toEqual({
+      jobId: 'job-text-polish-1',
+      status: 'pending',
+      createdAt: 1,
+    })
+    expect(enqueued).toEqual([
+      {
+        type: 'canvas.polishText',
+        targetId: 'text-1',
+        payload: {
+          nodeId: 'text-1',
+          nodeType: 'text',
+          content: 'rough line',
+          modelKey: 'text-polish-local',
+        },
+        requestedBy: { type: 'user', id: 'user-1' },
+      },
+    ])
+  })
+
+  it('enqueues audio nodes as typed audio jobs with media metadata', async () => {
     const enqueued: JobCreateInput[] = []
     const { ipcMain, handlers } = createFakeIpcMain()
 
@@ -53,7 +106,7 @@ describe('REQ-096 migrated node run dispatch', () => {
       },
     })
 
-    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'audio-1' })).toEqual({
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'audio-1' })).resolves.toEqual({
       jobId: 'job-audio-1',
       status: 'pending',
       createdAt: 1,
@@ -80,7 +133,7 @@ describe('REQ-096 migrated node run dispatch', () => {
     ])
   })
 
-  it('enqueues mjImage as a multi-result image job with semantic prompt context', () => {
+  it('keeps legacy mjImage compatible without enabling MJ multi-result behavior', async () => {
     const enqueued: JobCreateInput[] = []
     const { ipcMain, handlers } = createFakeIpcMain()
 
@@ -130,7 +183,7 @@ describe('REQ-096 migrated node run dispatch', () => {
       },
     })
 
-    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'mj-1' })).toEqual({
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'mj-1' })).resolves.toEqual({
       jobId: 'job-mj-1',
       status: 'pending',
       createdAt: 1,
@@ -143,18 +196,19 @@ describe('REQ-096 migrated node run dispatch', () => {
       payload: {
         nodeId: 'mj-1',
         nodeType: 'mjImage',
-        prompt: '参考图像：\nCharacter Mika: blue coat, brave pilot\nScene Hangar: rainy neon aircraft hangar\nMJ Image MJ keyframe: dramatic key art',
+        prompt: '参考图像：\nCharacter Mika: blue coat, brave pilot\nScene Hangar: rainy neon aircraft hangar',
         modelKey: 'mj-v6',
-        parameters: { ratio: '16:9', resultMode: 'multiImage' },
+        parameters: { ratio: '16:9' },
         references: [
           { assetId: 'asset-character', role: 'reference', mediaType: 'image' },
           { assetId: 'asset-scene', role: 'reference', mediaType: 'image' },
         ],
       },
     })
+    expect(enqueued[0]?.payload.parameters).not.toHaveProperty('resultMode')
   })
 
-  it('enqueues composition, super-resolution, and mux nodes with typed payloads', () => {
+  it('enqueues composition, super-resolution, and mux nodes with typed payloads', async () => {
     const enqueued: JobCreateInput[] = []
     const { ipcMain, handlers } = createFakeIpcMain()
 
@@ -225,7 +279,7 @@ describe('REQ-096 migrated node run dispatch', () => {
           edges: [
             { id: 'edge-va-compose', source: 'video-a', target: 'compose-1', data: { edgeType: 'default', createdAt: 1 } },
             { id: 'edge-vb-compose', source: 'video-b', target: 'compose-1', data: { edgeType: 'default', createdAt: 2 } },
-            { id: 'edge-compose-sr', source: 'compose-1', target: 'sr-1', data: { edgeType: 'default', createdAt: 3 } },
+            { id: 'edge-vb-sr', source: 'video-b', target: 'sr-1', data: { edgeType: 'default', createdAt: 3 } },
             { id: 'edge-video-mux', source: 'video-a', target: 'mux-1', data: { edgeType: 'default', createdAt: 4 } },
             { id: 'edge-audio-mux', source: 'audio-1', target: 'mux-1', data: { edgeType: 'default', createdAt: 5 } },
           ],
@@ -240,9 +294,9 @@ describe('REQ-096 migrated node run dispatch', () => {
       },
     })
 
-    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'compose-1' })).toMatchObject({ jobId: 'job-1' })
-    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'sr-1' })).toMatchObject({ jobId: 'job-2' })
-    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'mux-1' })).toMatchObject({ jobId: 'job-3' })
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'compose-1' })).resolves.toMatchObject({ jobId: 'job-1' })
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'sr-1' })).resolves.toMatchObject({ jobId: 'job-2' })
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'mux-1' })).resolves.toMatchObject({ jobId: 'job-3' })
 
     expect(enqueued[0]).toMatchObject({
       type: 'canvas.composeVideo',
@@ -264,7 +318,7 @@ describe('REQ-096 migrated node run dispatch', () => {
       payload: {
         nodeId: 'sr-1',
         nodeType: 'superResolution',
-        inputs: [{ nodeId: 'compose-1', role: 'video' }],
+        inputs: [{ nodeId: 'video-b', role: 'video' }],
         parameters: { scene: 'aigc', resolution: '4k', fps: 24 },
       },
     })
@@ -279,6 +333,213 @@ describe('REQ-096 migrated node run dispatch', () => {
           { nodeId: 'video-a', assetId: 'asset-video-a', role: 'video', url: 'cc-asset://asset/asset-video-a' },
           { nodeId: 'audio-1', assetId: 'asset-audio-1', role: 'audio', url: 'cc-asset://asset/asset-audio-1' },
         ],
+      },
+    })
+  })
+
+  it('refreshes configured cloud asset URLs before enqueueing runtime references', async () => {
+    const enqueued: JobCreateInput[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const assets = {
+      getById(assetId: string) {
+        return {
+          id: assetId,
+          mediaType: assetId.includes('audio') ? 'audio' : 'video',
+          status: 'ready',
+          relativePath: `imported/${assetId}.bin`,
+          safeUrl: `cc-asset://asset/${assetId}`,
+          url: `https://stale.example.test/${assetId}.bin?sig=old`,
+          s3Key: `assets/${assetId}.bin`,
+          metadata: {},
+          createdAt: 1,
+          updatedAt: 1,
+        }
+      },
+    } as Pick<AssetRepository, 'getById'> as AssetRepository
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      assets,
+      assetUrlResolver: {
+        async resolveAssetUrl(asset) {
+          return { url: `https://fresh.example.test/${asset.s3Key}`, source: 'cloud' }
+        },
+      },
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'video-a',
+              type: 'video',
+              position: { x: 0, y: 0 },
+              data: {
+                label: 'Shot A',
+                promptOverride: 'opening shot',
+                modelId: 'stub-video',
+                orientation: 'landscape',
+                durationSeconds: 4,
+                firstFrameAssetId: null,
+                lastFrameAssetId: null,
+                assetId: 'asset-video-a',
+                url: 'cc-asset://asset/asset-video-a',
+                status: 'done',
+              },
+            },
+            {
+              id: 'audio-1',
+              type: 'audio',
+              position: { x: 0, y: 180 },
+              data: { label: 'Narration', assetId: 'asset-audio-1', url: 'cc-asset://asset/asset-audio-1', durationSeconds: 9, status: 'done' },
+            },
+            {
+              id: 'mux-1',
+              type: 'muxAudioVideo',
+              position: { x: 300, y: 80 },
+              data: { label: 'Mux', modelId: 'mux-local', status: 'idle' },
+            },
+          ],
+          edges: [
+            { id: 'edge-video-mux', source: 'video-a', target: 'mux-1', data: { edgeType: 'default', createdAt: 1 } },
+            { id: 'edge-audio-mux', source: 'audio-1', target: 'mux-1', data: { edgeType: 'default', createdAt: 2 } },
+          ],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-mux-1', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'mux-1' })).resolves.toMatchObject({ jobId: 'job-mux-1' })
+    expect(enqueued[0]).toMatchObject({
+      payload: {
+        inputs: [
+          { nodeId: 'video-a', assetId: 'asset-video-a', role: 'video', url: 'https://fresh.example.test/assets/asset-video-a.bin' },
+          { nodeId: 'audio-1', assetId: 'asset-audio-1', role: 'audio', url: 'https://fresh.example.test/assets/asset-audio-1.bin' },
+        ],
+      },
+    })
+  })
+
+  it('enqueues imageConfigV2 nodes through the runtime snapshot with composed prompt, style, and ratio parameters (R4.4)', async () => {
+    const enqueued: JobCreateInput[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'text-1',
+              type: 'text',
+              position: { x: 0, y: 0 },
+              data: { label: 'Beat', content: 'rainy hero key art' },
+            },
+            {
+              id: 'image-config-1',
+              type: 'imageConfigV2',
+              position: { x: 260, y: 0 },
+              data: {
+                label: 'Image Config',
+                promptOverride: '',
+                modelId: 'sd-xl',
+                orientation: 'landscape',
+                ratio: '16:9',
+                status: 'idle',
+              },
+            },
+          ],
+          edges: [
+            { id: 'edge-1', source: 'text-1', target: 'image-config-1', data: { edgeType: 'promptOrder', createdAt: 1 } },
+          ],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-image-config-1', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-config-1' })).resolves.toEqual({
+      jobId: 'job-image-config-1',
+      status: 'pending',
+      createdAt: 1,
+    })
+    expect(enqueued).toHaveLength(1)
+    expect(enqueued[0]).toMatchObject({
+      type: 'canvas.generateImage',
+      targetId: 'image-config-1',
+      requestedBy: { type: 'user', id: 'user-1' },
+      payload: {
+        nodeId: 'image-config-1',
+        nodeType: 'imageConfigV2',
+        prompt: 'rainy hero key art',
+        modelKey: 'sd-xl',
+        parameters: { orientation: 'landscape', ratio: '16:9' },
+      },
+    })
+  })
+
+  it('enqueues videoConfigV2 nodes through the runtime snapshot with duration/resolution parameters (R4.4)', async () => {
+    const enqueued: JobCreateInput[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'video-config-1',
+              type: 'videoConfigV2',
+              position: { x: 0, y: 0 },
+              data: {
+                label: 'Video Config',
+                promptOverride: 'slow push through rainy alley',
+                modelId: 'stub-video',
+                orientation: 'landscape',
+                ratio: '16:9',
+                duration: 8,
+                resolution: '720p',
+                status: 'idle',
+              },
+            },
+          ],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-video-config-1', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'video-config-1' })).resolves.toEqual({
+      jobId: 'job-video-config-1',
+      status: 'pending',
+      createdAt: 1,
+    })
+    expect(enqueued).toHaveLength(1)
+    expect(enqueued[0]).toMatchObject({
+      type: 'canvas.generateVideo',
+      targetId: 'video-config-1',
+      requestedBy: { type: 'user', id: 'user-1' },
+      payload: {
+        nodeId: 'video-config-1',
+        nodeType: 'videoConfigV2',
+        prompt: 'slow push through rainy alley',
+        modelKey: 'stub-video',
+        parameters: { orientation: 'landscape', ratio: '16:9', duration: 8, resolution: '720p' },
       },
     })
   })

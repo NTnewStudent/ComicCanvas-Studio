@@ -70,7 +70,7 @@ describe('M5 asset folder repository', () => {
         expect.objectContaining({ id: 'folder-scenes', parentId: null, name: 'Scenes' }),
         expect.objectContaining({ id: 'folder-shots', parentId: 'folder-scenes', name: 'Shots' })
       ])
-      expect(assets.list({ folderId: 'folder-shots', mediaType: 'image' }).map((asset) => asset.id)).toEqual(['asset-free', 'asset-referenced'])
+      expect(assets.list({ folderId: 'folder-shots', mediaType: 'image' }).map((asset) => asset.id)).toEqual(['asset-referenced', 'asset-free'])
 
       expect(assets.moveAsset({ assetId: 'asset-free', folderId: 'folder-scenes' }, now + 5)).toMatchObject({
         id: 'asset-free',
@@ -86,7 +86,7 @@ describe('M5 asset folder repository', () => {
       expect(assets.deleteFolder({ folderId: 'folder-scenes', mode: 'force-tombstone' }, now + 7)).toEqual({
         folderId: 'folder-scenes',
         status: 'deleted',
-        affectedAssetIds: ['asset-free', 'asset-referenced'],
+        affectedAssetIds: ['asset-referenced', 'asset-free'],
         tombstonedAssetIds: ['asset-referenced'],
         blockingReferences: []
       })

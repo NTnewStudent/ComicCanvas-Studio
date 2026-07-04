@@ -6,13 +6,21 @@
 
 import { z } from 'zod'
 
-import { canConnect } from '../../../../../shared/connection-matrix'
+import {
+  connectCanvasNodes,
+  createCanvasNode,
+  deleteCanvasNode,
+  duplicateCanvasNode,
+} from '../../../../../shared/canvas-actions'
 import type { CanvasGraphNode, CanvasGraphSnapshot } from '../../../../../shared/graph'
+import { validateCanvasGraph } from '../../../../../shared/graph-validation'
 import type { JobTicket } from '../../../../../shared/jobs'
 import type { CanvasEdgeData, CanvasNodeData, NodeType } from '../../../../../shared/nodes'
+import type { RunAction } from '../../../../../shared/plan'
 import type { ToolActor, ToolDescriptor, ToolPermission } from '../../../../../shared/tools'
+import { getNodeDefinition } from '../../../../../shared/workflow-node-definitions'
 import type { JobQueue } from '../../jobs/queue'
-import { defineTool, type ToolDefinition } from '../runtime'
+import { defineTool, ToolExecutionError, type ToolDefinition } from '../runtime'
 
 export interface CanvasGraphStore {
   getGraph(workflowId?: string): CanvasGraphSnapshot
@@ -49,7 +57,7 @@ const nodeTypeSchema = z.enum([
 ])
 const orientationSchema = z.enum(['landscape', 'portrait', 'square'])
 const statusSchema = z.enum(['idle', 'pending', 'running', 'done', 'error'])
-const edgeTypeSchema = z.enum(['promptOrder', 'imageRole', 'default'])
+const edgeTypeSchema = z.enum(['promptOrder', 'imageOrder', 'imageRole', 'outputLink', 'reference', 'default'])
 const imageRoleSchema = z.enum(['first_frame', 'last_frame', 'reference'])
 
 const textDataSchema = z.object({
@@ -108,11 +116,44 @@ const graphSchema = z.object({
   viewport: viewportSchema
 })
 
+const graphValidationIssueSchema = z.object({
+  code: z.string(),
+  severity: z.enum(['warning', 'error']),
+  message: z.string(),
+  nodeId: z.string().optional(),
+  edgeId: z.string().optional(),
+  refId: z.string().optional()
+})
+
+const graphValidationSummarySchema = z.object({
+  unsupportedNodes: z.number(),
+  invalidEdges: z.number(),
+  unavailableModels: z.number(),
+  unavailableStyles: z.number(),
+  unavailableAssets: z.number()
+})
+
+const graphValidationResultSchema = z.object({
+  mode: z.enum(['lenient', 'strict']),
+  valid: z.boolean(),
+  issues: z.array(graphValidationIssueSchema),
+  warningSummary: graphValidationSummarySchema
+})
+
 const jobTicketSchema = z.object({
   jobId: z.string(),
   status: z.literal('pending'),
   createdAt: z.number()
 })
+
+type CanvasRunJobType =
+  | 'canvas.generateImage'
+  | 'canvas.generateVideo'
+  | 'canvas.polishText'
+  | 'canvas.generateAudio'
+  | 'canvas.composeVideo'
+  | 'canvas.upscaleVideo'
+  | 'canvas.muxAudioVideo'
 
 const planSchema = z.object({
   kind: z.enum(['plan', 'clarify']),
@@ -166,24 +207,18 @@ function getNode(graph: CanvasGraphSnapshot, nodeId: string): CanvasGraphNode {
   return node
 }
 
-function assertCanConnect(graph: CanvasGraphSnapshot, sourceId: string, targetId: string): void {
-  const source = getNode(graph, sourceId)
-  const target = getNode(graph, targetId)
-
-  if (!canConnect(source.type, target.type)) {
-    throw new Error('Connection rejected by shared connection matrix.')
-  }
-}
-
 function defaultQueueTicket(createdAt: number): JobTicket {
   return { jobId: 'job-queue-unavailable', status: 'pending', createdAt }
 }
 
-function jobTypeForNode(type: NodeType): 'canvas.generateImage' | 'canvas.generateVideo' {
-  if (type === 'video' || type === 'videoConfigV2') {
-    return 'canvas.generateVideo'
-  }
-
+function jobTypeForRunAction(action: RunAction): CanvasRunJobType {
+  if (action === 'imageRun') return 'canvas.generateImage'
+  if (action === 'videoRun') return 'canvas.generateVideo'
+  if (action === 'textPolish') return 'canvas.polishText'
+  if (action === 'audioRun') return 'canvas.generateAudio'
+  if (action === 'videoComposeRun') return 'canvas.composeVideo'
+  if (action === 'superResolutionRun') return 'canvas.upscaleVideo'
+  if (action === 'muxAudioVideoRun') return 'canvas.muxAudioVideo'
   return 'canvas.generateImage'
 }
 
@@ -194,8 +229,66 @@ function updateGraph(options: CanvasToolsOptions, mutator: (graph: CanvasGraphSn
   return graph
 }
 
+function withRenamedLabel(data: CanvasNodeData, label: string): CanvasNodeData {
+  return { ...data, label } as CanvasNodeData
+}
+
+function selectedFragment(graph: CanvasGraphSnapshot, nodeIds: string[], edgeIds: string[] = []): CanvasGraphSnapshot {
+  const selectedNodeIds = new Set(nodeIds)
+  const selectedEdgeIds = new Set(edgeIds)
+  const nodes = graph.nodes.filter((node) => selectedNodeIds.has(node.id))
+  const edges = graph.edges.filter(
+    (edge) => selectedEdgeIds.has(edge.id) || (selectedNodeIds.has(edge.source) && selectedNodeIds.has(edge.target))
+  )
+
+  return { nodes, edges, viewport: graph.viewport }
+}
+
+function throwConnectFailure(reason: 'node_not_found' | 'connection_not_allowed' | 'duplicate_edge', source: string, target: string): never {
+  throw new ToolExecutionError({
+    code: 'invalid_edge',
+    message: reason === 'duplicate_edge'
+      ? 'Duplicate canvas edge rejected.'
+      : reason === 'node_not_found'
+        ? 'Canvas node not found for connection.'
+        : 'Connection rejected by shared connection matrix.',
+    details: { source, target }
+  })
+}
+
+function sortSelectedNodes(graph: CanvasGraphSnapshot, nodeIds: string[]): CanvasGraphNode[] {
+  const selected = new Set(nodeIds)
+  return graph.nodes.filter((node) => selected.has(node.id)).sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x || left.id.localeCompare(right.id))
+}
+
 function actorFromTool(actor: ToolActor): ToolActor {
   return actor
+}
+
+function enqueueRunJob(options: CanvasToolsOptions, input: { nodeId: string; type: CanvasRunJobType }, actor: ToolActor, createdAt: number): JobTicket {
+  if (!options.queue) {
+    return defaultQueueTicket(createdAt)
+  }
+
+  try {
+    return options.queue.enqueue({
+      type: input.type,
+      targetId: input.nodeId,
+      payload: { nodeId: input.nodeId },
+      requestedBy: actorFromTool(actor)
+    })
+  } catch (error) {
+    // Queue failures are usually transient persistence/runtime failures and can be retried.
+    throw new ToolExecutionError({
+      code: 'job_enqueue_failed',
+      message: 'Failed to enqueue canvas job.',
+      retryable: true,
+      details: {
+        nodeId: input.nodeId,
+        cause: error instanceof Error ? error.message : 'unknown'
+      }
+    })
+  }
 }
 
 /**
@@ -257,6 +350,27 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
     }),
     defineTool({
       descriptor: descriptor({
+        id: 'canvas.validateGraph',
+        name: 'Validate Canvas Graph',
+        description: 'Validates the current or provided canvas graph using shared graph rules.',
+        inputSchemaRef: 'canvas.validateGraph.input',
+        outputSchemaRef: 'canvas.validateGraph.output',
+        permissions: [canvasReadPermission],
+        concurrency: 'readonly'
+      }),
+      inputSchema: z.object({
+        mode: z.enum(['lenient', 'strict']).optional(),
+        graph: graphSchema.optional()
+      }),
+      outputSchema: graphValidationResultSchema,
+      renderToolUseMessage: () => 'Validate canvas graph',
+      call(input) {
+        const graph = input.graph ? input.graph as CanvasGraphSnapshot : options.graphStore.getGraph()
+        return validateCanvasGraph(graph, input.mode ?? 'strict')
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
         id: 'canvas.createNode',
         name: 'Create Canvas Node',
         description: 'Creates a text, image, or video node on the canvas.',
@@ -268,17 +382,100 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
       inputSchema: z.object({
         type: nodeTypeSchema,
         position: positionSchema,
-        data: nodeDataSchema
+        data: nodeDataSchema.optional()
       }),
       outputSchema: z.object({ nodeId: z.string() }),
       renderToolUseMessage: (input) => `Create ${input.type} node`,
       call(input) {
         const nodeId = idFactory('node')
         updateGraph(options, (draft) => {
-          draft.nodes.push({ id: nodeId, type: input.type, position: input.position, data: input.data })
+          const next = createCanvasNode(draft, {
+            nodeId,
+            type: input.type,
+            position: input.position,
+            ...(input.data ? { data: input.data } : {})
+          })
+          draft.nodes = next.graph.nodes
         })
 
         return { nodeId }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.duplicateNode',
+        name: 'Duplicate Canvas Node',
+        description: 'Duplicates a canvas node with copied data and an offset position.',
+        inputSchemaRef: 'canvas.duplicateNode.input',
+        outputSchemaRef: 'canvas.duplicateNode.output',
+        permissions: [canvasWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        nodeId: z.string(),
+        offset: positionSchema.optional()
+      }),
+      outputSchema: z.object({ nodeId: z.string() }),
+      renderToolUseMessage: (input) => `Duplicate ${input.nodeId}`,
+      call(input) {
+        const nodeId = idFactory('node')
+        const offset = input.offset ?? { x: 32, y: 32 }
+        updateGraph(options, (draft) => {
+          const next = duplicateCanvasNode(draft, { nodeId: input.nodeId, newNodeId: nodeId, offset })
+          draft.nodes = next.graph.nodes
+        })
+
+        return { nodeId }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.renameNode',
+        name: 'Rename Canvas Node',
+        description: 'Renames a canvas node by updating its shared label field.',
+        inputSchemaRef: 'canvas.renameNode.input',
+        outputSchemaRef: 'canvas.renameNode.output',
+        permissions: [canvasWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        nodeId: z.string(),
+        label: z.string().min(1)
+      }),
+      outputSchema: z.object({ nodeId: z.string(), label: z.string() }),
+      renderToolUseMessage: (input) => `Rename ${input.nodeId}`,
+      call(input) {
+        updateGraph(options, (draft) => {
+          const node = getNode(draft, input.nodeId)
+          node.data = withRenamedLabel(node.data, input.label)
+        })
+
+        return { nodeId: input.nodeId, label: input.label }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.setNodePosition',
+        name: 'Set Canvas Node Position',
+        description: 'Moves a canvas node to an exact persisted canvas position.',
+        inputSchemaRef: 'canvas.setNodePosition.input',
+        outputSchemaRef: 'canvas.setNodePosition.output',
+        permissions: [canvasWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        nodeId: z.string(),
+        position: positionSchema
+      }),
+      outputSchema: z.object({ nodeId: z.string(), position: positionSchema }),
+      renderToolUseMessage: (input) => `Move ${input.nodeId}`,
+      call(input) {
+        updateGraph(options, (draft) => {
+          const node = getNode(draft, input.nodeId)
+          node.position = input.position
+        })
+
+        return { nodeId: input.nodeId, position: input.position }
       }
     }),
     defineTool({
@@ -302,16 +499,141 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
       call(input) {
         const edgeId = idFactory('edge')
         updateGraph(options, (draft) => {
-          assertCanConnect(draft, input.source, input.target)
-          const data: CanvasEdgeData = {
+          const next = connectCanvasNodes(draft, {
+            edgeId,
+            source: input.source,
+            target: input.target,
             edgeType: input.edgeType,
             createdAt: clock(),
             ...(input.imageRole ? { imageRole: input.imageRole } : {})
+          })
+          if (!next.ok) {
+            throwConnectFailure(next.reason, input.source, input.target)
           }
-          draft.edges.push({ id: edgeId, source: input.source, target: input.target, data })
+          draft.edges = next.graph.edges
         })
 
         return { edgeId }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.connectToCreate',
+        name: 'Connect To Created Canvas Node',
+        description: 'Creates a target node and a validated edge from an existing source node.',
+        inputSchemaRef: 'canvas.connectToCreate.input',
+        outputSchemaRef: 'canvas.connectToCreate.output',
+        permissions: [canvasWritePermission, canvasEdgeWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        source: z.string(),
+        type: nodeTypeSchema,
+        position: positionSchema,
+        data: nodeDataSchema.optional(),
+        edgeType: edgeTypeSchema,
+        imageRole: imageRoleSchema.optional()
+      }),
+      outputSchema: z.object({ nodeId: z.string(), edgeId: z.string() }),
+      renderToolUseMessage: (input) => `Create ${input.type} from ${input.source}`,
+      call(input) {
+        const nodeId = idFactory('node')
+        const edgeId = idFactory('edge')
+        updateGraph(options, (draft) => {
+          const nodeGraph = createCanvasNode(draft, {
+            nodeId,
+            type: input.type,
+            position: input.position,
+            ...(input.data ? { data: input.data } : {})
+          }).graph
+          const next = connectCanvasNodes(nodeGraph, {
+            edgeId,
+            source: input.source,
+            target: nodeId,
+            edgeType: input.edgeType,
+            createdAt: clock(),
+            ...(input.imageRole ? { imageRole: input.imageRole } : {})
+          })
+          if (!next.ok) {
+            throwConnectFailure(next.reason, input.source, nodeId)
+          }
+          draft.nodes = next.graph.nodes
+          draft.edges = next.graph.edges
+        })
+
+        return { nodeId, edgeId }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.deleteEdge',
+        name: 'Delete Canvas Edge',
+        description: 'Deletes one persisted canvas edge.',
+        inputSchemaRef: 'canvas.deleteEdge.input',
+        outputSchemaRef: 'canvas.deleteEdge.output',
+        permissions: [{ kind: 'destructive', reason: 'Deletes an edge from the canvas graph.' }, canvasEdgeWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({ edgeId: z.string() }),
+      outputSchema: z.object({ edgeId: z.string() }),
+      renderToolUseMessage: (input) => `Delete edge ${input.edgeId}`,
+      checkPermissions: () => ({
+        decision: 'allow',
+        decisionReason: 'Allowed for built-in orchestrator graph cleanup.',
+        requiredPermissions: [{ kind: 'destructive', reason: 'Deletes an edge from the canvas graph.' }, canvasEdgeWritePermission]
+      }),
+      call(input) {
+        updateGraph(options, (draft) => {
+          if (!draft.edges.some((edge) => edge.id === input.edgeId)) {
+            throw new Error(`Canvas edge not found: ${input.edgeId}`)
+          }
+          draft.edges = draft.edges.filter((edge) => edge.id !== input.edgeId)
+        })
+
+        return { edgeId: input.edgeId }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.updateEdge',
+        name: 'Update Canvas Edge',
+        description: 'Updates persisted canvas edge semantic data.',
+        inputSchemaRef: 'canvas.updateEdge.input',
+        outputSchemaRef: 'canvas.updateEdge.output',
+        permissions: [canvasEdgeWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        edgeId: z.string(),
+        data: z.object({
+          edgeType: edgeTypeSchema.optional(),
+          imageRole: imageRoleSchema.nullable().optional(),
+          promptOrder: z.number().optional(),
+          imageOrder: z.number().optional()
+        })
+      }),
+      outputSchema: z.object({ edgeId: z.string() }),
+      renderToolUseMessage: (input) => `Update edge ${input.edgeId}`,
+      call(input) {
+        updateGraph(options, (draft) => {
+          const edge = draft.edges.find((candidate) => candidate.id === input.edgeId)
+          if (!edge) {
+            throw new Error(`Canvas edge not found: ${input.edgeId}`)
+          }
+          const nextData: CanvasEdgeData = {
+            ...edge.data,
+            ...(input.data.edgeType ? { edgeType: input.data.edgeType } : {}),
+            ...(input.data.imageRole ? { imageRole: input.data.imageRole } : {}),
+            ...(typeof input.data.promptOrder === 'number' ? { promptOrder: input.data.promptOrder } : {}),
+            ...(typeof input.data.imageOrder === 'number' ? { imageOrder: input.data.imageOrder } : {})
+          }
+          if (input.data.imageRole === null) {
+            delete nextData.imageRole
+          }
+          edge.data = nextData
+        })
+
+        return { edgeId: input.edgeId }
       }
     }),
     defineTool({
@@ -341,6 +663,147 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
     }),
     defineTool({
       descriptor: descriptor({
+        id: 'canvas.extractSelection',
+        name: 'Extract Canvas Selection',
+        description: 'Returns a selected graph fragment for snippet save or Agent review.',
+        inputSchemaRef: 'canvas.extractSelection.input',
+        outputSchemaRef: 'canvas.graph.output',
+        permissions: [canvasReadPermission],
+        concurrency: 'readonly'
+      }),
+      inputSchema: z.object({
+        nodeIds: z.array(z.string()),
+        edgeIds: z.array(z.string()).optional()
+      }),
+      outputSchema: graphSchema,
+      renderToolUseMessage: () => 'Extract canvas selection',
+      call(input) {
+        return selectedFragment(options.graphStore.getGraph(), input.nodeIds, input.edgeIds)
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.duplicateSelection',
+        name: 'Duplicate Canvas Selection',
+        description: 'Duplicates selected nodes and internal selected edges.',
+        inputSchemaRef: 'canvas.duplicateSelection.input',
+        outputSchemaRef: 'canvas.duplicateSelection.output',
+        permissions: [canvasWritePermission, canvasEdgeWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        nodeIds: z.array(z.string()),
+        edgeIds: z.array(z.string()).optional(),
+        offset: positionSchema.optional()
+      }),
+      outputSchema: z.object({ nodeIds: z.array(z.string()), edgeIds: z.array(z.string()) }),
+      renderToolUseMessage: () => 'Duplicate canvas selection',
+      call(input) {
+        const offset = input.offset ?? { x: 32, y: 32 }
+        const createdNodeIds: string[] = []
+        const createdEdgeIds: string[] = []
+        updateGraph(options, (draft) => {
+          const fragment = selectedFragment(draft, input.nodeIds, input.edgeIds)
+          const idMap = new Map<string, string>()
+          for (const node of fragment.nodes) {
+            const nodeId = idFactory('node')
+            idMap.set(node.id, nodeId)
+            createdNodeIds.push(nodeId)
+            const next = duplicateCanvasNode(draft, { nodeId: node.id, newNodeId: nodeId, offset })
+            draft.nodes = next.graph.nodes
+          }
+          for (const edge of fragment.edges) {
+            const source = idMap.get(edge.source)
+            const target = idMap.get(edge.target)
+            if (!source || !target) continue
+            const edgeId = idFactory('edge')
+            createdEdgeIds.push(edgeId)
+            draft.edges.push({ id: edgeId, source, target, data: { ...edge.data, createdAt: clock() } })
+          }
+        })
+
+        return { nodeIds: createdNodeIds, edgeIds: createdEdgeIds }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.deleteSelection',
+        name: 'Delete Canvas Selection',
+        description: 'Deletes selected nodes and edges from the canvas graph.',
+        inputSchemaRef: 'canvas.deleteSelection.input',
+        outputSchemaRef: 'canvas.deleteSelection.output',
+        permissions: [{ kind: 'destructive', reason: 'Deletes selected graph items.' }, canvasWritePermission, canvasEdgeWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        nodeIds: z.array(z.string()).optional(),
+        edgeIds: z.array(z.string()).optional()
+      }),
+      outputSchema: z.object({ deletedNodeIds: z.array(z.string()), deletedEdgeIds: z.array(z.string()) }),
+      renderToolUseMessage: () => 'Delete canvas selection',
+      checkPermissions: () => ({
+        decision: 'allow',
+        decisionReason: 'Allowed for built-in orchestrator graph cleanup.',
+        requiredPermissions: [{ kind: 'destructive', reason: 'Deletes selected graph items.' }, canvasWritePermission, canvasEdgeWritePermission]
+      }),
+      call(input) {
+        const deletedNodeIds: string[] = []
+        const deletedEdgeIds: string[] = []
+        const nodeIds = new Set(input.nodeIds ?? [])
+        const edgeIds = new Set(input.edgeIds ?? [])
+        updateGraph(options, (draft) => {
+          draft.nodes = draft.nodes.filter((node) => {
+            const deleted = nodeIds.has(node.id)
+            if (deleted) deletedNodeIds.push(node.id)
+            return !deleted
+          })
+          draft.edges = draft.edges.filter((edge) => {
+            const deleted = edgeIds.has(edge.id) || nodeIds.has(edge.source) || nodeIds.has(edge.target)
+            if (deleted) deletedEdgeIds.push(edge.id)
+            return !deleted
+          })
+        })
+
+        return { deletedNodeIds, deletedEdgeIds }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
+        id: 'canvas.layoutSelection',
+        name: 'Layout Canvas Selection',
+        description: 'Applies a deterministic grid layout to selected canvas nodes.',
+        inputSchemaRef: 'canvas.layoutSelection.input',
+        outputSchemaRef: 'canvas.layoutSelection.output',
+        permissions: [canvasWritePermission],
+        concurrency: 'serial-write'
+      }),
+      inputSchema: z.object({
+        nodeIds: z.array(z.string()),
+        origin: positionSchema.optional(),
+        columns: z.number().int().positive().optional(),
+        gap: positionSchema.optional()
+      }),
+      outputSchema: z.object({ nodeIds: z.array(z.string()) }),
+      renderToolUseMessage: () => 'Layout canvas selection',
+      call(input) {
+        const columns = input.columns ?? Math.max(1, Math.ceil(Math.sqrt(input.nodeIds.length)))
+        const origin = input.origin ?? { x: 0, y: 0 }
+        const gap = input.gap ?? { x: 320, y: 220 }
+        updateGraph(options, (draft) => {
+          const selected = sortSelectedNodes(draft, input.nodeIds)
+          selected.forEach((node, index) => {
+            node.position = {
+              x: origin.x + (index % columns) * gap.x,
+              y: origin.y + Math.floor(index / columns) * gap.y
+            }
+          })
+        })
+
+        return { nodeIds: input.nodeIds }
+      }
+    }),
+    defineTool({
+      descriptor: descriptor({
         id: 'canvas.deleteNode',
         name: 'Delete Canvas Node',
         description: 'Deletes a canvas node and its attached edges.',
@@ -358,17 +821,12 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
         requiredPermissions: [{ kind: 'destructive', reason: 'Deletes a node from the canvas graph.' }, canvasWritePermission]
       }),
       call(input) {
-        const deletedEdgeIds: string[] = []
+        let deletedEdgeIds: string[] = []
         updateGraph(options, (draft) => {
-          getNode(draft, input.nodeId)
-          draft.edges = draft.edges.filter((edge) => {
-            const shouldDelete = edge.source === input.nodeId || edge.target === input.nodeId
-            if (shouldDelete) {
-              deletedEdgeIds.push(edge.id)
-            }
-            return !shouldDelete
-          })
-          draft.nodes = draft.nodes.filter((node) => node.id !== input.nodeId)
+          const next = deleteCanvasNode(draft, { nodeId: input.nodeId })
+          deletedEdgeIds = next.result.deletedEdgeIds
+          draft.nodes = next.graph.nodes
+          draft.edges = next.graph.edges
         })
 
         return { nodeId: input.nodeId, deletedEdgeIds }
@@ -389,17 +847,14 @@ export function createCanvasTools(options: CanvasToolsOptions): ToolDefinition<u
       renderToolUseMessage: (input) => `Run ${input.nodeId}`,
       call(input, ctx) {
         const node = getNode(options.graphStore.getGraph(), input.nodeId)
+        const definition = getNodeDefinition(node.type)
 
-        if (node.type === 'text') {
-          throw new Error('Text nodes do not enqueue generation jobs.')
+        if (!definition.runnable || !definition.runAction) {
+          const reason = definition.unavailableReason ?? 'No local runtime is registered for this node type.'
+          throw new Error(`Runtime unavailable for ${node.type}: ${reason}`)
         }
 
-        const ticket = options.queue?.enqueue({
-          type: jobTypeForNode(node.type),
-          targetId: input.nodeId,
-          payload: { nodeId: input.nodeId },
-          requestedBy: actorFromTool(ctx.actor)
-        }) ?? defaultQueueTicket(clock())
+        const ticket = enqueueRunJob(options, { nodeId: input.nodeId, type: jobTypeForRunAction(definition.runAction) }, ctx.actor, clock())
 
         return ticket
       }

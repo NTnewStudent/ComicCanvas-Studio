@@ -23,7 +23,7 @@ import { createPortal } from 'react-dom'
 import { AtSign, X as XIcon } from 'lucide-react'
 import { cn } from '../../lib/cn'
 
-interface MentionTarget {
+export interface MentionTarget {
   id: string
   name: string
   type: string
@@ -32,6 +32,7 @@ interface MentionTarget {
 interface Props {
   value: string
   onChange: (value: string) => void
+  ariaLabel?: string
   placeholder?: string
   mentionTargets?: MentionTarget[]
   onMentionChange?: (mentions: string[]) => void
@@ -46,7 +47,7 @@ interface Props {
 }
 
 /** 从 value 中提取所有 `[id|name]` token */
-function extractMentions(value: string): { id: string; name: string }[] {
+export function extractMentionTokens(value: string): { id: string; name: string }[] {
   const results: { id: string; name: string }[] = []
   const re = /\[([^\]|]+)\|([^\]]+)\]/g
   let m: RegExpExecArray | null
@@ -54,6 +55,12 @@ function extractMentions(value: string): { id: string; name: string }[] {
     results.push({ id: m[1]!, name: m[2]! })
   }
   return results
+}
+
+/** Removes all occurrences of one mention token while preserving surrounding text. */
+export function removeMentionToken(value: string, id: string): string {
+  const re = new RegExp(`\\[${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\|[^\\]]+\\]\\s?`, 'g')
+  return value.replace(re, '')
 }
 
 /** 从光标前文本解析活跃 @ 引用：`@query` */
@@ -67,6 +74,7 @@ function parseActiveMention(text: string, cursorPos: number): { start: number; q
 const MentionTextarea: FC<Props> = ({
   value,
   onChange,
+  ariaLabel,
   placeholder,
   mentionTargets = [],
   onMentionChange,
@@ -81,6 +89,7 @@ const MentionTextarea: FC<Props> = ({
   const [mentionCtx, setMentionCtx] = useState<{ start: number; query: string } | null>(null)
   const [activeIdx, setActiveIdx] = useState(0)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null)
+  const [isComposing, setIsComposing] = useState(false)
 
   // 过滤候选列表
   const candidates = useMemo(() => {
@@ -92,7 +101,7 @@ const MentionTextarea: FC<Props> = ({
   const open = mentionCtx !== null
 
   // 当前已提及的 token
-  const mentions = useMemo(() => extractMentions(value), [value])
+  const mentions = useMemo(() => extractMentionTokens(value), [value])
 
   // 通知 mention 变化（onMentionChange + onMentionsChange）
   useEffect(() => {
@@ -164,8 +173,7 @@ const MentionTextarea: FC<Props> = ({
   // 删除提及 token
   const removeMention = useCallback(
     (id: string) => {
-      const re = new RegExp(`\\[${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\|[^\\]]+\\]\\s?`, 'g')
-      const newValue = value.replace(re, '')
+      const newValue = removeMentionToken(value, id)
       onChange(newValue)
       // onMentionsChange 会在 useEffect 中由 mentions 变化自动触发
     },
@@ -177,12 +185,13 @@ const MentionTextarea: FC<Props> = ({
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value
       onChange(newValue)
+      if (isComposing) return
       const cursorPos = e.target.selectionStart
       const ctx = parseActiveMention(newValue, cursorPos)
       setMentionCtx(ctx)
       setActiveIdx(0)
     },
-    [onChange],
+    [isComposing, onChange],
   )
 
   // 键盘导航
@@ -224,9 +233,19 @@ const MentionTextarea: FC<Props> = ({
       <div className="relative">
         <textarea
           ref={taRef}
+          aria-label={ariaLabel}
           value={value}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => {
+            setIsComposing(true)
+            setMentionCtx(null)
+          }}
+          onCompositionEnd={(event) => {
+            setIsComposing(false)
+            const cursorPos = event.currentTarget.selectionStart
+            setMentionCtx(parseActiveMention(event.currentTarget.value, cursorPos))
+          }}
           placeholder={placeholder ?? '输入提示词，使用 @ 引用节点...'}
           rows={rows}
           className={cn(
@@ -248,9 +267,10 @@ const MentionTextarea: FC<Props> = ({
               className="inline-flex items-center gap-1 rounded-full bg-success-subtle px-2 py-0.5 text-[11px] font-medium text-brand"
             >
               <AtSign className="h-3 w-3" />
-              {m.name}
+              <span>{`@${m.name}`}</span>
               <button
                 type="button"
+                aria-label={`删除提及 ${m.name}`}
                 onClick={() => removeMention(m.id)}
                 className="ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full transition-colors hover:bg-brand/30"
               >
@@ -267,6 +287,8 @@ const MentionTextarea: FC<Props> = ({
         createPortal(
           <div
             ref={dropdownRef}
+            role="listbox"
+            aria-label="提及候选"
             className="dark wf-neo nodrag nowheel fixed z-[9999] w-[220px] max-h-[200px] overflow-y-auto rounded-xl border border-border-primary bg-bg-panel py-1.5 shadow-[0_15px_45px_rgba(0,0,0,0.18)]"
             style={{ top: dropdownPos.top, left: dropdownPos.left }}
           >
@@ -280,6 +302,9 @@ const MentionTextarea: FC<Props> = ({
                 <button
                   key={candidate.id}
                   type="button"
+                  role="option"
+                  aria-label={`${candidate.name} ${candidate.type}`}
+                  aria-selected={i === activeIdx}
                   onMouseDown={(e) => {
                     e.preventDefault()
                     selectCandidate(candidate)

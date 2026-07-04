@@ -10,10 +10,13 @@ export const schemaTables = [
   'assets',
   'asset_folders',
   'asset_references',
+  'asset_categories',
+  'asset_category_assignments',
   'workflows',
   'workflow_versions',
   'chat_messages',
   'gateway_configs',
+  'storage_configs',
   'tools',
   'tool_audit',
   'agents',
@@ -46,6 +49,7 @@ export const jobs = sqliteTable('jobs', {
 
 export const assets = sqliteTable('assets', {
   id: text('id').primaryKey(),
+  displayName: text('display_name'),
   mediaType: text('media_type').notNull(),
   status: text('status').notNull(),
   relativePath: text('rel_path').notNull(),
@@ -60,6 +64,7 @@ export const assets = sqliteTable('assets', {
   url: text('url'),
   s3Key: text('s3_key'),
   folderId: text('folder_id'),
+  tagsJson: text('tags_json').notNull().default('[]'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
   deletedAt: integer('deleted_at')
@@ -85,10 +90,41 @@ export const assetReferences = sqliteTable('asset_references', {
   createdAt: integer('created_at').notNull()
 })
 
+export const assetCategories = sqliteTable('asset_categories', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  kind: text('kind').notNull().default('image'),
+  description: text('description'),
+  color: text('color').notNull(),
+  icon: text('icon').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  builtIn: integer('built_in', { mode: 'boolean' }).notNull().default(false),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  deletedAt: integer('deleted_at')
+})
+
+export const assetCategoryAssignments = sqliteTable('asset_category_assignments', {
+  assetId: text('asset_id').notNull(),
+  categoryId: text('category_id').notNull(),
+  createdAt: integer('created_at').notNull()
+})
+
 export const workflows = sqliteTable('workflows', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  scope: text('scope').notNull().default('draft'),
+  published: integer('published', { mode: 'boolean' }).notNull().default(false),
   defaultStylePresetId: text('default_style_preset_id'),
+  coverAssetId: text('cover_asset_id'),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  description: text('description'),
+  visibility: text('visibility').notNull().default('private'),
+  ownerId: text('owner_id').notNull().default('user-local'),
+  tagsJson: text('tags_json').notNull().default('[]'),
+  thumbnailUrl: text('thumbnail_url'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
   deletedAt: integer('deleted_at')
@@ -116,6 +152,11 @@ export const canvasSnippets = sqliteTable('canvas_snippets', {
   id: text('id').primaryKey(),
   schemaVersion: integer('schema_version').notNull().default(1),
   name: text('name').notNull(),
+  description: text('description'),
+  scope: text('scope').notNull().default('my'),
+  ownerId: text('owner_id').notNull().default('user-local'),
+  tagsJson: text('tags_json').notNull().default('[]'),
+  thumbnailUrl: text('thumbnail_url'),
   nodesJson: text('nodes_json').notNull(),
   edgesJson: text('edges_json').notNull(),
   nodeCount: integer('node_count').notNull(),
@@ -130,7 +171,9 @@ export const workflowVersions = sqliteTable('workflow_versions', {
   workflowId: text('workflow_id').notNull(),
   graphJson: text('graph_json').notNull(),
   createdAt: integer('created_at').notNull(),
-  createdBy: text('created_by').notNull()
+  createdBy: text('created_by').notNull(),
+  restoreSourceVersionId: text('restore_source_version_id'),
+  validationWarningsJson: text('validation_warnings_json')
 })
 
 export const chatMessages = sqliteTable('chat_messages', {
@@ -154,6 +197,19 @@ export const gatewayConfigs = sqliteTable('gateway_configs', {
   modelMapJson: text('model_map_json').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
   createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+})
+
+export const storageConfigs = sqliteTable('storage_configs', {
+  id: text('id').primaryKey(),
+  provider: text('provider').notNull(),
+  endpoint: text('endpoint').notNull(),
+  region: text('region'),
+  bucket: text('bucket').notNull(),
+  accessKeyId: text('access_key_id').notNull(),
+  keyRef: text('key_ref').notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  publicUrlPrefix: text('public_url_prefix'),
   updatedAt: integer('updated_at').notNull()
 })
 

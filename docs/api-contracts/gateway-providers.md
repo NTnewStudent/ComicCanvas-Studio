@@ -107,6 +107,40 @@ Rules:
 - An invocation that already captured a provider handle SHALL continue with that original provider even if reload occurs before it completes.
 - If a request omits `modelKey`, the registry SHALL resolve it from the provider model map for the request channel (`text`, `image`, or `video`) before preflight and invocation.
 
+### `gateway.models`
+
+Request: `{}`
+
+Response:
+
+```ts
+interface WorkflowModelCatalog {
+  models: {
+    text: WorkflowModelOption[]
+    image: WorkflowModelOption[]
+    video: WorkflowModelOption[]
+    tool: WorkflowModelOption[]
+  }
+  availableModelIds: string[]
+  capabilityFlags: {
+    text: boolean
+    image: boolean
+    video: boolean
+    imageEdit: boolean
+    videoFirstFrame: boolean
+    videoLastFrame: boolean
+    tools: boolean
+  }
+}
+```
+
+Rules:
+
+- `gateway.models` SHALL derive renderer-safe text/image/video model lists from enabled gateway configs and their `modelMap`.
+- Tool models SHALL expose local tool run capabilities such as compose, mux, and super-resolution without implying remote provider support.
+- Responses SHALL include capability flags for UI and Agent planning, and SHALL NOT include `keyRef`, plaintext secrets, auth headers, or disabled gateway models.
+- Canvas graph validation MAY consume the current catalog `availableModelIds` so stale model IDs become lenient save warnings and strict run errors.
+
 ## Errors
 
 | Error class | Meaning |
@@ -128,6 +162,7 @@ Rules:
 ## Tests
 
 - Unit: capability checks reject unsupported channel/model before remote submission.
+- Unit: gateway model catalog excludes secrets and disabled gateway models.
 - Unit: OpenAI-compatible payload normalization for text and image.
 - Unit: async media polling handles completed, failed, timeout, and cancellation.
 - Integration: saving gateway hot-reloads future jobs while in-flight jobs keep their original provider.

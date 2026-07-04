@@ -19,7 +19,7 @@ function createFakeIpcMain(): { handlers: Map<string, Handler>; ipcMain: { handl
 }
 
 describe('REQ-094 runtime style payload', () => {
-  it('enqueues a styled generation prompt from graph snapshot and node style override', () => {
+  it('enqueues a styled generation prompt from graph snapshot and node style override', async () => {
     const enqueued: JobCreateInput[] = []
     const { ipcMain, handlers } = createFakeIpcMain()
     const styles = {
@@ -109,7 +109,7 @@ describe('REQ-094 runtime style payload', () => {
       },
     })
 
-    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-1' })).toEqual({
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-1' })).resolves.toEqual({
       jobId: 'job-styled',
       status: 'pending',
       createdAt: 1,
@@ -129,7 +129,7 @@ describe('REQ-094 runtime style payload', () => {
     expect(enqueued[0]?.payload.prompt).not.toContain('PROJECT BEFORE')
   })
 
-  it('uses the workflow project default style when a node has no style override', () => {
+  it('uses the workflow project default style when a node has no style override', async () => {
     const enqueued: JobCreateInput[] = []
     const { ipcMain, handlers } = createFakeIpcMain()
     const styles = {
@@ -201,7 +201,7 @@ describe('REQ-094 runtime style payload', () => {
       },
     })
 
-    expect(handlers.get('canvas.runNode')?.({}, { workflowId: 'workflow-42', nodeId: 'image-1' })).toEqual({
+    await expect(handlers.get('canvas.runNode')?.({}, { workflowId: 'workflow-42', nodeId: 'image-1' })).resolves.toEqual({
       jobId: 'job-project-style',
       status: 'pending',
       createdAt: 1,
@@ -214,5 +214,73 @@ describe('REQ-094 runtime style payload', () => {
         parameters: { orientation: 'landscape', ratio: '16:9', negativePrompt: 'project negative' },
       },
     })
+  })
+
+  it('blocks runtime enqueue when the effective node style is disabled', async () => {
+    const enqueued: JobCreateInput[] = []
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const styles = {
+      list: () => [
+        {
+          id: 'style-disabled',
+          code: 'disabled-style',
+          name: 'Disabled style',
+          description: null,
+          promptBefore: 'SHOULD NOT RUN',
+          promptAfter: null,
+          legacyPromptPreset: null,
+          negativePrompt: null,
+          coverAssetId: null,
+          coverUrl: null,
+          tags: [],
+          enabled: false,
+          sortOrder: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      getProjectDefault: () => null,
+    }
+
+    registerCanvasHandlers(ipcMain, {
+      currentUserId: 'user-1',
+      styles,
+      graphStore: {
+        getGraph: () => ({
+          nodes: [
+            {
+              id: 'image-1',
+              type: 'image',
+              position: { x: 0, y: 0 },
+              data: {
+                label: 'Image',
+                promptOverride: 'node prompt',
+                modelId: 'stub-image',
+                orientation: 'portrait',
+                status: 'idle',
+                stylePresetId: 'style-disabled',
+              },
+            },
+          ],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        }),
+      },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-should-not-run', status: 'pending', createdAt: 1 }
+        },
+      },
+    })
+
+    const result = await handlers.get('canvas.runNode')?.({}, { workflowId: 'workflow-style', nodeId: 'image-1' })
+
+    expect(result).toMatchObject({
+      errorClass: 'workflow_validation_failed',
+      retryable: false,
+      issues: [{ code: 'disabled_style', severity: 'error', nodeId: 'image-1', refId: 'style-disabled' }],
+    })
+    expect(enqueued).toEqual([])
   })
 })

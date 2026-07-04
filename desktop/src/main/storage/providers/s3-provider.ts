@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, CopyObjectCommand, DeleteObjectCommand, ListBucketsCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand, CopyObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import * as fs from 'fs/promises'
 import * as path from 'path'
@@ -80,7 +80,7 @@ export class S3StorageProvider implements StorageProvider {
 
   async testConnection(): Promise<boolean> {
     try {
-      await this.client.send(new ListBucketsCommand({}))
+      await this.client.send(new HeadBucketCommand({ Bucket: this.config.bucket }))
       return true
     } catch {
       return false

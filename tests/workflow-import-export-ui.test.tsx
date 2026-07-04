@@ -7,10 +7,15 @@ import { readFileSync } from 'node:fs'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import ProjectsListPage from '../desktop/src/renderer/src/projects/ProjectsListPage'
 import type { ComicCanvasApi } from '../desktop/src/preload'
+
+function LocationProbe(): JSX.Element {
+  const location = useLocation()
+  return <output aria-label="当前路径">{`${location.pathname}${location.search}`}</output>
+}
 
 const exportedWorkflow = {
   schemaVersion: 1 as const,
@@ -47,44 +52,55 @@ describe('REQ-091 workflow import/export renderer bridge', () => {
 
     expect(source).toContain('exportWorkflow')
     expect(source).toContain('importWorkflow')
+    expect(source).toContain('validateGraph')
     expect(source).toContain("invokeMain('canvas.exportWorkflow'")
     expect(source).toContain("invokeMain('canvas.importWorkflow'")
+    expect(source).toContain("invokeMain('canvas.validateGraph'")
     expect(source).toContain("function invokeMain<TChannel extends 'canvas.exportWorkflow'>")
     expect(source).toContain("function invokeMain<TChannel extends 'canvas.importWorkflow'>")
+    expect(source).toContain("function invokeMain<TChannel extends 'canvas.validateGraph'>")
   })
 
   it('exports a workflow from the projects page as formatted JSON', async () => {
-    const api = createApi()
+    const exportWorkflow = vi.fn().mockResolvedValue(exportedWorkflow)
+    const api = createApi({ exportWorkflow })
     window.comicCanvas = api
 
     render(
       <MemoryRouter>
         <ProjectsListPage />
+        <LocationProbe />
       </MemoryRouter>
     )
 
     await screen.findByText('Storyboard')
     fireEvent.click(screen.getByRole('button', { name: '导出 Storyboard' }))
 
-    await waitFor(() => expect(api.exportWorkflow).toHaveBeenCalledWith({ workflowId: 'wf-storyboard' }))
+    await waitFor(() => expect(exportWorkflow).toHaveBeenCalledWith({ workflowId: 'wf-storyboard' }))
     const textbox = screen.getByRole('textbox', { name: '工作流 JSON' })
     expect(textbox).toHaveValue(JSON.stringify(exportedWorkflow, null, 2))
     expect(screen.getByText('已导出 Storyboard，可复制 JSON。')).toBeInTheDocument()
   })
 
   it('imports workflow JSON, refreshes the list, and reports dropped records', async () => {
+    const listWorkflows = vi.fn().mockResolvedValue([
+      { id: 'wf-storyboard', name: 'Storyboard', updatedAt: new Date().toISOString(), nodeCount: 2 }
+    ])
+    const importWorkflow = vi.fn().mockResolvedValue({
+      workflowId: 'wf-imported',
+      graphVersion: 'graph-imported',
+      dropped: ['node:legacy:unsupported_type']
+    })
     const api = createApi({
-      importWorkflow: vi.fn().mockResolvedValue({
-        workflowId: 'wf-imported',
-        graphVersion: 'graph-imported',
-        dropped: ['node:legacy:unsupported_type']
-      })
+      importWorkflow,
+      listWorkflows
     })
     window.comicCanvas = api
 
     render(
       <MemoryRouter>
         <ProjectsListPage />
+        <LocationProbe />
       </MemoryRouter>
     )
 
@@ -98,13 +114,14 @@ describe('REQ-091 workflow import/export renderer bridge', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认导入' }))
 
     await waitFor(() =>
-      expect(api.importWorkflow).toHaveBeenCalledWith({
+      expect(importWorkflow).toHaveBeenCalledWith({
         json: JSON.stringify(exportedWorkflow),
         name: 'Imported storyboard'
       })
     )
-    expect(api.listWorkflows).toHaveBeenCalledTimes(2)
+    expect(listWorkflows).toHaveBeenCalledTimes(2)
     expect(screen.getByText('已导入工作流，清理 1 项不兼容内容。')).toBeInTheDocument()
+    expect(screen.getByLabelText('当前路径')).toHaveTextContent('/canvas?id=wf-imported')
   })
 
   it('shows a Chinese import error when the main process rejects unsafe JSON', async () => {

@@ -8,6 +8,7 @@ import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/d
 import { createAssetRepository } from '../desktop/src/main/db/repositories/asset.repo'
 import { classifyOrientation, createAssetPipeline } from '../desktop/src/main/assets/pipeline'
 import { resolveAssetProtocolPath } from '../desktop/src/main/assets/protocol'
+import { inferImportedAssetMetadata } from '../desktop/src/main/assets/import-metadata'
 
 describe('M1 AssetService baseline', () => {
   it.each([
@@ -80,8 +81,44 @@ describe('M1 AssetService baseline', () => {
     }
   })
 
+  it('extracts imported PNG dimensions, orientation, hash, and size', () => {
+    const bytes = Buffer.alloc(24)
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes, 0)
+    bytes.writeUInt32BE(1200, 16)
+    bytes.writeUInt32BE(800, 20)
+
+    expect(inferImportedAssetMetadata({
+      mediaType: 'image',
+      bytes,
+      mimeType: 'image/png',
+      sizeBytes: bytes.byteLength
+    })).toMatchObject({
+      width: 1200,
+      height: 800,
+      orientation: 'landscape',
+      mimeType: 'image/png',
+      sizeBytes: 24
+    })
+  })
+
+  it('extracts best-effort audio duration from constant-bitrate MP3 frames', () => {
+    const bytes = Buffer.alloc(48)
+    Buffer.from([0xff, 0xfb, 0x90, 0x64]).copy(bytes, 0)
+
+    expect(inferImportedAssetMetadata({
+      mediaType: 'audio',
+      bytes,
+      mimeType: 'audio/mpeg',
+      sizeBytes: bytes.byteLength
+    })).toMatchObject({
+      durationMs: 3,
+      mimeType: 'audio/mpeg',
+      sizeBytes: 48
+    })
+  })
+
   it('resolves safe protocol URLs inside the asset root and rejects traversal', () => {
-    const assetRoot = 'D:\\app-data\\ComicCanvas\\assets'
+    const assetRoot = join(tmpdir(), 'comiccanvas-assets-root')
     const record = {
       id: 'asset-1',
       mediaType: 'image' as const,
@@ -93,10 +130,8 @@ describe('M1 AssetService baseline', () => {
       updatedAt: 1
     }
 
-    expect(resolveAssetProtocolPath(assetRoot, record)).toBe(
-      'D:\\app-data\\ComicCanvas\\assets\\generated\\image\\74\\f039f60f7ac1247ac6fbe8a15e56a6\\generated-image-asset-1.png'
-    )
+    expect(resolveAssetProtocolPath(assetRoot, record)).toBe(join(assetRoot, record.relativePath))
     expect(() => resolveAssetProtocolPath(assetRoot, { ...record, relativePath: '..\\secret.txt' })).toThrow('asset_path_traversal')
-    expect(() => resolveAssetProtocolPath(assetRoot, { ...record, relativePath: 'C:\\secret.txt' })).toThrow('asset_path_traversal')
+    expect(() => resolveAssetProtocolPath(assetRoot, { ...record, relativePath: '/secret.txt' })).toThrow('asset_path_traversal')
   })
 })

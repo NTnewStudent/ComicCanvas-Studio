@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createAssetRepository } from '../desktop/src/main/db/repositories/asset.repo'
 import { registerAssetHandlers } from '../desktop/src/main/ipc/asset.handler'
+import type { AssetRecord } from '../shared/assets'
 import type { IpcInvokeChannel } from '../shared/ipc'
 
 type Handler = (_event: unknown, request: unknown) => unknown
@@ -35,14 +36,20 @@ describe('M5 asset folder IPC', () => {
     registerAssetHandlers(ipcMain)
 
     expect(Array.from(handlers.keys()).sort()).toEqual([
+      'asset.assignCategory',
+      'asset.createCategory',
       'asset.createFolder',
       'asset.deleteFolder',
       'asset.get',
+      'asset.getCategories',
       'asset.getFolders',
       'asset.import',
       'asset.list',
       'asset.move',
-      'asset.trash'
+      'asset.removeCategory',
+      'asset.rename',
+      'asset.trash',
+      'asset.updateCategory'
     ] satisfies IpcInvokeChannel[])
   })
 
@@ -129,7 +136,7 @@ describe('M5 asset folder IPC', () => {
       const imported = await handlers.get('asset.import')?.({}, {
         sourcePath,
         mediaType: 'audio'
-      })
+      }) as AssetRecord
 
       expect(imported).toMatchObject({
         id: 'asset-audio',
@@ -143,6 +150,7 @@ describe('M5 asset folder IPC', () => {
         }
       })
       expect(existsSync(join(assetRoot, 'imported/audio/asset-audio.mp3'))).toBe(true)
+      expect(join(assetRoot, imported.relativePath)).toBe(join(assetRoot, 'imported/audio/asset-audio.mp3'))
       expect(await handlers.get('asset.list')?.({}, { mediaType: 'audio' })).toEqual([
         expect.objectContaining({
           id: 'asset-audio',
@@ -150,6 +158,74 @@ describe('M5 asset folder IPC', () => {
           relativePath: 'imported/audio/asset-audio.mp3'
         })
       ])
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects unsupported import extensions before copying into the asset root', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-unsupported-import-'))
+    const dbPath = join(tempDir, 'assets.sqlite')
+    const assetRoot = join(tempDir, 'asset-root')
+    const sourcePath = join(tempDir, 'payload.exe')
+    writeFileSync(sourcePath, Buffer.from([0x4d, 0x5a]))
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    try {
+      const assets = createAssetRepository(db)
+      registerAssetHandlers(ipcMain, {
+        assets,
+        assetRoot,
+        clock: () => 1_783_700_000_000,
+        idFactory: (prefix) => `${prefix}-unsupported`
+      })
+
+      await expect(handlers.get('asset.import')?.({}, {
+        sourcePath,
+        mediaType: 'other'
+      })).rejects.toThrow('asset_unsupported_extension')
+      expect(existsSync(join(assetRoot, 'imported/other/asset-unsupported.exe'))).toBe(false)
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('renames asset display names through IPC without changing storage paths', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-asset-rename-ipc-'))
+    const dbPath = join(tempDir, 'assets.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+    const { ipcMain, handlers } = createFakeIpcMain()
+
+    try {
+      const assets = createAssetRepository(db)
+      registerAssetHandlers(ipcMain, {
+        assets,
+        clock: () => 1_784_100_000_000
+      })
+
+      assets.create({
+        id: 'asset-rename',
+        mediaType: 'image',
+        status: 'ready',
+        relativePath: 'imported/image/asset-rename.png',
+        safeUrl: 'cc-asset://asset/asset-rename',
+        metadata: { width: 512, height: 512, orientation: 'square' },
+        createdAt: 1,
+        updatedAt: 1
+      })
+
+      expect(await handlers.get('asset.rename')?.({}, { assetId: 'asset-rename', displayName: '角色参考 A' })).toMatchObject({
+        id: 'asset-rename',
+        displayName: '角色参考 A',
+        relativePath: 'imported/image/asset-rename.png',
+        safeUrl: 'cc-asset://asset/asset-rename',
+        updatedAt: 1_784_100_000_000
+      })
     } finally {
       db.close()
       rmSync(tempDir, { recursive: true, force: true })

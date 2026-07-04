@@ -3,13 +3,13 @@
   "hooks": [
     {
       "name": "ltm-checkpoint-post-task",
-      "description": "每次 spec 任务标记为 completed 后，提醒 Kiro 生成 LTM checkpoint 并更新运行时上下文。",
+      "description": "LTM 已停用：spec 任务完成后不再生成 LTM checkpoint。",
       "trigger": "PostTaskExec",
       "action": {
         "type": "agent",
-        "prompt": "本次 spec 任务已完成。请用 `python ltm/bin/ltm.py checkpoint --from-json <tmp_path>` 保存检查点，然后运行 `python ltm/bin/ltm.py regenerate` 更新运行时上下文。若 python_cmd 不是 python，请先查 ltm/config.json。"
+        "prompt": "LTM 已停用。本次 spec 任务完成后，请更新 docs/progress/ 中的对应报告或任务清单，不要运行 ltm 命令。"
       },
-      "enabled": true
+      "enabled": false
     }
   ]
 }

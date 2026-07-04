@@ -60,32 +60,46 @@ describe('M1 IPC skeleton', () => {
       'agent.delete',
       'agent.list',
       'agent.save',
+      'asset.assignCategory',
+      'asset.createCategory',
       'asset.createFolder',
       'asset.deleteFolder',
       'asset.get',
+      'asset.getCategories',
       'asset.getFolders',
       'asset.import',
       'asset.list',
       'asset.move',
+      'asset.removeCategory',
+      'asset.rename',
       'asset.trash',
+      'asset.updateCategory',
       'canvas.applyPlan',
       'canvas.chatGetPlan',
       'canvas.chatSend',
+      'canvas.copyWorkflowTemplate',
       'canvas.createWorkflow',
       'canvas.deleteWorkflow',
       'canvas.exportWorkflow',
       'canvas.importWorkflow',
+      'canvas.listWorkflowTemplates',
+      'canvas.listWorkflowVersions',
       'canvas.listWorkflows',
       'canvas.loadGraph',
+      'canvas.publishWorkflowTemplate',
       'canvas.renameWorkflow',
+      'canvas.restoreWorkflowVersion',
       'canvas.runNode',
       'canvas.runPlan',
       'canvas.saveGraph',
+      'canvas.validateGraph',
       'canvasSnippet.delete',
+      'canvasSnippet.get',
       'canvasSnippet.list',
       'canvasSnippet.save',
       'gateway.delete',
       'gateway.list',
+      'gateway.models',
       'gateway.reload',
       'gateway.save',
       'gateway.test',
@@ -172,7 +186,7 @@ describe('M1 IPC skeleton', () => {
     expect(handlers.get('canvas.chatGetPlan')?.({}, { messageId: 'message-1' })).toEqual(plan)
   })
 
-  it('enqueues canvas.runNode through the injected durable queue when available', () => {
+  it('enqueues canvas.runNode through the injected durable queue when available', async () => {
     const { ipcMain, handlers } = createFakeIpcMain()
     const enqueueCalls: unknown[] = []
 
@@ -186,7 +200,7 @@ describe('M1 IPC skeleton', () => {
       }
     })
 
-    expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-1' })).toEqual({
+    await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-1' })).resolves.toEqual({
       jobId: 'job-image-1',
       status: 'pending',
       createdAt: 1_783_200_000_000

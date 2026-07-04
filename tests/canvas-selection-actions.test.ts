@@ -84,9 +84,9 @@ describe('REQ-092 canvas selection actions', () => {
 
     expect(source).toContain('duplicateSelectedCanvasNodes')
     expect(source).toContain('deleteSelectedCanvasNodes')
-    expect(source).toContain("e.key.toLowerCase() === 'd'")
-    expect(source).toContain("e.key === 'Delete' || e.key === 'Backspace'")
-    expect(source).toContain('isEditableKeyboardTarget(e.target)')
+    expect(source).toContain("key === 'd'")
+    expect(source).toContain("event.key === 'Delete' || (isMacLikePlatform && event.key === 'Backspace')")
+    expect(source).toContain('isEditableKeyboardTarget(event.target)')
     expect(source).toContain('handleDuplicateSelection(selectedNodeIds)')
     expect(source).toContain('handleDeleteSelection(selectedNodeIds)')
     expect(source).toContain('handleDuplicateSelection([contextMenu.nodeId!])')

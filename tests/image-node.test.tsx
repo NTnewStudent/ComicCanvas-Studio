@@ -40,6 +40,12 @@ function renderImageNode(overrides: ImageNodeRenderOverrides = {}) {
             { id: 'cinematic', label: 'Cinematic' }
           ]
         }
+        assetOptions={
+          overrides.assetOptions ?? [
+            { assetId: 'asset-image-a', label: 'Hero still', safeUrl: 'cc-asset://asset/asset-image-a' },
+            { assetId: 'asset-image-b', label: 'Rain alley', safeUrl: 'cc-asset://asset/asset-image-b' }
+          ]
+        }
         onChange={overrides.onChange ?? onChange}
         onRun={overrides.onRun ?? onRun}
       />
@@ -111,5 +117,35 @@ describe('M2 ImageNode', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成图片' }))
 
     expect(onRun).toHaveBeenCalledWith('image-1')
+  })
+
+  it('binds safe image assets, exposes edit entry, and writes generated output back', () => {
+    const onEditAsset = vi.fn()
+    const onWriteOutputAsset = vi.fn()
+    const { onChange } = renderImageNode({
+      data: { status: 'done', assetId: 'asset-generated', url: 'cc-asset://asset/asset-generated' },
+      assetSafeUrl: 'cc-asset://asset/asset-generated',
+      onEditAsset,
+      onWriteOutputAsset
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '配置图片节点' }))
+    fireEvent.click(screen.getByRole('button', { name: '从资产库选择图片' }))
+
+    expect(screen.getByRole('dialog', { name: '选择图片资产' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Hero still thumbnail' })).toHaveAttribute('src', 'cc-asset://asset/asset-image-a')
+
+    fireEvent.click(screen.getByRole('button', { name: '选择图片资产 Hero still' }))
+    expect(onChange).toHaveBeenLastCalledWith('image-1', {
+      assetId: 'asset-image-a',
+      url: 'cc-asset://asset/asset-image-a',
+      status: 'done'
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑图片资产' }))
+    expect(onEditAsset).toHaveBeenCalledWith('asset-generated')
+
+    fireEvent.click(screen.getByRole('button', { name: '写回图片输出资产' }))
+    expect(onWriteOutputAsset).toHaveBeenCalledWith('image-1', 'asset-generated')
   })
 })

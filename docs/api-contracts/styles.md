@@ -42,13 +42,18 @@ disabled effective styles are recoverable run validation errors:
 Save/load MUST remain non-destructive when a referenced style is missing or
 disabled.
 
+Deleting a style preset SHALL soft-delete/disable the preset and clear workflow
+project defaults that point at that preset, while preserving existing node-level
+`stylePresetId` graph data so stale-node validation can report the issue.
+
 ## IPC Channels
 
 - `style.list`: list enabled and disabled style presets visible to settings or
   canvas surfaces.
 - `style.save`: create or update a style preset.
 - `style.delete`: soft-delete or disable a preset without mutating existing
-  graph node data.
+  graph node data; workflow project default references to the deleted preset
+  SHALL be cleared.
 - `style.setProjectDefault`: set or clear a workflow's default style preset.
 - `style.getProjectDefault`: read a workflow's current default style preset
   so renderer project selectors can initialize from persisted state.
@@ -63,6 +68,6 @@ Required verification before REQ-094 can be marked complete:
 
 - Shared contract and prompt composition unit tests.
 - Repository and IPC tests for style persistence and project default updates.
-- Renderer style library and node/project selector tests.
+- Renderer style library, canvas style panel, and node/project selector tests.
 - Desktop flow: select project style, override node style, run a stub job, and
   verify the job payload uses the expected styled prompt.

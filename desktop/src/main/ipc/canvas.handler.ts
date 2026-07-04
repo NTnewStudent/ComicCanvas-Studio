@@ -3,22 +3,24 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
+import { createHash } from 'node:crypto'
+
 import type { JobTicket, JobType } from '../../../../shared/jobs'
 import type { CanvasPlan, PlanRunStep } from '../../../../shared/plan'
 import { canConnect } from '../../../../shared/connection-matrix'
 import { isCanvasNodeType, sanitizeCanvasGraphSnapshot, type CanvasGraphEdge, type CanvasGraphNode, type CanvasGraphSnapshot, type CanvasSaveGraphRequest } from '../../../../shared/graph'
+import { validateCanvasGraph, type GraphValidationContext, type GraphValidationMode } from '../../../../shared/graph-validation'
+import { compileWorkflowNodeRuntimeSnapshot, type WorkflowReferenceSnapshot } from '../../../../shared/workflow-graph-compiler'
 import type {
   AudioNodeData,
   ImageNodeData,
-  MjImageNodeData,
   MuxAudioVideoNodeData,
   NodeType,
   SuperResolutionNodeData,
+  TextNodeData,
   VideoComposeNodeData,
   VideoNodeData,
 } from '../../../../shared/nodes'
-import { composeFinalPrompt } from '../../../../shared/composed-prompt'
-import { composeStyledPrompt, resolveEffectiveStylePreset } from '../../../../shared/styles'
 import type { IpcRegistrar } from './types'
 import type { WorkflowRepository } from '../db/repositories/workflow.repo'
 import type { AssetRepository } from '../db/repositories/asset.repo'
@@ -26,6 +28,11 @@ import type { StyleRepository } from '../db/repositories/style.repo'
 import type { OrchestratorRuntime } from '../agent/orchestrator'
 import type { JobQueue } from '../jobs/queue'
 import type { CanvasGraphStore } from '../tools/canvas'
+import { syncCanvasAssetReferences } from '../assets/asset-reference-sync'
+import { createWorkflowAssetResolver, type WorkflowAssetResolver } from '../assets/workflow-asset-resolver'
+import { getCurrentStorageConfig } from './storage.handler'
+import { storageFactory } from '../storage/storage-factory'
+import type { WorkflowModelCatalog } from '../../../../shared/workflow-node-definitions'
 
 function createPendingTicket(jobId: string): JobTicket {
   return {
@@ -53,10 +60,16 @@ export interface CanvasHandlerDependencies {
   nodeIdFactory?: () => string
   /** Asset repository for resolving cloud URLs on reference assets. */
   assets?: AssetRepository
+  /** Runtime URL resolver for local safe URLs and cloud re-sign/refresh. */
+  assetUrlResolver?: WorkflowAssetResolver
   /** Graph store for reading current canvas node data. */
   graphStore?: Pick<CanvasGraphStore, 'getGraph'>
   /** Style repository for project defaults and runtime prompt injection. */
   styles?: Pick<StyleRepository, 'list' | 'getProjectDefault'>
+  /** Optional model registry IDs for strict/lenient graph validation. */
+  availableModelIds?: Iterable<string>
+  /** Optional model catalog generated from gateway configuration. */
+  modelCatalog?: Pick<WorkflowModelCatalog, 'availableModelIds'> | (() => Pick<WorkflowModelCatalog, 'availableModelIds'>)
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -67,8 +80,21 @@ function defaultGraph(): CanvasGraphSnapshot {
   return { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }
 }
 
+function safeError(errorClass: string, message: string, retryable = false): { errorClass: string; message: string; retryable: boolean } {
+  return { errorClass, message, retryable }
+}
+
+function checksumGraph(graph: CanvasGraphSnapshot): string {
+  return createHash('sha256').update(JSON.stringify(graph)).digest('hex')
+}
+
 function unsafeWorkflowJson(value: unknown): boolean {
   return /([A-Za-z]:\\|file:\/\/|\/Users\/|\/tmp\/)/u.test(JSON.stringify(value))
+}
+
+function unsafeWorkflowSecret(value: unknown): boolean {
+  const serialized = JSON.stringify(value)
+  return /"?(apiKey|secret|secretAccessKey|authorization|token)"?\s*:|sk-[A-Za-z0-9_-]{4,}|Bearer\s+[A-Za-z0-9._-]+/iu.test(serialized)
 }
 
 function sanitizeGraphWithDropped(graph: CanvasGraphSnapshot): { graph: CanvasGraphSnapshot; dropped: string[] } {
@@ -101,7 +127,7 @@ function sanitizeGraphWithDropped(graph: CanvasGraphSnapshot): { graph: CanvasGr
 function parseWorkflowImportJson(json: string): { name: string; graph: CanvasGraphSnapshot } | null {
   try {
     const parsed = JSON.parse(json) as unknown
-    if (!isObject(parsed) || !isObject(parsed.graph)) {
+    if (!isObject(parsed) || parsed.schemaVersion !== 1 || !isObject(parsed.graph)) {
       return null
     }
     const graph = parsed.graph as unknown as CanvasGraphSnapshot
@@ -135,17 +161,43 @@ function parseSaveGraphRequest(request: unknown): CanvasSaveGraphRequest {
   return request as unknown as CanvasSaveGraphRequest
 }
 
+function validationContext(deps: CanvasHandlerDependencies, workflowId: string): GraphValidationContext {
+  const modelCatalog = typeof deps.modelCatalog === 'function' ? deps.modelCatalog() : deps.modelCatalog
+  const availableModelIds = deps.availableModelIds ?? modelCatalog?.availableModelIds
+  return {
+    ...(deps.assets
+      ? {
+        assets: {
+          hasUsableAsset(assetId: string) {
+            const asset = deps.assets?.getById(assetId)
+            return Boolean(asset && asset.status !== 'failed' && asset.status !== 'trashed' && asset.status !== 'tombstoned')
+          }
+        }
+      }
+      : {}),
+    ...(deps.styles
+      ? {
+        styles: {
+          styles: deps.styles.list({ includeDisabled: true }),
+          projectDefaultStylePresetId: deps.styles.getProjectDefault(workflowId)
+        }
+      }
+      : {}),
+    ...(availableModelIds ? { availableModelIds } : {})
+  }
+}
+
 /**
  * Resolves GatewayReference[] from a node's data and the asset repository.
  * For video nodes: reads referenceAssets from VideoNodeData.
  * For all nodes: also looks up connected edges with imageRole to find upstream image references.
  * Falls back to local safeUrl when no cloud URL is available.
  */
-function resolveNodeReferences(
+async function resolveNodeReferences(
   nodeId: string,
   deps: CanvasHandlerDependencies,
   workflowId = 'default'
-): Array<{ assetId: string; role: string; url: string; mediaType: string }> {
+): Promise<Array<{ assetId: string; role: string; url: string; mediaType: string }>> {
   const graphStore = deps.graphStore
   const assets = deps.assets
   if (!graphStore) {
@@ -169,7 +221,8 @@ function resolveNodeReferences(
       seen.add(refAsset.id)
 
       const assetRecord = assets?.getById(refAsset.id)
-      const url = assetRecord?.url ?? refAsset.url ?? assetRecord?.safeUrl ?? ''
+      const resolved = assetRecord ? await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord) : null
+      const url = resolved?.url ?? refAsset.url ?? ''
       result.push({
         assetId: refAsset.id,
         role: 'reference',
@@ -184,10 +237,11 @@ function resolveNodeReferences(
     const assetRecord = assets?.getById(nodeData.firstFrameAssetId)
     if (assetRecord && !seen.has(assetRecord.id)) {
       seen.add(assetRecord.id)
+      const resolved = await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord)
       result.push({
         assetId: assetRecord.id,
         role: 'first_frame',
-        url: assetRecord.url ?? assetRecord.safeUrl,
+        url: resolved.url,
         mediaType: assetRecord.mediaType
       })
     }
@@ -196,10 +250,11 @@ function resolveNodeReferences(
     const assetRecord = assets?.getById(nodeData.lastFrameAssetId)
     if (assetRecord && !seen.has(assetRecord.id)) {
       seen.add(assetRecord.id)
+      const resolved = await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord)
       result.push({
         assetId: assetRecord.id,
         role: 'last_frame',
-        url: assetRecord.url ?? assetRecord.safeUrl,
+        url: resolved.url,
         mediaType: assetRecord.mediaType
       })
     }
@@ -218,10 +273,11 @@ function resolveNodeReferences(
 
     const assetRecord = assets?.getById(sourceData.assetId)
     if (assetRecord) {
+      const resolved = await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord)
       result.push({
         assetId: assetRecord.id,
         role: edge.data.imageRole,
-        url: assetRecord.url ?? assetRecord.safeUrl,
+        url: resolved.url,
         mediaType: assetRecord.mediaType
       })
     }
@@ -240,6 +296,13 @@ function readWorkflowId(request: unknown): string {
     : 'default'
 }
 
+function runtimeAssetResolver(deps: CanvasHandlerDependencies): WorkflowAssetResolver {
+  return deps.assetUrlResolver ?? createWorkflowAssetResolver({
+    getStorageConfig: getCurrentStorageConfig,
+    createStorageProvider: (config) => storageFactory.create(config)
+  })
+}
+
 interface CanvasRunDescriptor {
   type: JobType
   payload: Record<string, unknown>
@@ -253,32 +316,29 @@ interface RuntimeInputRef {
   mediaType?: string
 }
 
-function resolveAssetUrl(assetId: string | null | undefined, deps: CanvasHandlerDependencies, fallback?: string): string | undefined {
+async function resolveAssetUrl(assetId: string | null | undefined, deps: CanvasHandlerDependencies, fallback?: string): Promise<string | undefined> {
   if (!assetId) return fallback
   const assetRecord = deps.assets?.getById(assetId)
-  return assetRecord?.url ?? assetRecord?.safeUrl ?? fallback
+  if (!assetRecord) return fallback
+  return (await runtimeAssetResolver(deps).resolveAssetUrl(assetRecord)).url
 }
 
-function referencePayloadFromComposed(
-  composed: ReturnType<typeof composeFinalPrompt>,
+async function referencePayloadFromSnapshot(
+  references: readonly WorkflowReferenceSnapshot[],
   deps: CanvasHandlerDependencies
-): Array<{ assetId: string; role: string; url?: string; mediaType: string }> {
+): Promise<Array<{ assetId: string; role: string; url?: string; mediaType: string }>> {
   const refs: Array<{ assetId: string; role: string; url?: string; mediaType: string }> = []
-  for (const ref of composed.referenceImages) {
-    const url = resolveAssetUrl(ref.assetId, deps)
-    refs.push({ assetId: ref.assetId, role: 'reference', ...(url ? { url } : {}), mediaType: 'image' })
-  }
-  for (const ref of composed.referenceVideos) {
-    const url = resolveAssetUrl(ref.assetId, deps)
-    refs.push({ assetId: ref.assetId, role: 'reference', ...(url ? { url } : {}), mediaType: 'video' })
+  for (const ref of references) {
+    const url = await resolveAssetUrl(ref.assetId, deps)
+    refs.push({ assetId: ref.assetId, role: ref.role, ...(url ? { url } : {}), mediaType: ref.mediaType })
   }
   return refs
 }
 
-function inputRefFromNode(node: CanvasGraphNode, deps: CanvasHandlerDependencies): RuntimeInputRef | null {
+async function inputRefFromNode(node: CanvasGraphNode, deps: CanvasHandlerDependencies): Promise<RuntimeInputRef | null> {
   if (node.type === 'video' || node.type === 'videoCompose' || node.type === 'superResolution' || node.type === 'muxAudioVideo') {
     const data = node.data as Partial<VideoNodeData | VideoComposeNodeData | SuperResolutionNodeData | MuxAudioVideoNodeData>
-    const url = resolveAssetUrl(data.assetId, deps, data.url)
+    const url = await resolveAssetUrl(data.assetId, deps, data.url)
     return {
       nodeId: node.id,
       role: 'video',
@@ -289,7 +349,7 @@ function inputRefFromNode(node: CanvasGraphNode, deps: CanvasHandlerDependencies
 
   if (node.type === 'audio') {
     const data = node.data as AudioNodeData
-    const url = resolveAssetUrl(data.assetId, deps, data.url)
+    const url = await resolveAssetUrl(data.assetId, deps, data.url)
     return {
       nodeId: node.id,
       role: 'audio',
@@ -298,9 +358,9 @@ function inputRefFromNode(node: CanvasGraphNode, deps: CanvasHandlerDependencies
     }
   }
 
-  if (node.type === 'image' || node.type === 'mjImage') {
-    const data = node.data as Partial<ImageNodeData | MjImageNodeData>
-    const url = resolveAssetUrl(data.assetId, deps, data.url)
+  if (node.type === 'image') {
+    const data = node.data as Partial<ImageNodeData>
+    const url = await resolveAssetUrl(data.assetId, deps, data.url)
     return {
       nodeId: node.id,
       role: 'image',
@@ -312,13 +372,13 @@ function inputRefFromNode(node: CanvasGraphNode, deps: CanvasHandlerDependencies
   return null
 }
 
-function incomingInputs(
+async function incomingInputs(
   graph: CanvasGraphSnapshot,
   nodeId: string,
   deps: CanvasHandlerDependencies,
   allowedTypes: NodeType[],
   orderedNodeIds?: string[]
-): RuntimeInputRef[] {
+): Promise<RuntimeInputRef[]> {
   const edgeSources = graph.edges
     .filter((edge) => edge.target === nodeId)
     .sort((a, b) => a.data.createdAt - b.data.createdAt)
@@ -336,29 +396,23 @@ function incomingInputs(
     seen.add(sourceId)
     const sourceNode = graph.nodes.find((candidate) => candidate.id === sourceId)
     if (!sourceNode || !allowedTypes.includes(sourceNode.type)) continue
-    const input = inputRefFromNode(sourceNode, deps)
+    const input = await inputRefFromNode(sourceNode, deps)
     if (input) inputs.push(input)
   }
 
   return inputs
 }
 
-function buildRunDescriptor(
+async function buildRunDescriptor(
   nodeId: string,
   deps: CanvasHandlerDependencies,
   workflowId = 'default'
-): CanvasRunDescriptor {
+): Promise<CanvasRunDescriptor> {
   const graph = deps.graphStore?.getGraph(workflowId)
   const node = graph?.nodes.find((candidate) => candidate.id === nodeId)
   if (!graph || !node) {
     return { type: 'canvas.generateImage', payload: { nodeId, references: [] } }
   }
-
-  const composed = composeFinalPrompt(graph, nodeId)
-  const references = [
-    ...referencePayloadFromComposed(composed, deps),
-    ...resolveNodeReferences(nodeId, deps, workflowId),
-  ]
 
   if (node.type === 'videoCompose') {
     const data = node.data as VideoComposeNodeData
@@ -370,7 +424,7 @@ function buildRunDescriptor(
         nodeId,
         nodeType: node.type,
         ...(readOptionalString(data.modelId) ? { modelKey: data.modelId } : {}),
-        inputs: incomingInputs(graph, nodeId, deps, ['video'], data.inputOrder),
+        inputs: await incomingInputs(graph, nodeId, deps, ['video'], data.inputOrder),
         parameters,
       },
     }
@@ -383,7 +437,7 @@ function buildRunDescriptor(
       payload: {
         nodeId,
         nodeType: node.type,
-        inputs: incomingInputs(graph, nodeId, deps, ['video', 'videoCompose', 'muxAudioVideo']),
+        inputs: await incomingInputs(graph, nodeId, deps, ['video', 'videoCompose', 'muxAudioVideo']),
         parameters: {
           ...(data.scene ? { scene: data.scene } : {}),
           ...(data.resolution ? { resolution: data.resolution } : {}),
@@ -401,14 +455,14 @@ function buildRunDescriptor(
         nodeId,
         nodeType: node.type,
         ...(readOptionalString(data.modelId) ? { modelKey: data.modelId } : {}),
-        inputs: incomingInputs(graph, nodeId, deps, ['video', 'videoCompose', 'superResolution', 'audio']),
+        inputs: await incomingInputs(graph, nodeId, deps, ['video', 'videoCompose', 'superResolution', 'audio']),
       },
     }
   }
 
   if (node.type === 'audio') {
     const data = node.data as AudioNodeData
-    const input = inputRefFromNode(node, deps)
+    const input = await inputRefFromNode(node, deps)
     return {
       type: 'canvas.generateAudio',
       payload: {
@@ -422,43 +476,48 @@ function buildRunDescriptor(
     }
   }
 
-  if (node.type !== 'image' && node.type !== 'video' && node.type !== 'mjImage') {
-    return { type: 'canvas.generateImage', payload: { nodeId, nodeType: node.type, references } }
+  if (node.type === 'text') {
+    const data = node.data as TextNodeData
+    return {
+      type: 'canvas.polishText',
+      payload: {
+        nodeId,
+        nodeType: node.type,
+        content: data.content,
+        ...(readOptionalString(data.polishModelId) ? { modelKey: data.polishModelId } : {}),
+      },
+    }
   }
 
-  const data = node.data as ImageNodeData | VideoNodeData | MjImageNodeData
-  const styleResult = deps.styles
-    ? resolveEffectiveStylePreset({
-      nodeStylePresetId: readOptionalString(data.stylePresetId) ?? null,
-      projectDefaultStylePresetId: deps.styles.getProjectDefault(workflowId),
-      styles: deps.styles.list({ includeDisabled: true }),
-    })
-    : null
-  const style = styleResult && !('errorClass' in styleResult) ? styleResult : null
-  const parameters: Record<string, unknown> = {}
-
-  if ('orientation' in data) parameters.orientation = data.orientation
-  if (readOptionalString(data.ratio)) parameters.ratio = data.ratio
-  if (node.type === 'video') {
-    const videoData = data as VideoNodeData
-    if (typeof videoData.duration === 'number') parameters.duration = videoData.duration
-    else parameters.durationSeconds = videoData.durationSeconds
-    if (readOptionalString(videoData.resolution)) parameters.resolution = videoData.resolution
+  const isImageMedia = node.type === 'image' || node.type === 'imageConfigV2'
+  const isVideoMedia = node.type === 'video' || node.type === 'videoConfigV2'
+  // imageConfigV2/videoConfigV2 是 image/video 的 V2 面板变体，必须走同一条
+  // compileWorkflowNodeRuntimeSnapshot 路径才能拿到拼接后的 prompt、画风、
+  // 时长/分辨率等运行参数（否则会退化成不带任何参数的裸 job，R4.4 要求的
+  // "enqueue a local job and update its own status/result" 无法生效）。
+  if (!isImageMedia && !isVideoMedia && node.type !== 'mjImage') {
+    return { type: 'canvas.generateImage', payload: { nodeId, nodeType: node.type, references: await resolveNodeReferences(nodeId, deps, workflowId) } }
   }
-  if (style?.negativePrompt) parameters.negativePrompt = style.negativePrompt
-  if (node.type === 'mjImage') parameters.resultMode = 'multiImage'
-  const basePrompt = node.type === 'mjImage' && readOptionalString((data as MjImageNodeData).prompt)
-    ? [composed.composedPrompt, `MJ Image ${data.label}: ${(data as MjImageNodeData).prompt}`].filter(Boolean).join('\n')
-    : composed.composedPrompt
+
+  const runtimeSnapshot = compileWorkflowNodeRuntimeSnapshot({
+    graph,
+    nodeId,
+    styles: deps.styles?.list({ includeDisabled: true }) ?? [],
+    projectDefaultStylePresetId: deps.styles?.getProjectDefault(workflowId) ?? null,
+  })
+  const references = [
+    ...await referencePayloadFromSnapshot(runtimeSnapshot.references, deps),
+    ...await resolveNodeReferences(nodeId, deps, workflowId),
+  ]
 
   return {
-    type: node.type === 'video' ? 'canvas.generateVideo' : 'canvas.generateImage',
+    type: isVideoMedia ? 'canvas.generateVideo' : 'canvas.generateImage',
     payload: {
       nodeId,
       nodeType: node.type,
-      prompt: composeStyledPrompt(basePrompt, style),
-      modelKey: data.modelId,
-      parameters,
+      prompt: runtimeSnapshot.prompt,
+      modelKey: runtimeSnapshot.modelKey,
+      parameters: runtimeSnapshot.parameters,
       references,
     },
   }
@@ -476,11 +535,22 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
   const clock = dependencies.clock ?? Date.now
   const idFactory = dependencies.idFactory ?? (() => `graph-version-${clock()}`)
 
-  ipcMain.handle('canvas.runNode', (_event, request) => {
+  ipcMain.handle('canvas.runNode', async (_event, request) => {
     const nodeId = typeof request === 'object' && request !== null && 'nodeId' in request ? String(request.nodeId) : 'unknown'
     const workflowId = readWorkflowId(request)
+    const graph = dependencies.graphStore?.getGraph(workflowId)
+    if (graph) {
+      const validation = validateCanvasGraph(graph, 'strict', validationContext(dependencies, workflowId))
+      const nodeIssues = validation.issues.filter((issue) => !issue.nodeId || issue.nodeId === nodeId)
+      if (nodeIssues.length > 0) {
+        return {
+          ...safeError('workflow_validation_failed', 'Workflow graph has blocking validation errors.', false),
+          issues: nodeIssues
+        }
+      }
+    }
 
-    const descriptor = buildRunDescriptor(nodeId, dependencies, workflowId)
+    const descriptor = await buildRunDescriptor(nodeId, dependencies, workflowId)
 
     if (dependencies.queue) {
       return dependencies.queue.enqueue({
@@ -521,16 +591,36 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     }
 
     const parsed = parseSaveGraphRequest(request)
+    const validation = validateCanvasGraph(parsed.graph, 'lenient', validationContext(dependencies, parsed.projectId))
+    const graph = sanitizeCanvasGraphSnapshot(parsed.graph)
     const graphVersion = idFactory()
     workflows.addVersion({
       id: graphVersion,
       workflowId: parsed.projectId,
-      graph: sanitizeCanvasGraphSnapshot(parsed.graph),
+      graph,
       createdAt: clock(),
-      createdBy: dependencies.currentUserId ?? 'system'
+      createdBy: dependencies.currentUserId ?? 'system',
+      validationWarnings: validation.issues
     })
+    if (dependencies.assets) {
+      syncCanvasAssetReferences({
+        assets: dependencies.assets,
+        graph,
+        clock,
+        idFactory: (index) => `asset-ref-${graphVersion}-${index}`
+      })
+    }
 
-    return { graphVersion }
+    return { graphVersion, warnings: validation.issues }
+  })
+
+  ipcMain.handle('canvas.validateGraph', (_event, request) => {
+    const workflowId = isObject(request) && typeof request.workflowId === 'string' ? request.workflowId : 'default'
+    const mode: GraphValidationMode = isObject(request) && request.mode === 'lenient' ? 'lenient' : 'strict'
+    const graph = isObject(request) && isObject(request.graph)
+      ? request.graph as unknown as CanvasGraphSnapshot
+      : dependencies.graphStore?.getGraph(workflowId) ?? dependencies.workflows?.getLatestVersion(workflowId)?.graph ?? defaultGraph()
+    return validateCanvasGraph(graph, mode, validationContext(dependencies, workflowId))
   })
 
   ipcMain.handle('canvas.loadGraph', (_event, request) => {
@@ -626,7 +716,7 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     return { graphVersion, appliedNodeIds, appliedEdgeIds, dropped }
   })
 
-  ipcMain.handle('canvas.runPlan', (_event, request) => {
+  ipcMain.handle('canvas.runPlan', async (_event, request) => {
     if (!isObject(request) || !Array.isArray(request.runSteps)) {
       // Run plan requests without valid run steps cannot enqueue any jobs.
       return { jobIds: [], status: 'queued' as const }
@@ -641,18 +731,12 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     }
 
     for (const step of runSteps) {
-      const jobType = step.action === 'imageRun'
-        ? 'canvas.generateImage'
-        : step.action === 'videoRun'
-          ? 'canvas.generateVideo'
-          : 'canvas.generateImage' // textPolish maps to image generation pipeline for now
-
       // Resolve references for plan step nodes
       const workflowId = readWorkflowId(request)
-      const descriptor = buildRunDescriptor(step.ref, dependencies, workflowId)
+      const descriptor = await buildRunDescriptor(step.ref, dependencies, workflowId)
 
       const ticket = dependencies.queue.enqueue({
-        type: descriptor.type ?? jobType,
+        type: descriptor.type,
         targetId: step.ref,
         payload: { ...descriptor.payload, action: step.action, graphVersion },
         requestedBy: { type: 'user', id: dependencies.currentUserId ?? 'user-local' }
@@ -671,6 +755,17 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     return workflows.list()
   })
 
+  ipcMain.handle('canvas.listWorkflowTemplates', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return []
+    }
+    const scope = isObject(request) && (request.scope === 'my' || request.scope === 'all' || request.scope === 'public')
+      ? request.scope
+      : 'public'
+    return workflows.listTemplates({ scope })
+  })
+
   ipcMain.handle('canvas.createWorkflow', (_event, request) => {
     const workflows = dependencies.workflows
     if (!workflows) {
@@ -680,6 +775,15 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     const id = `wf-${clock()}`
     const now = clock()
     workflows.create({ id, name, createdAt: now, updatedAt: now })
+    // 新建工作流必须落一条初始图版本，否则 getSummary/getLatestVersion
+    // 只能靠 emptyGraph() 兜底，掩盖了"从未保存过图"这一真实状态。
+    workflows.addVersion({
+      id: idFactory(),
+      workflowId: id,
+      graph: defaultGraph(),
+      createdAt: now,
+      createdBy: dependencies.currentUserId ?? 'system'
+    })
     return { id, name }
   })
 
@@ -738,6 +842,9 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     if (unsafeWorkflowJson(parsed)) {
       return { errorClass: 'unsafe_workflow_json', message: 'Workflow import JSON cannot contain absolute file paths.', retryable: false }
     }
+    if (unsafeWorkflowSecret(parsed)) {
+      return { errorClass: 'unsafe_workflow_json', message: 'Workflow import JSON cannot contain secrets.', retryable: false }
+    }
 
     const workflowId = `wf-import-${clock()}`
     const now = clock()
@@ -747,7 +854,7 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     const sanitized = sanitizeGraphWithDropped(parsed.graph)
     const graphVersion = idFactory()
 
-    workflows.create({ id: workflowId, name, createdAt: now, updatedAt: now })
+    workflows.create({ id: workflowId, name, scope: 'draft', published: false, createdAt: now, updatedAt: now })
     workflows.addVersion({
       id: graphVersion,
       workflowId,
@@ -757,5 +864,102 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     })
 
     return { workflowId, graphVersion, dropped: sanitized.dropped }
+  })
+
+  ipcMain.handle('canvas.copyWorkflowTemplate', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return { errorClass: 'workflow_repository_unavailable', message: 'Workflow repository is unavailable.', retryable: true }
+    }
+    const templateId = isObject(request) && typeof request.templateId === 'string' ? request.templateId : ''
+    if (!templateId) {
+      return { errorClass: 'workflow_template_missing', message: 'Workflow template id is required.', retryable: false }
+    }
+    const summary = workflows.getSummary(templateId)
+    const name = isObject(request) && typeof request.name === 'string' && request.name.trim().length > 0
+      ? request.name.trim()
+      : `${summary?.name ?? 'Template'} copy`
+    const now = clock()
+    const copied = workflows.copyTemplateToDraft({
+      templateId,
+      workflowId: `wf-template-copy-${now}`,
+      graphVersionId: idFactory(),
+      name,
+      createdAt: now,
+      createdBy: dependencies.currentUserId ?? 'system'
+    })
+
+    if (!copied) {
+      return { errorClass: 'workflow_template_unavailable', message: 'Workflow template is unavailable.', retryable: false }
+    }
+    return copied
+  })
+
+  ipcMain.handle('canvas.publishWorkflowTemplate', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return { errorClass: 'workflow_repository_unavailable', message: 'Workflow repository is unavailable.', retryable: true }
+    }
+    const workflowId = isObject(request) && typeof request.workflowId === 'string' ? request.workflowId : ''
+    if (!workflowId) {
+      return { errorClass: 'workflow_template_missing', message: 'Workflow template id is required.', retryable: false }
+    }
+    const latest = workflows.getLatestVersion(workflowId)
+    if (!latest) {
+      return { errorClass: 'workflow_template_unavailable', message: 'Workflow template is unavailable.', retryable: false }
+    }
+    const visibility = isObject(request) && request.visibility === 'private' ? 'private' : 'public'
+    const validation = validateCanvasGraph(latest.graph, 'strict', validationContext(dependencies, workflowId))
+    return workflows.publishTemplate({
+      workflowId,
+      visibility,
+      validation,
+      updatedAt: clock(),
+    })
+  })
+
+  ipcMain.handle('canvas.listWorkflowVersions', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return []
+    }
+    const workflowId = isObject(request) && typeof request.workflowId === 'string' ? request.workflowId : ''
+    const limit = isObject(request) && typeof request.limit === 'number' && Number.isFinite(request.limit)
+      ? Math.max(1, Math.min(100, Math.floor(request.limit)))
+      : 20
+    if (!workflowId) {
+      return []
+    }
+    return workflows.listVersions(workflowId, limit)
+  })
+
+  ipcMain.handle('canvas.restoreWorkflowVersion', (_event, request) => {
+    const workflows = dependencies.workflows
+    if (!workflows) {
+      return { errorClass: 'workflow_repository_unavailable', message: 'Workflow repository is unavailable.', retryable: true }
+    }
+    const workflowId = isObject(request) && typeof request.workflowId === 'string' ? request.workflowId : ''
+    const versionId = isObject(request) && typeof request.versionId === 'string' ? request.versionId : ''
+    if (!workflowId || !versionId) {
+      return { errorClass: 'workflow_version_missing', message: 'Workflow version id is required.', retryable: false }
+    }
+    const restored = workflows.restoreVersion({
+      workflowId,
+      sourceVersionId: versionId,
+      restoredVersionId: idFactory(),
+      createdAt: clock(),
+      createdBy: dependencies.currentUserId ?? 'system'
+    })
+    if (!restored) {
+      return { errorClass: 'workflow_version_unavailable', message: 'Workflow version is unavailable.', retryable: false }
+    }
+    const [summary] = workflows.listVersions(workflowId, 1)
+    return {
+      workflowId,
+      graphVersion: restored.id,
+      restoredFromVersionId: versionId,
+      checksum: summary?.checksum ?? checksumGraph(restored.graph),
+      warningSummary: summary?.warningSummary ?? { unsupportedNodes: 0, invalidEdges: 0 }
+    }
   })
 }

@@ -2894,6 +2894,125 @@ Remaining REQ-092 snippet gaps:
 - Desktop select-save-insert and cross-project save/reopen evidence remains
   pending.
 
+## 2026-06-27 - Phase A Human Review Runbook Gate
+
+Scope:
+
+- Added `docs/progress/phase-a-human-review-runbook.md` as the execution guide
+  for manual desktop acceptance.
+- Added `docs/progress/phase-a-human-review-session-template.md` so reviewers
+  can record required row results, failures, and product deferrals without
+  leaking secrets or using Agent/MJ rows as Phase A evidence.
+- Linked the runbook from `docs/progress/human-desktop-review-checklist.md`.
+- Reconfirmed that `HDR-PHASEA-001` is the Phase A acceptance gate and remains
+  Pending until human review Pass or explicit product deferral.
+- Reconfirmed that Task 60 is blocked and Agent plan apply/run automation
+  remains disabled while `HDR-PHASEA-001` is Pending.
+- Added `docs/progress/task-60-agent-plan-apply-readiness.md` to record the
+  preflight checks, reuse points, prohibited shortcuts, and minimum future
+  verification for Task 60 when the human gate opens.
+- Reconfirmed that MJ node/component implementation is out of scope for Phase A;
+  legacy MJ graph support is limited to readable unavailable behavior.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/phase-a-human-review-runbook.test.ts tests/agent-plan-apply-gate.test.ts tests/phase-a-acceptance-gate.test.ts tests/human-desktop-review-checklist.test.ts --reporter=dot
+bun run typecheck
+git diff --check
+```
+
+Result:
+
+- RED first: the new runbook test initially depended on Markdown line wrapping
+  for long MJ/R2 rule sentences.
+- PASS after tightening assertions and adding the session template: Phase A
+  runbook/template, Task 60 gate, acceptance gate, and human checklist tests
+  passed, 4 files and 4 tests.
+
+## 2026-06-27 - Phase A Assets UI Tasks 7-9
+
+Scope:
+
+- Marked Task 7 `/assets` shell parity engineering-complete with URL-synced
+  media/search/sort/date filters, counted type tabs, upload entry, responsive
+  grid/list shells, folder/category sidebars, loading, empty, and error states.
+- Marked Task 8 upload card parity engineering-complete with file index/count,
+  current filename, busy disabled upload entry, percent complete, successful
+  import list refresh, and mixed-batch failure feedback.
+- Marked Task 9 asset card/preview/batch parity engineering-complete with image
+  thumbnails, non-image fallbacks, preview metadata, display rename, single safe
+  delete feedback, and batch safe-delete selection reset.
+- Updated `hjwall-assets-workflows-gap-analysis.md` and
+  `human-desktop-review-checklist.md` so HDR-ASSET-001 through HDR-ASSET-003
+  remain manual-review pending but have engineering evidence.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/asset-panel-ui.test.tsx tests/asset-folders-ipc.test.ts tests/asset-rename-repo.test.ts tests/hjwall-assets-workflows-inventory.test.ts tests/human-desktop-review-checklist.test.ts --reporter=dot
+bun run typecheck
+git diff --check
+bun scripts/run-vitest.mjs run tests/phase-a-acceptance-gate.test.ts tests/agent-orchestration-requirements-refresh.test.ts --reporter=dot
+```
+
+Result:
+
+- PASS: asset UI, folder IPC, rename repository, inventory, and checklist
+  regression passed, 5 files and 24 tests.
+- PASS: TypeScript strict compile completed with exit code 0 through
+  `bun run typecheck`.
+- PASS: `git diff --check` completed with exit code 0.
+- PASS: Phase A acceptance gate and Agent requirements gate passed, 2 files and
+  2 tests.
+
+Remaining gate:
+
+- Task 60 remains blocked by `HDR-PHASEA-001` until human review pass or
+  explicit product deferral; Agent plan apply/run automation was not enabled.
+- Task 60 is blocked and Agent plan apply/run automation remains disabled while
+  HDR-050 and HDR-051 stay manual-review pending.
+
+## 2026-06-27 - Phase A Assets/Workflows Review Gate
+
+Scope:
+
+- Expanded `docs/progress/human-desktop-review-checklist.md` with the Human
+  Phase A Acceptance Matrix.
+- Added `HDR-ASSET-009` for verified R2/SQLite storage review and kept
+  `HDR-PHASEA-001` as the final manual acceptance row.
+- Added `desktop/src/main/smoke/phase-a-assets-workflows-smoke.ts` and
+  `tests/phase-a-assets-workflows-smoke.test.ts`.
+- The smoke path creates a workflow project, adds canvas nodes, saves and
+  reopens the graph, imports/categorizes an image asset, inserts it into canvas
+  node data, syncs asset references so safe delete is blocked, saves/inserts a
+  snippet with remapped IDs, and completes a stub image generation job through
+  queue, worker, asset pipeline, and terminal event.
+- Updated backlog and gap analysis so Task 58 records the acceptance decision
+  without bypassing human review.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/phase-a-assets-workflows-smoke.test.ts tests/m1-smoke-path.test.ts tests/hjwall-assets-workflows-inventory.test.ts tests/human-desktop-review-checklist.test.ts --reporter=dot
+bun scripts/run-vitest.mjs run tests/phase-a-acceptance-gate.test.ts --reporter=verbose
+bun run typecheck
+git diff --check
+```
+
+Result:
+
+- RED first: `tests/phase-a-assets-workflows-smoke.test.ts` failed because the
+  Phase A smoke helper did not exist.
+- PASS after implementation: Phase A smoke, M1 smoke, inventory, and checklist
+  focused group passed, 4 files and 5 tests.
+- RED first: `tests/phase-a-acceptance-gate.test.ts` failed because backlog,
+  gap analysis, and this report did not yet record the final acceptance gate.
+- PASS after report update: `tests/phase-a-acceptance-gate.test.ts` passed,
+  1 file and 1 test.
+- Task 58 decision: Phase A is not accepted. `HDR-PHASEA-001` remains the final
+  gate and requires human review pass or explicit product deferral.
+
 ## 2026-06-27 - REQ-092 Audio Asset Import IPC Persistence Slice
 
 Scope:
@@ -3274,3 +3393,720 @@ Remaining REQ-092 snippet gaps:
 - Richer snippet management UI is still pending.
 - Desktop select-save-insert and cross-project save/reopen evidence remains
   pending.
+
+## 2026-07-04 - hjwall-canvas-full-migration Phase 0/2 Audit and Hardening
+
+Scope:
+
+- Task 1-3 (Phase 0) re-audited against existing artifacts. Checkboxes were
+  stale (`[ ]`) even though the required outputs already existed and were
+  still accurate; flipped to `[x]` with evidence citations added directly in
+  `specs/hjwall-canvas-full-migration/tasks.md`.
+- Task 2's audit output requirement ("mark items as verified, partial, or
+  contradicted in a new dated verification report without deleting historical
+  records") was actually executed this session: added
+  `docs/progress/backlog-claims-audit-2026-07-04.md`, classifying REQ-077..085
+  individually against current code. Found two partial claims that directly
+  conflict with code: REQ-078's documented "30s autosave" (actual: 2s
+  debounce in `CanvasPage.tsx`) and REQ-082's claimed node "lock" action
+  (does not exist in the node model). `verification-report-2026-06-26.md` was
+  kept as-is (different artifact: CI/lint/build health, not a per-REQ claim
+  audit).
+- Task 4 (Phase 1): found and fixed a genuine functional bug while verifying
+  evidence claims. `canvas.createWorkflow` in
+  `desktop/src/main/ipc/canvas.handler.ts` called `workflows.create(...)` but
+  never `workflows.addVersion(...)`, so every newly created workflow had zero
+  graph versions. This was masked because `getSummary`/`getLatestVersion` both
+  fall back to `emptyGraph()` when no version row exists, so the bug produced
+  no visible symptom, only silent absence of the initial version row. Fixed by
+  inserting an initial empty-graph version at creation time, using the
+  handler's existing `clock`/`idFactory` dependencies.
+- Task 7 (Phase 2): wrote
+  `docs/architecture/canvas-graph-state-ownership.md`, documenting the actual
+  (not aspirational) dual-state model between the Zustand `canvasStore`
+  (durable source of truth) and React Flow local state (rendering cache):
+  the debounced 300ms RF-to-store sync (`persistToStore` in
+  `CanvasPage.tsx`), the immediate store-to-RF sync
+  (`syncReactFlowFromStore`), the two direct-bypass call sites (manual
+  `setState()` calls, realtime job writeback), and a binding ownership model
+  going forward. This satisfied the "design note" half of task 7's verify
+  bar; the "regression tests for undo/autosave/realtime races" half required
+  new test code (below).
+
+Verification:
+
+```bash
+bun install
+bun scripts/run-vitest.mjs run tests/workflow-project-repo.test.ts tests/workflow-template-repo.test.ts tests/ipc-skeleton.test.ts tests/canvas-graph-persistence.test.ts tests/main-runtime-wiring.test.ts tests/migrated-run-dispatch.test.ts tests/style-runtime-payload.test.ts tests/model-feature-ipc.test.ts --reporter=dot
+bun scripts/run-vitest.mjs run tests/canvas-graph-state-races.test.ts --reporter=dot
+bun scripts/run-vitest.mjs run --reporter=dot
+```
+
+Result:
+
+- RED first (task 4 test): a first draft test asserted
+  `workflows.getLatestVersion(...)` would return a version immediately after
+  the bare repository `create()` call. This failed
+  (`expected null to match object {...}`) because repository `create()` is
+  intentionally version-agnostic by design; version creation is the caller's
+  responsibility. Corrected by splitting into two tests: one documenting that
+  `create()` alone leaves no version row, and one exercising
+  `registerCanvasHandlers`'s `canvas.createWorkflow` (the actual fix location)
+  through a local fake `ipcMain`, confirming it inserts the initial version.
+  Also added a rename/soft-delete regression test that previously had no
+  coverage.
+- PASS after fix: workflow repository/IPC focused group passed, 8 files and
+  39 tests.
+- PASS: new `tests/canvas-graph-state-races.test.ts` (4 tests) confirms
+  `updateNodeData` and RF-sync `setNodes`/`setEdges` are correctly excluded
+  from undo history; characterizes a previously-undocumented data-loss gap
+  where `undo()`/`redo()` replay a frozen snapshot and silently discard a
+  realtime `updateNodeData` patch applied after that snapshot was captured
+  (in either direction) -- tracked as a known gap in the design note, not
+  fixed by this task, since task 7's scope is decide-and-document; and
+  asserts the autosave delay (2000ms) stays >=2x the RF-to-store persist
+  debounce (300ms), parsed directly out of `CanvasPage.tsx` so a future
+  constant change breaks the test instead of silently drifting.
+- PASS: full suite run after `bun install` (worktree had no `node_modules`)
+  showed 402 passed / 7 pre-existing failures across 3 files
+  (`tests/agent-settings-ui.test.tsx`, `tests/job-preload.test.ts`,
+  `tests/migrated-node-menu.test.ts`). Confirmed via `git stash` against the
+  unmodified `ce30e59` base that these 7 failures pre-exist and are unrelated
+  to this session's changes; no regressions were introduced.
+
+Remaining gaps carried forward:
+
+- Task 4 stays `[-]` (in progress): JSDoc `@see docs/api-contracts/canvas-plan.md`
+  is present on only one exported function in `workflow.repo.ts`, not every
+  exported repository method; human-review checklist coverage for the
+  project list flow (REQ-098) is still pending.
+- Task 7's known gap (undo/redo silently discarding realtime patches) is
+  tracked but intentionally not fixed in this session -- task 7's scope was
+  decide-and-document plus regression coverage of the *current* behavior, not
+  a redesign of undo/redo semantics. A follow-up task should decide whether
+  undo/redo should merge realtime patches into replayed snapshots instead of
+  overwriting them.
+- The 3 pre-existing failing test files
+  (`tests/agent-settings-ui.test.tsx`, `tests/job-preload.test.ts`,
+  `tests/migrated-node-menu.test.ts`) were not investigated or fixed this
+  session, since they fall outside tasks 1, 2, 4, and 7 and predate this
+  session's changes.
+
+## 2026-07-04 - Task 4 closure (JSDoc contract anchors)
+
+Closed task 4's remaining gap: JSDoc `@see docs/api-contracts/canvas-plan.md`
+was present on only one exported symbol in
+`desktop/src/main/db/repositories/workflow.repo.ts`. Added a JSDoc block
+(intent, `@param`/`@returns`/`@throws` where applicable, contract anchor) to
+every exported type/interface and to all 11 `WorkflowRepository` interface
+methods (`create`, `addVersion`, `getLatestVersion`, `getSummary`,
+`listTemplates`, `publishTemplate`, `copyTemplateToDraft`, `list`,
+`listVersions`, `restoreVersion`, `rename`, `delete`).
+
+While editing, found and fixed a self-inflicted defect introduced earlier in
+this same session's incremental edit passes: three exported types
+(`WorkflowCreateRecord`, `WorkflowVersionCreateRecord`,
+`WorkflowVersionRecord`) had accumulated two stacked JSDoc blocks each.
+De-duplicated to one accurate block per symbol.
+
+Verification:
+
+```bash
+bun node_modules/typescript/bin/tsc --noEmit
+bun scripts/run-vitest.mjs run tests/workflow-project-repo.test.ts tests/workflow-template-repo.test.ts tests/ipc-skeleton.test.ts tests/canvas-graph-persistence.test.ts tests/main-runtime-wiring.test.ts tests/migrated-run-dispatch.test.ts tests/style-runtime-payload.test.ts tests/model-feature-ipc.test.ts --reporter=dot
+```
+
+Result: typecheck clean; same 8-file/39-test focused group re-run and still
+39/39 green (JSDoc-only change, no runtime behavior touched).
+
+Task 4 checkbox flipped `[-]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`. Human-review checklist
+coverage for the project list flow remains tracked separately under REQ-098,
+per this spec's status legend.
+
+## 2026-07-04 - Task 8 closure (toolbar/context-menu/command-palette parity)
+
+Re-verified task 8's existing evidence against current code rather than
+taking the `[-]` status at face value. Confirmed present in
+`desktop/src/renderer/src/canvas/CanvasPage.tsx`: quick add via
+`ADDABLE_NODE_OPTIONS`, add-at-cursor via `screenToFlowPosition` in the
+context-menu add/connect-and-create handlers, command palette actions
+(`CanvasCommandPalette`, `Ctrl/Cmd+K`), `fitView`/zoom-in/zoom-out controls,
+select/pan `interactionMode` wired into React Flow's `panOnDrag` /
+`selectionOnDrag`, and duplicate/delete shortcuts (`Ctrl/Cmd+D`,
+`Delete`/Mac `Backspace`) guarded by `isEditableKeyboardTarget`.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/canvas-add-node-paths.test.ts tests/canvas-command-palette.test.tsx tests/canvas-shell-parity.test.ts tests/canvas-shortcuts-parity.test.ts tests/canvas-visible-copy.test.ts tests/canvas-selection-actions.test.ts --reporter=dot
+```
+
+Result: 6 files, 19 tests, all green. No code changes were needed; this was a
+verification-only pass confirming the evidence text matches the actual
+implementation before flipping the checkbox.
+
+Task 8 checkbox flipped `[-]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`. Human approval of the desktop
+keyboard/mouse flow (HDR-020/HDR-021) remains tracked separately under
+REQ-098, per this spec's status legend.
+
+## 2026-07-04 - Task 9 closure (local media drag/drop onto canvas)
+
+Delegated an independent audit of task 9's evidence against current code.
+Confirmed image/video/audio classification (`planLocalMediaDrop`/
+`planLocalMediaDrops` in
+`desktop/src/renderer/src/canvas/lib/local-media-drop.ts`, MIME-then-extension
+based, Chinese rejection reasons for missing path/unsupported type),
+drop-position node creation (`handleCanvasDrop` in `CanvasPage.tsx`
+using `screenToFlowPosition`, batched offset per accepted file), and asset
+import IPC (`asset.import` in `desktop/src/main/ipc/asset.handler.ts`, media
+type inferred from extension/MIME, persisted with POSIX-relative paths) are
+all genuinely implemented, not just planned -- audio is handled identically to
+image/video, not bolted on separately.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/local-media-drop.test.ts tests/canvas-local-media-drop-parity.test.ts tests/asset-audio-support.test.ts tests/audio-node-parity.test.tsx --reporter=dot
+```
+
+Result: 4 files, 10 tests, all green.
+
+Two earlier notes in this same report (2026-06-27 "Local Audio Media Drop
+Slice" and "Command Palette" sections) had flagged "real desktop drag/drop
+evidence is still pending before task 9 can be marked complete" -- written
+before this spec's status legend was clarified to separate engineering
+checkboxes (implementation + automated evidence) from human-review acceptance
+(REQ-098, non-blocking). Existing coverage is jsdom-simulated `DragEvent`s,
+not real OS-level Electron drag/drop; that gap is real but belongs under
+REQ-098/human review, not as a blocker on the engineering checkbox, consistent
+with how tasks 5, 6, 8 were already closed this session.
+
+Task 9 checkbox flipped `[-]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`. Human approval of the desktop
+drag/drop flow (real OS file-manager drag, not synthetic DOM events) remains
+tracked separately under REQ-098.
+
+## 2026-07-04 - Task 10 closure (snippet save/insert flow)
+
+Delegated an independent audit of task 10's evidence against current code.
+Confirmed `desktop/src/renderer/src/canvas/lib/canvas-snippet.ts` has real,
+non-stubbed logic: `extractCanvasSnippet` filters selected nodes plus
+internal-only edges and normalizes coordinates to origin (throws below 2
+selected nodes); `insertCanvasSnippet` remaps node/edge IDs via factories,
+offsets positions, and applies through one `store.applyChange()` call (single
+undo entry). Persistence is real SQLite (`canvas_snippets` table, migrations
+0004/0012, prepared statements in `canvas-snippet.repo.ts`, soft-delete with
+owner permission check) wired through `canvasSnippet.list/get/save/delete`
+IPC handlers and typed preload methods. `CanvasPage.tsx` wires this up twice:
+a compact toolbar (save/select/insert) and a fuller `WorkflowPanel` slide-out
+(thumbnails, tags, scope label, per-item delete), both bound to the same
+handlers and `snippets` state -- a real, working feature, not a stub.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/canvas-snippet.test.ts tests/canvas-snippet-repository-ipc.test.ts tests/workflow-panel-snippet-parity.test.tsx --reporter=dot
+```
+
+Result: 3 files, 8 tests, all green.
+
+The evidence text's "richer UI remains an engineering follow-up" note was
+checked against two independent historical sessions (2026-06-26, 2026-06-27)
+that both flagged the same gap -- not last-minute hedging. Concretely
+missing: rename-before-save (name is auto-generated `Snippet <timestamp>`),
+search/filter in the `WorkflowPanel` list, and drag-and-drop insert
+(button-only today). No hjwall reference client exists in this repo to diff
+against, so there is no scoped external requirement being left undone --
+this is self-identified polish on top of a fully working extraction /
+persistence / insert-with-remap / one-undo-snapshot flow that already
+satisfies INV-CANVAS-008.
+
+Task 10 checkbox flipped `[-]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`. Rename-on-save, list
+search/filter, and drag-and-drop insert are carried forward as backlog
+polish, not blocking requirements. Human approval of the desktop
+select-save-insert flow remains tracked separately under REQ-098.
+
+## 2026-07-04 - Task 11 closure (connection feedback and @mention edge validation)
+
+Delegated an independent audit of task 11's evidence, specifically the
+caveat "Remaining context-menu edge paths are engineering follow-up work."
+Found this caveat to be stale/inaccurate, not a real gap.
+
+`CanvasPage.tsx`'s node context menu has exactly three actions: Duplicate,
+Delete, and "Link {type}" (`handleCreateConnectedNodeAtContextMenu`). The
+"Link" action already calls `connectCreatedCanvasNode`, which wraps the same
+shared `createCanvasEdge` / `createCanvasConnectHandler` validator used by
+direct `onConnect` and @mention edges -- same duplicate/matrix rejection,
+same Chinese `ConnectionFeedback` path. There is no separate "link two
+existing nodes via right-click" feature anywhere in the codebase (no
+pending-link/awaiting-target state, no second edge-creation menu item) --
+right-click only ever creates a new node and connects it
+(connect-to-create), which is already covered. The `'context-menu'` member
+of `CanvasEdgeCreationReason` in `canvas-edge-creation.ts` is unused dead
+code (zero constructors reference it), not an unvalidated live path.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/canvas-edge-creation.test.ts tests/canvas-connect-to-create.test.ts tests/connection-validation-ux.test.tsx tests/mention-edge-validation.test.tsx --reporter=dot
+```
+
+Result: 4 files, 10 tests, all green. All three real edge-creation paths
+(direct, connect-to-create, mention) funnel through the same shared
+validator and are each independently tested.
+
+Task 11 checkbox flipped `[-]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`; the stale "context-menu
+follow-up" caveat was corrected to note there is no separate link-existing-
+nodes context-menu path, only connect-to-create (already covered). Human
+approval of invalid-connection feedback timing remains tracked separately
+under REQ-098.
+
+## 2026-07-04 - Task 12 closure (shared node contract, matrix, serializer)
+
+Delegated an independent audit of task 12's own stated scope (`shared/nodes.ts`,
+`shared/connection-matrix.ts`, graph serializer) plus the evidence text's
+named slices (Plan sanitizer, apply-plan, orchestration smoke), separate from
+the task's "keep partial until node UI vertical slices and run dispatch are
+implemented" note.
+
+Confirmed `shared/nodes.ts`'s `NodeType` union carries exactly the 12 accepted
+migrated types (text, image, video, character, scene, audio, imageConfigV2,
+videoConfigV2, videoCompose, superResolution, muxAudioVideo, mjImage), each
+with a real, fully JSDoc'd `*NodeData` interface (not a stub) --
+`CharacterNodeData`, `SceneNodeData`, `AudioNodeData`, `VideoComposeNodeData`,
+`SuperResolutionNodeData`, `MuxAudioVideoNodeData`, `MjImageNodeData`, plus
+imageConfigV2/videoConfigV2 field extensions on `ImageNodeData`/`VideoNodeData`.
+`shared/connection-matrix.ts`'s `NODE_CONNECTION_MATRIX` has a rule row for
+every one of the 12 types, correctly modeling composition flows
+(video/audio -> muxAudioVideo, video/videoConfigV2 -> videoCompose/
+superResolution, character/scene/mjImage alongside image as prompt/reference
+sources). `shared/graph.ts`'s `CANVAS_NODE_TYPES`/`isCanvasNodeType`/
+`sanitizeCanvasGraphSnapshot` filter unknown node types and re-validate every
+edge via `canConnect`.
+
+Verification (contract + serializer slice):
+
+```bash
+bun scripts/run-vitest.mjs run tests/connection-matrix.test.ts tests/node-contracts.test.ts tests/canvas-graph-persistence.test.ts tests/workflow-graph-compiler.test.ts --reporter=dot
+```
+
+Result: 4 files, 14 tests, all green. `tests/connection-matrix.test.ts`
+exhaustively enumerates nodeType x nodeType per tests.md's PBT mandate;
+`tests/node-contracts.test.ts` asserts the 12-type set matches the accepted
+hjwall migration list with explicit allow/deny composition pairs;
+`tests/canvas-graph-persistence.test.ts`'s `migratedGraph` fixture round-trips
+11 of the 12 types plus an injected unsupported legacy node, confirming
+unknown types and their edges are dropped on save/reload (`image`'s shape is
+exercised structurally elsewhere, not a contract gap).
+
+Verification (evidence text's named sanitizer/apply-plan/smoke slice):
+
+```bash
+bun scripts/run-vitest.mjs run tests/ipc-skeleton.test.ts tests/agent-plan-apply-gate.test.ts tests/apply-plan-runner.test.ts tests/sanitize-plan.test.ts tests/agent-orchestration-smoke.test.ts --reporter=dot
+```
+
+Result: 5 files, 22 tests, all green. `shared/plan.ts`'s `RunAction` union
+covers every generative node type (`audioRun`, `mjImageRun`,
+`videoComposeRun`, `superResolutionRun`, `muxAudioVideoRun` alongside the
+existing `imageRun`/`videoRun`/`textPolish`); character/scene are
+prompt-source nodes with no run action by design, not a gap.
+
+36/36 tests pass across both slices. Conclusion: task 12's own scope (shared
+contract + matrix + serializer + sanitizer + apply-plan + orchestration
+smoke) is complete and independently verified. The "keep partial" note
+conflated this with the separately-tracked node UI vertical slices and run
+dispatch work in tasks 13-16, which remain open under their own checkboxes.
+
+Task 12 checkbox flipped `[-]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`. Human approval of desktop
+save/load remains tracked separately under REQ-098.
+
+## 2026-07-04 - Task 13 closure (stabilize text/image/video/imageConfigV2/videoConfigV2 run wiring)
+
+Read the task's own text (idle/running/done/error states, inline rename,
+focus modal, prompt preview, style placeholder removal, run callbacks) and
+re-checked whether the existing engineering-complete claim for
+imageConfigV2/videoConfigV2 run wiring (REQ-093/HDR-030) was accurate before
+accepting it. It was not: three independent bugs meant imageConfigV2 and
+videoConfigV2 never reached the real IPC run path.
+
+Root causes found:
+
+1. `CanvasPage.tsx`'s `nodeTypes` registry mapped `imageConfigV2`/
+   `videoConfigV2` directly to the raw node components with no wrapper, so
+   neither component could receive the run-context callback that every other
+   generative node type gets via its `*NodeWrapper`.
+2. `jobTypeForNodeType` only mapped the legacy `video` type to
+   `canvas.generateVideo`, missing `videoConfigV2`.
+3. `buildRunDescriptor` in `desktop/src/main/ipc/canvas.handler.ts` only
+   special-cased `image`/`video`/`mjImage`; `imageConfigV2`/`videoConfigV2`
+   fell through to the bare `canvas.generateImage` fallback with no prompt,
+   style, duration, or resolution -- even though
+   `compileWorkflowNodeRuntimeSnapshot` (and its `mediaTypeForNode`/
+   `runtimeParameters`/`selfPromptPart` helpers) were already correctly
+   imageConfigV2/videoConfigV2-aware. The bug was purely in the caller not
+   routing these types through that function.
+
+Additionally found and fixed a parallel-state-tracking bug: the canvas store
+had a second, Map-based status mechanism (`nodeRunStatus`/
+`setNodeRunStatus`/`getNodeRunStatus`) used only by ImageConfigV2Node and
+VideoConfigV2Node's status badge, alongside the `node.data.status` field used
+by every other node type (Image/Video/etc.) for preview rendering. This dual
+mechanism meant imageConfigV2/videoConfigV2 status never synced with the real
+job-reconciliation path (`job-reconciliation.ts`'s
+`terminalResultToNodePatch`/`terminalFailureToNodePatch`, which patch
+`node.data`, not the Map). Removed the Map-based mechanism entirely from
+`canvas.store.ts` and consolidated both nodes onto `node.data.status`,
+matching every other node type.
+
+Fixes applied:
+
+- `CanvasPage.tsx`: added `ImageConfigV2NodeWrapper`/`VideoConfigV2NodeWrapper`
+  components that inject `onRun` from `useCanvasRunContext()`; registered them
+  in `nodeTypes`; fixed `jobTypeForNodeType` to route `videoConfigV2` to
+  `canvas.generateVideo`.
+- `canvas.handler.ts`'s `buildRunDescriptor`: `imageConfigV2`/`videoConfigV2`
+  now route through `compileWorkflowNodeRuntimeSnapshot` (same as
+  `image`/`video`), producing a full payload with composed prompt, resolved
+  style, and (for video) duration/resolution parameters.
+- `ImageConfigV2Node.tsx`: added `onRun?: (id: string) => void` prop; removed
+  the dead `setNodeRunStatus`/`getNodeRunStatus`/`MOCK_GENERATE_DELAY` mock
+  entirely; `handleGenerate` now delegates to `onRun?.(id)`, matching
+  `ImageNode.tsx`'s existing pattern; status reads from `d.status`.
+- `VideoConfigV2Node.tsx`: added `onRun` to the component's prop type and
+  threaded it through to `VideoToolbar`; fixed the confirmed stuck-state bug
+  in `VideoToolbar.handleGenerate` (previously set `status: 'running'` with
+  no path back out) to delegate to `onRun?.(nodeId)` instead; fixed the
+  header's status badge to read `d.status` instead of the now-removed
+  `getNodeRunStatus`.
+- `canvas.store.ts`: removed `nodeRunStatus`/`setNodeRunStatus`/
+  `getNodeRunStatus` entirely.
+
+Test updates:
+
+- `tests/image-config-v2-parity.test.tsx`: replaced the Map-based
+  `getNodeRunStatus('image-config')` assertion with an injected `onRun` spy
+  asserting `onRun` is called with the node id, and that the component no
+  longer mutates status synchronously.
+- `tests/video-config-v2-parity.test.tsx`: same change for videoConfigV2,
+  additionally replacing the stuck-state assertion
+  (`status: 'running', url: ''` with no way out) with the `onRun`-delegation
+  assertion.
+- `tests/migrated-run-dispatch.test.ts`: added two new cases asserting
+  `imageConfigV2` dispatches as `canvas.generateImage` and `videoConfigV2`
+  dispatches as `canvas.generateVideo`, both via
+  `compileWorkflowNodeRuntimeSnapshot` with composed prompt, resolved style,
+  and (for video) duration/resolution parameters -- closing the zero-coverage
+  gap the audit found in this suite for these two types.
+
+Verification:
+
+```bash
+bun scripts/run-vitest.mjs run tests/migrated-run-dispatch.test.ts tests/image-config-v2-parity.test.tsx tests/video-config-v2-parity.test.tsx --reporter=dot
+```
+
+Result: 3 files, 13 tests (7 + 3 + 3), all green.
+
+```bash
+bun node_modules/typescript/bin/tsc --noEmit
+```
+
+Result: PASS, no errors (confirms the store consolidation didn't leave any
+dangling references).
+
+```bash
+bun scripts/run-vitest.mjs run
+```
+
+Result: 129 passed / 3 pre-existing failures (132 files, 404 passed / 7
+failed of 411 tests). Confirmed via `git stash` that the 3 failing files
+(`tests/agent-settings-ui.test.tsx`, `tests/job-preload.test.ts`,
+`tests/migrated-node-menu.test.ts`) fail identically with this task's
+changes removed -- pre-existing and unrelated to this task, not a
+regression introduced here.
+
+Corrected `docs/progress/backlog.md` (REQ-093) and
+`docs/progress/human-desktop-review-checklist.md` (HDR-030), which had
+claimed imageConfigV2/videoConfigV2 async run was engineering-complete; that
+claim was inaccurate before this fix landed. Both now reflect the actual
+completed state.
+
+Task 13 checkbox flipped `[ ]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`. Human desktop review of the
+run/status flow remains tracked under REQ-098/HDR-030.
+
+## 2026-07-04 - Task 14 closure (character/scene production semantic nodes)
+
+Read task 14's own scope (structured fields, media references, prompt
+contribution, insert-from-library hooks, serialization, connection behavior)
+and, per the goal loop's step-3 requirement, re-evaluated the existing
+REQ-093/HDR-031 "engineering complete" claim rather than accepting it at face
+value -- task 13 had just shown that kind of claim can be wrong. Delegated
+the file-level audit to a sub-agent (fan-out across independent files: node
+components, shared contracts, connection matrix, prompt compiler, panel
+wiring, and 4 test files), then personally re-ran the cited tests rather than
+trusting the agent's self-report alone.
+
+Unlike task 13, this audit confirmed the claim holds up:
+
+- `CharacterNode.tsx`/`SceneNode.tsx` are real production components:
+  structured label/description/tags/category fields, asset preview
+  thumbnail, view-asset button, single/multi generate-intent buttons,
+  source/target handles, resizer, and a live prompt-preview panel showing
+  `Character {label}: {description}` / `Scene {label}: {description}`.
+- `shared/nodes.ts`'s `CharacterNodeData`/`SceneNodeData` are real structured
+  interfaces, not stubs; both types are registered in `CanvasPage.tsx`'s
+  `nodeTypes` map plus creation defaults/icon maps/layout offsets.
+- `shared/connection-matrix.ts` has explicit character/scene rows.
+- `workflow-graph-compiler.ts` implements the
+  `Character {label}: {text}` / `Scene {label}: {text}` prompt-contribution
+  pattern for real.
+- Insert-from-library hook is real: `CharacterLibraryPanel.tsx` +
+  `CanvasPage.tsx`'s `handleCreateCharacterFromCategory` create a
+  `character`/`scene` node prefilled from an asset category, wired to a
+  toolbar toggle.
+- Serialization round-trip covered by `canvas-graph-persistence.test.ts`,
+  including asset-trash blocking-reference logic tied to a character node.
+
+Minor non-blocking gap noted: `CharacterNodeData.viewMode` is declared but
+never read/set by the component (dead field). Tracked as a follow-up, not
+worth holding the task open for.
+
+Verification (independently re-run, not just the sub-agent's self-report):
+
+```bash
+bun scripts/run-vitest.mjs run tests/character-scene-node-parity.test.tsx tests/production-node-components-parity.test.tsx tests/workflow-graph-compiler.test.ts tests/canvas-panels-parity.test.ts --reporter=dot
+```
+
+Result: 4 files, 11 tests, all green.
+
+Task 14 checkbox flipped `[ ]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`, with an evidence paragraph
+matching this entry. Updated `docs/progress/human-desktop-review-checklist.md`
+(HDR-031) to split out character/scene as confirmed-complete from
+audio/videoCompose/muxAudioVideo/superResolution, which still have open
+vertical-slice run-dispatch work under tasks 15-17 and should not be
+described as engineering-complete yet. `docs/progress/backlog.md` (REQ-093)
+already described character/scene coverage accurately from task 13's own
+edit; no change needed there. Human desktop review remains tracked under
+REQ-098/HDR-031.
+
+## 2026-07-04 - Task 15 closure (audio node and audio asset integration)
+
+Read task 15's scope (audio import, preview, mux/video connection, serializer/
+runtime support) and re-evaluated the prior HDR-031B claim that audio was
+only a "component shell" pending full verification. Delegated an initial
+file-level audit to a sub-agent (fan-out across `AudioNode.tsx`,
+`shared/nodes.ts`, `CanvasPage.tsx`, `connection-matrix.ts`,
+`workflow-graph-compiler.ts`, `workflow-node-definitions.ts`,
+`canvas.handler.ts`, `runtime.ts`, and the audio-scoped test files), then
+personally re-read nearly every cited file and re-ran the full audio-scoped
+test suite myself rather than trusting the report at face value.
+
+Confirmed real, not stubbed:
+
+- `AudioNode.tsx` is a production component: `<audio>` playback bound to
+  `data.url`, `MediaInputControls` asset binding, asset-ID field, duration
+  display, mux-input reference-role affordance, import/view-asset buttons.
+- Connection matrix enforces `audio -> video/videoConfigV2/muxAudioVideo`
+  and blocks the inverse (`muxAudioVideo -> audio` is false), both tested.
+- `shared/assets.ts`/`asset.handler.ts` recognize `audio`/`.mp3`/
+  `audio/mpeg` end to end; `import-metadata.ts` has a genuine hand-rolled
+  MP3 frame-header parser computing real `durationMs` at import time --
+  not a placeholder, contrary to the sub-agent's blanket framing of "duration
+  is never derived from actual audio metadata" (true only for node-level
+  `durationSeconds`, not asset-level `durationMs`).
+- `workflow-graph-compiler.ts` maps `audio` nodes to the `audio` media kind
+  and threads `durationSeconds` into compiled parameters when present.
+
+Corrected one sub-agent overstatement (asset-layer duration parsing is real;
+only the asset-to-node propagation is missing) and resolved one apparent
+architectural contradiction the sub-agent did not fully resolve: a complete
+`canvas.generateAudio` run-dispatch pipeline exists end-to-end
+(`jobTypeForNodeType`, `buildRunDescriptor`, `runtime.ts` stub worker) but is
+unreachable from the UI, while `workflow-node-definitions.ts` marks audio
+`runnable: false, runAction: null`. This is consistent with, not
+contradicted by, task 15's own acceptance text (no "run dispatch"
+requirement, unlike tasks 16/17) and `design.md`'s priority ordering, which
+lists audio import as its own item separate from videoCompose/
+muxAudioVideo's "graph/run dispatch." Judged as intentional forward-looking
+infrastructure, not dead code to remove.
+
+The `onImport`/`onViewAsset` wiring gap (real component props and tests, but
+no `CanvasPage.tsx` wrapper injects them, since `audio` is registered
+directly in `nodeTypes` with no wrapper) is the identical pattern already
+accepted as non-blocking for `CharacterNode`/`SceneNode` in task 14's
+closure. Treated consistently as a shared, non-blocking follow-up across all
+three node types rather than singling out audio.
+
+Verification (independently re-run, not just the sub-agent's cited subset):
+
+```bash
+bun scripts/run-vitest.mjs run tests/asset-audio-support.test.ts tests/node-contracts.test.ts tests/connection-matrix.test.ts tests/workflow-node-definitions.test.ts tests/workflow-graph-compiler.test.ts tests/migrated-run-dispatch.test.ts tests/canvas-graph-persistence.test.ts tests/audio-node-parity.test.tsx tests/production-node-components-parity.test.tsx --reporter=dot
+```
+
+Result: 9 files, 32 tests, all green.
+
+Task 15 checkbox flipped `[ ]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`, with an evidence paragraph
+citing all three identified gaps as deliberately non-blocking. Updated
+`docs/progress/human-desktop-review-checklist.md` (HDR-031B split: audio
+moved to a confirmed-complete row alongside character/scene; videoCompose/
+muxAudioVideo/superResolution remain under the pending row since tasks
+16-17 are still open) and `docs/progress/backlog.md` (REQ-093) to reflect
+audio's closure accurately. Human desktop review remains tracked under
+REQ-098/HDR-031.
+
+## 2026-07-04 - Task 16 closure (videoCompose and muxAudioVideo vertical slices)
+
+Confirmed `VideoComposeNode.tsx`/`MuxAudioVideoNode.tsx` are real production
+components (ordered input lists via `inputOrder`, transition/model selects,
+ticket-only `handleRun`, terminal output preview), the connection matrix
+enforces `video -> videoCompose`/`muxAudioVideo` and `audio ->
+muxAudioVideo` (and blocks the inverse), and
+`workflow-graph-compiler.ts` threads `inputOrder`-ranked references into
+typed job payloads.
+
+A sub-agent audit surfaced a genuine, previously undetected defect,
+independently re-verified against source rather than accepted at face
+value: `videoCompose`/`muxAudioVideo`/`superResolution` were registered
+directly in `CanvasPage.tsx`'s `nodeTypes` map with no wrapper component, so
+their `onRun` prop was always `undefined`. Each component's `handleRun`
+does `update({ status: 'running', url: '' }); onRun?.(id)` with no
+fallback -- clicking "运行" flipped the node to `status: 'running'` and then
+did nothing, permanently stuck (the run button disables itself while
+running, and no job was ever enqueued). This is an active regression-class
+bug, not merely an incomplete feature, and blocked the task's own "run
+dispatch to stub job" acceptance criterion.
+
+Fix: added `VideoComposeNodeWrapper`/`SuperResolutionNodeWrapper`/
+`MuxAudioVideoNodeWrapper` in `CanvasPage.tsx` following the existing
+`ImageNodeWrapper`/`VideoConfigV2NodeWrapper` precedent, each injecting a
+real `onRun={(nodeId) => runContext?.runNode(nodeId)}` via
+`useCanvasRunContext()`, and switched `nodeTypes` to reference the
+wrappers. `handleRunNode`'s `jobTypeForNodeType` routing to
+`canvas.composeVideo`/`canvas.upscaleVideo`/`canvas.muxAudioVideo` was
+already correct; only the UI wiring was missing. `tsc --noEmit` passes
+cleanly after the fix.
+
+Added `tests/task16-post-production-run-dispatch.test.ts` (5 new tests) to
+close a coverage hole: the existing
+`tests/production-node-components-parity.test.tsx` only exercises the bare
+components with directly-mocked `onRun` props, so it would pass unchanged
+regardless of whether `CanvasPage.tsx`'s wiring was broken (its
+`toContain('videoCompose: VideoComposeNode')` assertion also still passes
+vacuously post-fix, since `'VideoComposeNodeWrapper'` contains
+`'VideoComposeNode'` as a substring -- noted but left unmodified, since the
+new test file closes the actual gap with precise, non-substring-ambiguous
+assertions). The new test asserts `nodeTypes` now points at the wrapper
+functions and that each wrapper's body genuinely wires
+`useCanvasRunContext()` into a real `onRun` callback, plus the
+`jobTypeForNodeType` routing.
+
+Verification (independently re-run):
+
+```bash
+bun scripts/run-vitest.mjs run tests/canvas-panels-parity.test.ts tests/task16-post-production-run-dispatch.test.ts tests/migrated-run-dispatch.test.ts tests/agent-orchestration-smoke.test.ts tests/production-node-components-parity.test.tsx --reporter=dot
+```
+
+Result: 5 files, 22 tests, all green.
+
+Two gaps identified and judged non-blocking as pre-existing systemic
+patterns already accepted in earlier closed tasks, not defects introduced
+by this task: (1) `onWriteOutputAsset` is a real declared prop with
+component-level test coverage but is never wired from `CanvasPage.tsx` --
+the identical gap already exists for the already-closed `ImageNode`/
+`VideoNode`. (2) The `canvas.composeVideo`/`canvas.upscaleVideo`/
+`canvas.muxAudioVideo` stub handlers in `runtime.ts` return `{ kind:
+'report', data: { nodeId } }` with no `assetId`/`url`, so
+`job-reconciliation.ts` only sets `status: 'done'` with no output asset --
+identical in shape to the already-closed `canvas.generateVideo` stub.
+
+Also confirmed, via `git stash`/re-test/`git stash pop` isolation, that
+`tests/migrated-node-menu.test.ts`'s pre-existing failure (mjImage add-menu
+literal-string assertion) predates this task's changes entirely -- it fails
+identically on the clean base commit `ce30e59`. Not caused by, and out of
+scope for, task 16; tracked as a standing pre-existing failure alongside
+`tests/agent-settings-ui.test.tsx` and `tests/job-preload.test.ts`.
+
+Task 16 checkbox flipped `[ ]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`, with a matching evidence
+paragraph. Updated `docs/progress/backlog.md` (REQ-093) and
+`docs/progress/human-desktop-review-checklist.md` (HDR-031B) to move
+videoCompose/muxAudioVideo/superResolution's run-dispatch status from
+"pending under tasks 16-17" to confirmed-complete for task 16's scope, with
+mjImage's intentional non-runnability tracked separately under task 17.
+Human desktop review remains tracked under REQ-098/HDR-031B.
+
+## 2026-07-04 - Task 17 closure (superResolution and mjImage vertical slices)
+
+Delegated an initial audit to a sub-agent, then independently re-verified
+every claim against source before writing this up.
+
+`superResolution` is a real vertical slice: `SuperResolutionNode.tsx` has
+input-video selection, scene/resolution/fps controls, a ticket-only
+`handleRun`, terminal output preview, and a writeback button. Run dispatch
+is real end-to-end on both call paths -- `canvas.handler.ts`'s
+`buildRunDescriptor` routes `superResolution -> canvas.upscaleVideo` with
+`scene`/`resolution`/`fps` parameters, and the Agent-tool-facing
+`tools/canvas/index.ts`'s `canvas.runNode` independently routes through
+`getNodeDefinition('superResolution')` (`runnable: true, runAction:
+'superResolutionRun'`) to the same job type. Task 16's
+`SuperResolutionNodeWrapper` fix already closed the UI-dispatch gap for
+this node type; re-verified still correct.
+
+`mjImage` is deliberately non-runnable by design, not a defect:
+`shared/workflow-node-definitions.ts` marks it `runnable: false, runAction:
+null, addable: false, connectCreate: false` with an explicit
+`unavailableReason`, and both call paths respect this -- `CanvasPage.tsx`'s
+`jobTypeForNodeType` returns `null` for `mjImage`, and
+`tools/canvas/index.ts`'s `canvas.runNode` throws a classified "Runtime
+unavailable for mjImage: ..." error rather than silently no-op'ing (this
+exact error string already has direct coverage in
+`tests/canvas-tools.test.ts`). `MjImageNode.tsx` is a real, non-placeholder
+component (prompt textarea, 4-result selectable grid, model/ratio display)
+whose job is to render legacy-imported plans, not run new generations.
+`tests/migrated-run-dispatch.test.ts`'s `'keeps legacy mjImage compatible
+without enabling MJ multi-result behavior'` test title itself documents
+this as intentional. `job-reconciliation.ts`'s `terminalResultToNodePatch`
+already generically handles a `urls: string[]` array for report-kind
+results, so multi-result plumbing exists structurally even though it is
+unexercised for mjImage specifically, consistent with the Phase A
+out-of-scope decision.
+
+Two gaps identified and judged non-blocking as systemic, pre-existing
+patterns already accepted in earlier closed tasks: (1) "parameter
+validation" for `superResolution`'s `scene`/`resolution`/`fps` is
+optional-field pass-through only in `buildRunDescriptor` -- grepped and
+confirmed no node type's run-dispatch path has real runtime parameter
+validation anywhere in this codebase, so this is a project-wide gap, not
+specific to task 17. (2) "asset reference creation" does not happen for
+`superResolution` outputs because the `canvas.upscaleVideo` stub returns no
+`assetId` -- identical in shape to the already-closed `canvas
+.generateVideo`/`canvas.composeVideo`/`canvas.muxAudioVideo` stubs (task
+16). Neither is judged a blocking defect against task 17's acceptance text
+for `superResolution`'s "run dispatch, status/result UI" (met) or
+`mjImage`'s intentionally-out-of-scope run behavior (met by design).
+
+Verification (independently re-run):
+
+```bash
+bun scripts/run-vitest.mjs run tests/task16-post-production-run-dispatch.test.ts tests/connection-matrix.test.ts tests/model-feature-catalog.test.ts tests/workflow-node-definitions.test.ts tests/migrated-run-dispatch.test.ts tests/super-resolution-node-parity.test.tsx tests/production-node-components-parity.test.tsx --reporter=dot
+```
+
+Result: 7 files, 26 tests, all green. `tsc --noEmit` passes cleanly.
+
+Task 17 checkbox flipped `[ ]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`, with a matching evidence
+paragraph. Updated `docs/progress/backlog.md` (REQ-093) and
+`docs/progress/human-desktop-review-checklist.md` (HDR-031B) to close out
+the remaining superResolution/mjImage row: superResolution moved to
+confirmed-complete, mjImage's non-runnability documented as compliant by
+design (R4.7), with the two stub-provider-era gaps (parameter validation,
+asset-reference creation) tracked as shared project-wide follow-ups, not
+task-specific defects. Human desktop review remains tracked under
+REQ-098/HDR-031B.

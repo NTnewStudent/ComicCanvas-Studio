@@ -19,7 +19,7 @@ export type NodeType =
   | 'mjImage'
 
 /** 连线语义 */
-export type EdgeType = 'promptOrder' | 'imageRole' | 'default'
+export type EdgeType = 'promptOrder' | 'imageOrder' | 'imageRole' | 'outputLink' | 'reference' | 'default'
 
 /** 图片角色（image → video 时的语义） */
 export type ImageRole = 'first_frame' | 'last_frame' | 'reference'
@@ -47,8 +47,16 @@ export interface ReferenceAsset {
 // ── Node data ──────────────────────────────────────────────
 
 export interface TextNodeData {
+  /** User-visible node title. */
   label: string
+  /** Plain-text prompt contribution used by graph compilers. */
   content: string
+  /** Optional rich-text HTML representation for renderer editing. */
+  html?: string
+  /** Optional text polish runtime status surfaced in the renderer. */
+  polishStatus?: NodeStatus
+  /** Optional model key used by the text polish action. */
+  polishModelId?: string
 }
 
 export interface ImageNodeData {
@@ -71,6 +79,10 @@ export interface ImageNodeData {
   ratio?: ImageRatio
   /** 生成结果 URL */
   url?: string
+  /** Generated safe image URLs for selectable imageConfigV2 results. */
+  urls?: string[]
+  /** Selected generated result index from `urls`. */
+  selectedIndex?: number
   /** 实际宽高比数值 */
   aspectRatio?: number
 }
@@ -122,6 +134,10 @@ export interface CharacterNodeData {
   url?: string
   /** Optional structured tags such as real/non-real, age, or costume. */
   tags?: string[]
+  /** Optional custom asset category ID for library-origin insertion. */
+  categoryId?: string | null
+  /** Preferred generation surface for character reference images. */
+  viewMode?: 'single' | 'multi'
 }
 
 /** Scene semantic node used as environment prompt/reference context. */
@@ -136,6 +152,8 @@ export interface SceneNodeData {
   url?: string
   /** Optional scene category such as interior, exterior, or prop. */
   category?: string
+  /** Optional custom asset category ID for library-origin insertion. */
+  categoryId?: string | null
 }
 
 /** Audio media node used as a reference or mux input. */
@@ -150,6 +168,8 @@ export interface AudioNodeData {
   durationSeconds?: number
   /** Runtime status for generated or imported audio. */
   status?: NodeStatus
+  /** Semantic role when the audio is used as a reference or mux input. */
+  referenceRole?: 'audio' | 'voice' | 'music' | 'sfx'
 }
 
 /** Video composition node that concatenates or transitions multiple video sources. */
@@ -176,6 +196,8 @@ export interface VideoComposeNodeData {
 export interface SuperResolutionNodeData {
   /** User-visible node label. */
   label: string
+  /** Source video node selected for enhancement. */
+  inputVideoId?: string
   /** Super-resolution scenario. */
   scene?: 'aigc' | 'short_series' | 'ugc' | 'old_film'
   /** Target resolution. */
@@ -198,6 +220,10 @@ export interface MuxAudioVideoNodeData {
   label: string
   /** Tool model ID or key selected for muxing. */
   modelId?: string
+  /** Source video node selected for muxing. */
+  videoInputId?: string
+  /** Source audio node selected for muxing. */
+  audioInputId?: string
   /** Result asset ID after mux completes. */
   assetId?: string | null
   /** Safe result preview URL. */
@@ -252,6 +278,10 @@ export type CanvasNodeData =
 
 export interface CanvasEdgeData {
   edgeType: EdgeType
+  /** One-based order for prompt ordering edges. */
+  promptOrder?: number
+  /** One-based order for image ordering edges. */
+  imageOrder?: number
   imageRole?: ImageRole
   /** 连接时间戳（用于确定性 prompt 拼接排序） */
   createdAt: number

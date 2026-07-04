@@ -3,14 +3,14 @@
   "hooks": [
     {
       "name": "ltm-capture-on-stop",
-      "description": "每次 Kiro agent 执行结束后自动调用 ltm.py capture-turn，将本轮工作写入项目长期记忆（LTM）。等价于 .claude/settings.json Stop 钩子和 .codex/config.toml [[hooks.Stop]]。",
+      "description": "LTM 已停用：不再自动捕获。",
       "trigger": "Stop",
       "action": {
         "type": "command",
-        "command": "python ltm/bin/ltm.py capture-turn"
+        "command": "echo LTM disabled"
       },
       "timeout": 30,
-      "enabled": true
+      "enabled": false
     }
   ]
 }

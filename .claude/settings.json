@@ -4,8 +4,6 @@
       "Bash(npm run *)",
       "Bash(npx *)",
       "Bash(node *)",
-      "Bash(python3 ltm/bin/ltm.py *)",
-      "Bash(python ltm/bin/ltm.py *)",
       "Bash(git status*)",
       "Bash(git log*)",
       "Bash(git diff*)",
@@ -18,17 +16,5 @@
       "Bash(rm -rf /)"
     ]
   },
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python ltm/bin/ltm.py capture-turn"
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }

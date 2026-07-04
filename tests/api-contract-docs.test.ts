@@ -12,7 +12,8 @@ const requiredContractDocs = [
   'agents.md',
   'skills.md',
   'knowledge-context.md',
-  'audit-observability.md'
+  'audit-observability.md',
+  'storage-config.md'
 ]
 
 const requiredSections = [
@@ -37,5 +38,16 @@ describe('foundation API contract docs', () => {
         expect(content, `${docName} should include ${section}`).toContain(section)
       }
     }
+  })
+
+  it('documents Phase A asset category, upload progress, and reference boundaries', () => {
+    const content = readFileSync(join('docs', 'api-contracts', 'assets-files.md'), 'utf8')
+
+    expect(content).toContain('The built-in starter image categories SHALL be role, scene, prop, and creature.')
+    expect(content).toContain('Asset category assignment SHALL preserve the underlying asset record')
+    expect(content).toContain('blockingReferences: AssetReference[]')
+    expect(content).toContain('Asset create/update/trash/tombstone changes SHALL be emitted through `asset.changed` IPC events.')
+    expect(content).toContain('Renderer upload progress SHALL be modeled as local multi-file import state')
+    expect(content).toContain('No `asset.uploadProgress` IPC channel is introduced')
   })
 })

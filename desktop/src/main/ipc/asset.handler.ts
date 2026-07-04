@@ -5,21 +5,26 @@
 
 import type {
   AssetFolder,
+  AssetCategoryAssignRequest,
+  AssetCategoryCreateRequest,
+  AssetCategoryUpdateRequest,
   AssetFolderCreateRequest,
   AssetFolderDeleteRequest,
   AssetMediaType,
   AssetMoveRequest,
   AssetRecord,
+  AssetRenameRequest,
   AssetTrashRequest
 } from '../../../../shared/assets'
 import type { AssetCreateFolderRecord, AssetRepository } from '../db/repositories/asset.repo'
 import type { IpcRegistrar } from './types'
-import { copyFileSync, mkdirSync, statSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, extname, join, posix } from 'node:path'
 import { getCurrentStorageConfig } from './storage.handler'
 import { storageFactory } from '../storage/storage-factory'
+import { inferImportedAssetMetadata } from '../assets/import-metadata'
 
-type AssetIdPrefix = 'asset' | 'folder'
+type AssetIdPrefix = 'asset' | 'folder' | 'category'
 
 export interface AssetHandlerOptions {
   assets?: AssetRepository
@@ -78,6 +83,20 @@ function nullableStringField(request: unknown, key: string): string | null {
   return typeof value === 'string' ? value : null
 }
 
+function optionalStringArrayField(request: unknown, key: string): string[] | undefined {
+  if (!isRecord(request)) {
+    return undefined
+  }
+
+  const value = request[key]
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const strings = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  return strings.length > 0 ? strings : undefined
+}
+
 function slugifyFolderName(name: string): string {
   const slug = name
     .trim()
@@ -123,6 +142,17 @@ function parseMoveRequest(request: unknown): AssetMoveRequest {
   }
 }
 
+function parseRenameRequest(request: unknown): AssetRenameRequest {
+  const assetId = stringField(request, 'assetId')
+  const displayName = stringField(request, 'displayName')?.trim()
+  if (!assetId || !displayName) {
+    // Rename requests must target one asset and provide a non-empty display label.
+    throw new Error('asset_rename_required')
+  }
+
+  return { assetId, displayName }
+}
+
 function parseTrashRequest(request: unknown): AssetTrashRequest {
   const assetId = stringField(request, 'assetId')
   if (!assetId) {
@@ -143,6 +173,51 @@ function parseDeleteFolderRequest(request: unknown): AssetFolderDeleteRequest {
 
   const mode = isRecord(request) && request.mode === 'safe' ? 'safe' : 'force-tombstone'
   return { folderId, mode }
+}
+
+function parseCreateCategoryRequest(request: unknown): AssetCategoryCreateRequest {
+  const name = stringField(request, 'name')?.trim()
+  if (!name) {
+    // Category creation requires a display name for filtering and canvas insertion.
+    throw new Error('asset_category_name_required')
+  }
+
+  return {
+    name,
+    ...(stringField(request, 'description') ? { description: stringField(request, 'description') as string } : {}),
+    ...(stringField(request, 'color') ? { color: stringField(request, 'color') as string } : {}),
+    ...(stringField(request, 'icon') ? { icon: stringField(request, 'icon') as string } : {}),
+    ...(isRecord(request) && typeof request.sortOrder === 'number' ? { sortOrder: request.sortOrder } : {})
+  }
+}
+
+function parseUpdateCategoryRequest(request: unknown): AssetCategoryUpdateRequest {
+  const categoryId = stringField(request, 'categoryId')
+  if (!categoryId) {
+    // Category updates must target one active category.
+    throw new Error('asset_category_id_required')
+  }
+
+  return {
+    categoryId,
+    ...(stringField(request, 'name') ? { name: stringField(request, 'name') as string } : {}),
+    ...(isRecord(request) && 'description' in request ? { description: typeof request.description === 'string' ? request.description : null } : {}),
+    ...(stringField(request, 'color') ? { color: stringField(request, 'color') as string } : {}),
+    ...(stringField(request, 'icon') ? { icon: stringField(request, 'icon') as string } : {}),
+    ...(isRecord(request) && typeof request.sortOrder === 'number' ? { sortOrder: request.sortOrder } : {}),
+    ...(isRecord(request) && typeof request.enabled === 'boolean' ? { enabled: request.enabled } : {})
+  }
+}
+
+function parseCategoryAssignRequest(request: unknown): AssetCategoryAssignRequest {
+  const assetId = stringField(request, 'assetId')
+  const categoryId = stringField(request, 'categoryId')
+  if (!assetId || !categoryId) {
+    // Category assignment requires both sides so reference integrity remains explicit.
+    throw new Error('asset_category_assignment_required')
+  }
+
+  return { assetId, categoryId }
 }
 
 function inferMediaType(extension: string): AssetMediaType {
@@ -170,6 +245,13 @@ function extensionToMime(extension: string): string {
   return map[ext] ?? 'application/octet-stream'
 }
 
+function assertSupportedImportExtension(extension: string): void {
+  if (extensionToMime(extension) === 'application/octet-stream') {
+    // Rejecting unknown binaries before copying keeps local asset storage inspectable and contract-bound.
+    throw new Error('asset_unsupported_extension')
+  }
+}
+
 /**
  * Registers asset invoke handlers.
  * @param ipcMain - Electron-compatible IPC registrar.
@@ -186,6 +268,8 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
     const folderId = nullableStringField(request, 'folderId')
     const mediaType = isRecord(request) ? parseMediaType(request.mediaType) : undefined
     const sourcePath = stringField(request, 'sourcePath')
+    const categoryIds = optionalStringArrayField(request, 'categoryIds')
+    const tags = optionalStringArrayField(request, 'tags')
 
     if (!sourcePath) {
       // Import requests without a source path cannot resolve the local file.
@@ -194,8 +278,17 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
 
     const now = clock()
     const id = idFactory('asset')
-    const extension = extname(sourcePath) || '.png'
+    const extension = (extname(sourcePath) || '.png').toLowerCase()
+    assertSupportedImportExtension(extension)
     const resolvedMediaType = mediaType ?? inferMediaType(extension)
+    const mimeType = extensionToMime(extension)
+    const bytes = readFileSync(sourcePath)
+    const metadata = inferImportedAssetMetadata({
+      mediaType: resolvedMediaType,
+      bytes,
+      mimeType,
+      sizeBytes: bytes.byteLength
+    })
     const relativePath = posix.join('imported', resolvedMediaType, `${id}${extension}`)
 
     // Try cloud upload if storage is configured
@@ -206,13 +299,6 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
 
       const url = await provider.upload(sourcePath, key)
 
-      let sizeBytes: number | undefined
-      try {
-        sizeBytes = statSync(sourcePath).size
-      } catch {
-        // File stat failures are non-fatal; size is recorded as undefined.
-      }
-
       const record: AssetRecord = {
         id,
         mediaType: resolvedMediaType,
@@ -221,10 +307,9 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
         safeUrl: `cc-asset://asset/${id}`,
         url,
         s3Key: key,
-        metadata: {
-          mimeType: extensionToMime(extension),
-          ...(sizeBytes !== undefined ? { sizeBytes } : {})
-        },
+        metadata,
+        ...(categoryIds ? { categoryIds } : {}),
+        ...(tags ? { tags } : {}),
         ...(folderId ? { folderId } : {}),
         createdAt: now,
         updatedAt: now
@@ -240,23 +325,15 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
       mkdirSync(targetDir, { recursive: true })
       copyFileSync(sourcePath, join(options.assetRoot, relativePath))
 
-      let sizeBytes: number | undefined
-      try {
-        sizeBytes = statSync(sourcePath).size
-      } catch {
-        // File stat failures are non-fatal; size is recorded as undefined.
-      }
-
       const record: AssetRecord = {
         id,
         mediaType: resolvedMediaType,
         status: 'ready',
         relativePath,
         safeUrl: `cc-asset://asset/${id}`,
-        metadata: {
-          mimeType: extensionToMime(extension),
-          ...(sizeBytes !== undefined ? { sizeBytes } : {})
-        },
+        metadata,
+        ...(categoryIds ? { categoryIds } : {}),
+        ...(tags ? { tags } : {}),
         ...(folderId ? { folderId } : {}),
         createdAt: now,
         updatedAt: now
@@ -292,11 +369,15 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
     const folderId = nullableStringField(request, 'folderId')
     const mediaType = isRecord(request) ? parseMediaType(request.mediaType) : undefined
     const keyword = isRecord(request) && typeof request.keyword === 'string' ? request.keyword : undefined
+    const categoryId = stringField(request, 'categoryId') ?? undefined
+    const tags = optionalStringArrayField(request, 'tags')
 
     return options.assets.list({
       ...(isRecord(request) && 'folderId' in request ? { folderId } : {}),
       ...(mediaType ? { mediaType } : {}),
-      ...(keyword ? { keyword } : {})
+      ...(keyword ? { keyword } : {}),
+      ...(categoryId ? { categoryId } : {}),
+      ...(tags ? { tags } : {})
     })
   })
 
@@ -307,6 +388,19 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
     }
 
     return options.assets.moveAsset(moveRequest, clock())
+  })
+
+  ipcMain.handle('asset.rename', (_event, request) => {
+    const renameRequest = parseRenameRequest(request)
+    if (!options.assets) {
+      return {
+        ...createAssetRecord(renameRequest.assetId),
+        displayName: renameRequest.displayName,
+        updatedAt: clock()
+      }
+    }
+
+    return options.assets.renameAsset(renameRequest, clock())
   })
 
   ipcMain.handle('asset.trash', async (_event, request) => {
@@ -375,5 +469,63 @@ export function registerAssetHandlers(ipcMain: IpcRegistrar, options: AssetHandl
     }
 
     return options.assets.deleteFolder(deleteRequest, clock())
+  })
+
+  ipcMain.handle('asset.getCategories', (_event, request) => {
+    if (!options.assets) {
+      return []
+    }
+
+    const includeDisabled = isRecord(request) && request.includeDisabled === true
+    options.assets.ensureStarterCategories(clock())
+    return options.assets.listCategories({ includeDisabled })
+  })
+
+  ipcMain.handle('asset.createCategory', (_event, request) => {
+    const categoryRequest = parseCreateCategoryRequest(request)
+    if (!options.assets) {
+      return {
+        id: idFactory('category'),
+        name: categoryRequest.name,
+        slug: categoryRequest.name.toLowerCase(),
+        kind: 'image',
+        color: categoryRequest.color ?? '#22c55e',
+        icon: categoryRequest.icon ?? 'image',
+        sortOrder: categoryRequest.sortOrder ?? 100,
+        builtIn: false,
+        enabled: true,
+        createdAt: clock(),
+        updatedAt: clock()
+      }
+    }
+
+    options.assets.ensureStarterCategories(clock())
+    return options.assets.createCategory(categoryRequest, clock(), () => idFactory('category'))
+  })
+
+  ipcMain.handle('asset.updateCategory', (_event, request) => {
+    const categoryRequest = parseUpdateCategoryRequest(request)
+    if (!options.assets) {
+      throw new Error('asset_repository_unavailable')
+    }
+
+    options.assets.ensureStarterCategories(clock())
+    return options.assets.updateCategory(categoryRequest, clock())
+  })
+
+  ipcMain.handle('asset.assignCategory', (_event, request) => {
+    const assignRequest = parseCategoryAssignRequest(request)
+    if (options.assets) {
+      options.assets.ensureStarterCategories(clock())
+      options.assets.assignCategory(assignRequest, clock())
+    }
+
+    return { ...assignRequest, assigned: true as const }
+  })
+
+  ipcMain.handle('asset.removeCategory', (_event, request) => {
+    const assignRequest = parseCategoryAssignRequest(request)
+    options.assets?.removeCategory(assignRequest)
+    return { ...assignRequest, removed: true as const }
   })
 }

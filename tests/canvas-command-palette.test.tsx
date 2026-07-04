@@ -55,7 +55,7 @@ describe('REQ-092 CanvasCommandPalette', () => {
 
     expect(source).toContain('CanvasCommandPalette')
     expect(source).toContain('setShowCommandPalette')
-    expect(source).toContain("e.key.toLowerCase() === 'k'")
+    expect(source).toContain("key === 'k'")
     expect(source).toContain('fitView({ padding: 0.18')
     expect(source).toContain("interactionMode === 'pan'")
     expect(source).toContain('selectionOnDrag={interactionMode ===')

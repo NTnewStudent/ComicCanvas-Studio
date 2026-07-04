@@ -558,6 +558,58 @@ describe('main process runtime wiring', () => {
     }
   })
 
+  it('drains text polish runNode jobs as terminal text results', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-runtime-text-polish-'))
+    const dbPath = join(tempDir, 'runtime-text-polish.sqlite')
+    const assetRoot = join(tempDir, 'assets')
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const window = createWindow()
+    let runtime: MainProcessRuntime | null = null
+
+    try {
+      runtime = createMainProcessRuntime({
+        ipcMain,
+        dbPath,
+        assetRoot,
+        getWindows: () => [window],
+        currentUserId: 'user-1',
+        clock: (() => {
+          let now = 1_783_303_000_000
+          return () => now++
+        })(),
+        idFactory: (() => {
+          let index = 0
+          return () => `job-text-polish-runtime-${++index}`
+        })(),
+      })
+
+      await handlers.get('canvas.saveGraph')?.({}, {
+        projectId: 'default',
+        graph: {
+          nodes: [
+            {
+              id: 'text-polish-runtime',
+              type: 'text',
+              position: { x: 0, y: 0 },
+              data: { label: 'Beat', content: ' rough line ' },
+            },
+          ],
+          edges: [],
+          viewport: { x: 0, y: 0, zoom: 1 },
+        },
+      })
+
+      const ticket = await handlers.get('canvas.runNode')?.({}, { nodeId: 'text-polish-runtime' }) as { jobId: string }
+      await runtime.waitForIdleForTests()
+      const completed = findCompletedEvent(window, ticket.jobId)
+
+      expect(completed?.result).toEqual({ kind: 'text', text: 'rough line' })
+    } finally {
+      runtime?.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   it('is installed by the Electron main entrypoint', () => {
     const mainSource = readFileSync('desktop/src/main/index.ts', 'utf8')
 

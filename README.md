@@ -33,7 +33,7 @@ comic-canvas/
 ├── .agents/                     # Codex 仓库级 skills
 ├── .claude/                     # Claude Code 兼容层，不承载新的产品 spec
 ├── specs/                       # 项目级 requirements / design / tasks 全局真源
-├── ltm/                         # 项目长期记忆（LTM 项目记录模式）
+├── ltm/                         # 历史遗留目录；当前不再使用 LTM
 ├── shared/                      # 前后端唯一真源契约（连接矩阵 / Plan 类型 / IPC 契约）
 ├── desktop/                     # Electron 应用
 │   └── src/
@@ -45,6 +45,12 @@ comic-canvas/
 ## 开发状态
 
 当前阶段：**治理层（governance scaffold）已建立**。代码实现按根目录 `specs/` 与 `docs/progress/backlog.md` 里程碑推进。
+
+## 项目记忆
+
+当前项目不再使用 LTM。不要在工作开始、结束或检查进度时运行
+`ltm/bin/ltm.py`，也不要依赖 `ltm/runtime/active-context.json` 作为当前
+任务状态来源。进度以 `specs/`、`docs/progress/`、git 状态和用户最新指令为准。
 
 ## CI/CD
 

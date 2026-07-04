@@ -26,6 +26,17 @@ export type LocalMediaDropPlan =
       reason: string
     }
 
+export type LocalMediaDropsPlan =
+  | {
+      ok: true
+      plans: Extract<LocalMediaDropPlan, { ok: true }>[]
+      rejected: { fileName: string; reason: string }[]
+    }
+  | {
+      ok: false
+      reason: string
+    }
+
 const imageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg'])
 const videoExtensions = new Set(['.mp4', '.webm', '.mov', '.avi', '.mkv'])
 const audioExtensions = new Set(['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'])
@@ -79,5 +90,49 @@ export function planLocalMediaDrop(file: LocalDropFileLike): LocalMediaDropPlan 
     mediaType,
     nodeType: mediaType,
     label: file.name || sourcePath
+  }
+}
+
+/**
+ * Converts all dropped local files into supported import plans and rejected-file reasons.
+ * @param files - Browser/Electron File-like objects from a drag event.
+ * @returns A batch plan for all supported image/video/audio files or an explicit rejection.
+ * @throws Error never intentionally; malformed files are returned as rejected entries.
+ * @see docs/api-contracts/assets-files.md
+ * @see docs/api-contracts/canvas-plan.md
+ */
+export function planLocalMediaDrops(files: LocalDropFileLike[]): LocalMediaDropsPlan {
+  if (files.length === 0) {
+    return {
+      ok: false,
+      reason: '未找到可导入的本地文件。'
+    }
+  }
+
+  const plans: Extract<LocalMediaDropPlan, { ok: true }>[] = []
+  const rejected: { fileName: string; reason: string }[] = []
+  for (const file of files) {
+    const plan = planLocalMediaDrop(file)
+    if (plan.ok) {
+      plans.push(plan)
+    } else {
+      rejected.push({
+        fileName: file.name || file.path || '未知文件',
+        reason: plan.reason
+      })
+    }
+  }
+
+  if (plans.length === 0) {
+    return {
+      ok: false,
+      reason: rejected[0]?.reason ?? '未找到可导入的本地文件。'
+    }
+  }
+
+  return {
+    ok: true,
+    plans,
+    rejected
   }
 }

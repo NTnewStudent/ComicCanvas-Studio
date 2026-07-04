@@ -28,12 +28,13 @@ interface ChatMessage {
 export interface CanvasChatBoxProps {
   open: boolean
   onToggle: () => void
+  agentEnabled: boolean
   onApplyPlan: (plan: CanvasPlan, options: ApplyPlanOptions) => void
 }
 
 /* ─── Component ─── */
 
-const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX.Element => {
+const CanvasChatBox = ({ open, onToggle, agentEnabled, onApplyPlan }: CanvasChatBoxProps): JSX.Element => {
   const [input, setInput] = useState('')
   const [autoExecute, setAutoExecute] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -87,7 +88,7 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
   /* ── Send message ── */
   const handleSend = useCallback(async () => {
     const content = input.trim()
-    if (!content || busy) return
+    if (!agentEnabled || !content || busy) return
 
     const api = window.comicCanvas
     if (!api?.sendCanvasChat) return
@@ -104,7 +105,7 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
       setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: 'assistant', content: '发送失败，请重试。' }])
       setBusy(false)
     }
-  }, [input, busy])
+  }, [agentEnabled, input, busy])
 
   /* ── Keyboard: Enter sends, Shift+Enter newline ── */
   const handleKeyDown = useCallback(
@@ -176,6 +177,11 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
             <div className="flex items-center gap-2 text-[13px] text-text-secondary">
               <Bot className="h-4 w-4 text-brand" />
               <span className="font-medium">AI 对话</span>
+              {!agentEnabled && (
+                <span className="rounded-full border border-border-secondary bg-bg-card px-2 py-0.5 text-[11px] text-text-muted">
+                  Agent 自动编排将在后续阶段启用
+                </span>
+              )}
             </div>
             <button
               type="button"
@@ -226,8 +232,9 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
+              disabled={!agentEnabled || busy}
               rows={1}
-              placeholder="描述你想要的画布内容…"
+              placeholder={agentEnabled ? '描述你想要的画布内容…' : '当前阶段先使用手动画布和底部输入'}
               className="min-h-[40px] max-h-[120px] w-full resize-none rounded-md bg-bg-input px-3 py-2 text-[14px] text-text-base outline-none placeholder:text-text-muted focus:ring-1 focus:ring-brand/40"
             />
             <div className="mt-2 flex items-center justify-between">
@@ -235,6 +242,7 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
               <button
                 type="button"
                 onClick={() => setAutoExecute((v) => !v)}
+                disabled={!agentEnabled}
                 className="flex items-center gap-2"
                 title="自动执行"
               >
@@ -256,7 +264,7 @@ const CanvasChatBox = ({ open, onToggle, onApplyPlan }: CanvasChatBoxProps): JSX
               <button
                 type="button"
                 onClick={() => void handleSend()}
-                disabled={busy || !input.trim()}
+                disabled={!agentEnabled || busy || !input.trim()}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-bg-base transition hover:bg-brand-hover disabled:opacity-50"
                 title="发送"
               >

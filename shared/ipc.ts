@@ -12,14 +12,21 @@
  */
 
 import type { CanvasGraphSnapshot, CanvasLoadGraphRequest, CanvasSaveGraphRequest, CanvasSaveGraphResponse } from './graph'
+import type { GraphValidationIssue, GraphValidationMode, GraphValidationSummary } from './graph-validation'
 import type {
   AssetFolder,
   AssetFolderCreateRequest,
   AssetFolderDeleteRequest,
   AssetFolderDeleteResponse,
   AssetImportRequest,
+  AssetCategory,
+  AssetCategoryAssignRequest,
+  AssetCategoryCreateRequest,
+  AssetCategoryUpdateRequest,
+  AssetListRequest,
   AssetMoveRequest,
   AssetRecord,
+  AssetRenameRequest,
   AssetTrashRequest,
   AssetTrashResponse
 } from './assets'
@@ -31,7 +38,8 @@ import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillL
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
 import type { ToolDescriptor, ToolInvocationRecord } from './tools'
 import type { StylePresetSaveInput, StylePresetView, StyleProjectDefaultRequest } from './styles'
-import type { CanvasSnippetDeleteRequest, CanvasSnippetDeleteResponse, CanvasSnippetSaveInput, CanvasSnippetSaveResponse, CanvasSnippetView } from './snippets'
+import type { CanvasSnippetDeleteRequest, CanvasSnippetDeleteResponse, CanvasSnippetGetRequest, CanvasSnippetListRequest, CanvasSnippetSaveInput, CanvasSnippetSaveResponse, CanvasSnippetView } from './snippets'
+import type { WorkflowModelCatalog } from './workflow-node-definitions'
 
 export type CanvasIpcChannel =
   | 'canvas.chatSend'
@@ -40,6 +48,7 @@ export type CanvasIpcChannel =
   | 'canvas.runPlan'
   | 'canvas.runNode'
   | 'canvas.saveGraph'
+  | 'canvas.validateGraph'
   | 'canvas.loadGraph'
   | 'canvas.graphChanged'
   | 'canvas.planReady'
@@ -49,6 +58,11 @@ export type CanvasIpcChannel =
   | 'canvas.deleteWorkflow'
   | 'canvas.exportWorkflow'
   | 'canvas.importWorkflow'
+  | 'canvas.listWorkflowTemplates'
+  | 'canvas.copyWorkflowTemplate'
+  | 'canvas.publishWorkflowTemplate'
+  | 'canvas.listWorkflowVersions'
+  | 'canvas.restoreWorkflowVersion'
 
 export type JobIpcChannel =
   | 'job.enqueue'
@@ -64,10 +78,16 @@ export type AssetIpcChannel =
   | 'asset.get'
   | 'asset.list'
   | 'asset.move'
+  | 'asset.rename'
   | 'asset.trash'
   | 'asset.getFolders'
   | 'asset.createFolder'
   | 'asset.deleteFolder'
+  | 'asset.getCategories'
+  | 'asset.createCategory'
+  | 'asset.updateCategory'
+  | 'asset.assignCategory'
+  | 'asset.removeCategory'
   | 'asset.changed'
 
 export type GatewayIpcChannel =
@@ -76,6 +96,7 @@ export type GatewayIpcChannel =
   | 'gateway.delete'
   | 'gateway.test'
   | 'gateway.reload'
+  | 'gateway.models'
   | 'gateway.changed'
 
 export type StyleIpcChannel =
@@ -88,6 +109,7 @@ export type StyleIpcChannel =
 
 export type CanvasSnippetIpcChannel =
   | 'canvasSnippet.list'
+  | 'canvasSnippet.get'
   | 'canvasSnippet.save'
   | 'canvasSnippet.delete'
 
@@ -209,8 +231,29 @@ export interface CanvasRunPlanResponse {
 export interface WorkflowSummaryView {
   id: string
   name: string
+  scope: 'draft' | 'template'
+  published: boolean
+  description: string | null
+  visibility: 'private' | 'public'
+  ownerId: string
+  ownedByCurrentUser: boolean
+  tags: string[]
+  thumbnailUrl: string | null
   updatedAt: string
   nodeCount: number
+  edgeCount: number
+  coverAssetId: string | null
+  latestRunStatus: 'idle' | 'pending' | 'running' | 'done' | 'error'
+  defaultStylePresetId: string | null
+  archived: boolean
+  versionChecksum: string
+  warningSummary: {
+    unsupportedNodes: number
+    invalidEdges: number
+    unavailableModels?: number
+    unavailableStyles?: number
+    unavailableAssets?: number
+  }
 }
 
 export interface WorkflowExportView {
@@ -230,6 +273,59 @@ export interface WorkflowImportResponse {
   dropped: string[]
 }
 
+export interface WorkflowTemplateListRequest {
+  scope?: 'public' | 'my' | 'all'
+}
+
+export interface WorkflowTemplateCopyResponse {
+  workflowId: string
+  graphVersion: string
+  name: string
+}
+
+export interface WorkflowTemplatePublishRequest {
+  workflowId: string
+  visibility?: 'private' | 'public'
+}
+
+export interface WorkflowVersionSummaryView {
+  id: string
+  createdAt: string
+  createdBy: string
+  nodeCount: number
+  edgeCount: number
+  checksum: string
+  restoreSourceVersionId: string | null
+  warningSummary: {
+    unsupportedNodes: number
+    invalidEdges: number
+    unavailableModels?: number
+    unavailableStyles?: number
+    unavailableAssets?: number
+  }
+}
+
+export interface WorkflowVersionRestoreResponse {
+  workflowId: string
+  graphVersion: string
+  restoredFromVersionId: string
+  checksum: string
+  warningSummary: {
+    unsupportedNodes: number
+    invalidEdges: number
+    unavailableModels?: number
+    unavailableStyles?: number
+    unavailableAssets?: number
+  }
+}
+
+export interface WorkflowGraphValidationResponse {
+  mode: GraphValidationMode
+  valid: boolean
+  issues: GraphValidationIssue[]
+  warningSummary: GraphValidationSummary
+}
+
 export interface IpcRequestMap {
   'canvas.chatSend': { message: string; agentId?: string }
   'canvas.chatGetPlan': { messageId: string }
@@ -237,6 +333,7 @@ export interface IpcRequestMap {
   'canvas.runPlan': CanvasRunPlanRequest
   'canvas.runNode': { nodeId: string; workflowId?: string }
   'canvas.saveGraph': CanvasSaveGraphRequest
+  'canvas.validateGraph': { workflowId?: string; graph?: CanvasGraphSnapshot; mode?: GraphValidationMode }
   'canvas.loadGraph': CanvasLoadGraphRequest
   'canvas.listWorkflows': void
   'canvas.createWorkflow': { name: string }
@@ -244,29 +341,42 @@ export interface IpcRequestMap {
   'canvas.deleteWorkflow': { workflowId: string }
   'canvas.exportWorkflow': { workflowId: string }
   'canvas.importWorkflow': WorkflowImportRequest
+  'canvas.listWorkflowTemplates': WorkflowTemplateListRequest
+  'canvas.copyWorkflowTemplate': { templateId: string; name?: string }
+  'canvas.publishWorkflowTemplate': WorkflowTemplatePublishRequest
+  'canvas.listWorkflowVersions': { workflowId: string; limit?: number }
+  'canvas.restoreWorkflowVersion': { workflowId: string; versionId: string }
   'job.enqueue': JobCreateInput
   'job.get': { jobId: string }
   'job.list': JobListFilter
   'job.recover': Record<string, never>
   'asset.import': AssetImportRequest
   'asset.get': { assetId: string }
-  'asset.list': { folderId?: string; mediaType?: string; keyword?: string }
+  'asset.list': AssetListRequest
   'asset.move': AssetMoveRequest
+  'asset.rename': AssetRenameRequest
   'asset.trash': AssetTrashRequest
   'asset.getFolders': Record<string, never>
   'asset.createFolder': AssetFolderCreateRequest
   'asset.deleteFolder': AssetFolderDeleteRequest
+  'asset.getCategories': { includeDisabled?: boolean }
+  'asset.createCategory': AssetCategoryCreateRequest
+  'asset.updateCategory': AssetCategoryUpdateRequest
+  'asset.assignCategory': AssetCategoryAssignRequest
+  'asset.removeCategory': AssetCategoryAssignRequest
   'gateway.list': Record<string, never>
   'gateway.save': GatewayConfigInput
   'gateway.delete': { gatewayId: string }
   'gateway.test': { gatewayId: string; channel: 'text' | 'image' | 'video' }
   'gateway.reload': { gatewayId?: string }
+  'gateway.models': Record<string, never>
   'style.list': { includeDisabled?: boolean }
   'style.save': StylePresetSaveInput
   'style.delete': { stylePresetId: string }
   'style.setProjectDefault': StyleProjectDefaultRequest
   'style.getProjectDefault': { workflowId: string }
-  'canvasSnippet.list': Record<string, never>
+  'canvasSnippet.list': CanvasSnippetListRequest
+  'canvasSnippet.get': CanvasSnippetGetRequest
   'canvasSnippet.save': CanvasSnippetSaveInput
   'canvasSnippet.delete': CanvasSnippetDeleteRequest
   'tool.list': { includeDisabled?: boolean }
@@ -300,8 +410,9 @@ export interface IpcResponseMap {
   'canvas.chatGetPlan': CanvasPlan
   'canvas.applyPlan': CanvasApplyPlanResponse
   'canvas.runPlan': CanvasRunPlanResponse
-  'canvas.runNode': JobTicket
+  'canvas.runNode': JobTicket | { errorClass: string; message: string; retryable: false; issues?: GraphValidationIssue[] }
   'canvas.saveGraph': CanvasSaveGraphResponse
+  'canvas.validateGraph': WorkflowGraphValidationResponse
   'canvas.loadGraph': CanvasGraphSnapshot
   'canvas.listWorkflows': WorkflowSummaryView[]
   'canvas.createWorkflow': { id: string; name: string }
@@ -309,6 +420,11 @@ export interface IpcResponseMap {
   'canvas.deleteWorkflow': { id: string; deleted: true }
   'canvas.exportWorkflow': WorkflowExportView
   'canvas.importWorkflow': WorkflowImportResponse | { errorClass: string; message: string; retryable: false }
+  'canvas.listWorkflowTemplates': WorkflowSummaryView[]
+  'canvas.copyWorkflowTemplate': WorkflowTemplateCopyResponse | { errorClass: string; message: string; retryable: false }
+  'canvas.publishWorkflowTemplate': WorkflowSummaryView | { errorClass: string; message: string; retryable: false; issues?: GraphValidationIssue[] }
+  'canvas.listWorkflowVersions': WorkflowVersionSummaryView[]
+  'canvas.restoreWorkflowVersion': WorkflowVersionRestoreResponse | { errorClass: string; message: string; retryable: false }
   'job.enqueue': JobTicket
   'job.get': JobRecord
   'job.list': JobRecord[]
@@ -317,21 +433,29 @@ export interface IpcResponseMap {
   'asset.get': AssetRecord
   'asset.list': AssetRecord[]
   'asset.move': AssetRecord
+  'asset.rename': AssetRecord
   'asset.trash': AssetTrashResponse
   'asset.getFolders': AssetFolder[]
   'asset.createFolder': AssetFolder
   'asset.deleteFolder': AssetFolderDeleteResponse
+  'asset.getCategories': AssetCategory[]
+  'asset.createCategory': AssetCategory
+  'asset.updateCategory': AssetCategory
+  'asset.assignCategory': { assetId: string; categoryId: string; assigned: true }
+  'asset.removeCategory': { assetId: string; categoryId: string; removed: true }
   'gateway.list': GatewayConfigView[]
   'gateway.save': GatewayConfigView
   'gateway.delete': { gatewayId: string; deleted: true }
   'gateway.test': JobTicket
   'gateway.reload': { reloadedGatewayIds: string[] }
+  'gateway.models': WorkflowModelCatalog
   'style.list': StylePresetView[]
   'style.save': StylePresetView
   'style.delete': { stylePresetId: string; deleted: true }
   'style.setProjectDefault': { workflowId: string; stylePresetId: string | null }
   'style.getProjectDefault': { workflowId: string; stylePresetId: string | null }
   'canvasSnippet.list': CanvasSnippetView[]
+  'canvasSnippet.get': CanvasSnippetView | { errorClass: 'not_found'; message: string; retryable: false }
   'canvasSnippet.save': CanvasSnippetSaveResponse
   'canvasSnippet.delete': CanvasSnippetDeleteResponse
   'tool.list': ToolDescriptor[]

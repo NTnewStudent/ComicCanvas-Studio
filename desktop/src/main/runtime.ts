@@ -18,13 +18,14 @@ import { createAssetRepository } from './db/repositories/asset.repo'
 import { createChatMessageRepository } from './db/repositories/chat-message.repo'
 import { createCanvasSnippetRepository } from './db/repositories/canvas-snippet.repo'
 import { createJobRepository } from './db/repositories/job.repo'
+import { createStorageConfigRepository } from './db/repositories/storage.repo'
 import { createStyleRepository } from './db/repositories/style.repo'
 import { createWorkflowRepository } from './db/repositories/workflow.repo'
 import { registerAgentHandlers } from './ipc/agent.handler'
 import { registerAssetHandlers } from './ipc/asset.handler'
 import { registerCanvasHandlers } from './ipc/canvas.handler'
 import { registerCanvasSnippetHandlers } from './ipc/canvas-snippet.handler'
-import { registerGatewayHandlers } from './ipc/gateway.handler'
+import { getGatewayModelCatalog, registerGatewayHandlers } from './ipc/gateway.handler'
 import { registerJobHandlers } from './ipc/job.handler'
 import { registerStyleHandlers } from './ipc/style.handler'
 import { registerToolHandlers } from './ipc/tool.handler'
@@ -38,11 +39,13 @@ import { createStubProvider } from './providers/stub.provider'
 import { runImageNodeSmokePath } from './smoke/m1-smoke'
 import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
 import { createToolRuntime } from './tools/runtime'
+import type { SafeStorageAdapter } from './security/key-vault'
 
 export interface MainProcessRuntimeOptions {
   ipcMain: IpcRegistrar
   dbPath: string
   assetRoot: string
+  storageSafeStorage?: SafeStorageAdapter
   getWindows: MainRuntimeWindowProvider
   currentUserId?: string
   planner?: OrchestratorPlanner
@@ -83,6 +86,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const jobs = createJobRepository(db)
   const assets = createAssetRepository(db)
   const agents = createAgentRepository(db)
+  const storageConfigs = createStorageConfigRepository(db)
   const styles = createStyleRepository(db)
   const snippets = createCanvasSnippetRepository(db)
   const workflows = createWorkflowRepository(db)
@@ -179,6 +183,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     handlers: {
       'agent.run': orchestrator.createJobHandler(),
       'canvas.generateAudio': (job) => ({ kind: 'report', summary: 'Queued local audio generation stub.', data: { nodeId: job.targetId ?? null } }),
+      'canvas.polishText': (job) => {
+        const content = typeof job.payload.content === 'string' ? job.payload.content : ''
+        const polished = content.trim().length > 0 ? content.trim() : 'Polished text'
+        return { kind: 'text', text: polished }
+      },
       'canvas.generateImage': (job) =>
         runImageNodeSmokePath({
           job,
@@ -192,6 +201,15 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       'canvas.composeVideo': (job) => ({ kind: 'report', summary: 'Queued local video composition stub.', data: { nodeId: job.targetId ?? null } }),
       'canvas.upscaleVideo': (job) => ({ kind: 'report', summary: 'Queued local video upscale stub.', data: { nodeId: job.targetId ?? null } }),
       'canvas.muxAudioVideo': (job) => ({ kind: 'report', summary: 'Queued local audio/video mux stub.', data: { nodeId: job.targetId ?? null } })
+    },
+    onCompletedAsset: (job, assetId, emittedAt) => {
+      assets.addReference({
+        id: `asset-ref-${job.id}`,
+        assetId,
+        refType: 'job',
+        refId: job.id,
+        createdAt: emittedAt
+      })
     }
   })
 
@@ -203,7 +221,8 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     currentUserId: options.currentUserId ?? 'user-local',
     assets,
     graphStore,
-    styles
+    styles,
+    modelCatalog: getGatewayModelCatalog
   })
   registerJobHandlers(options.ipcMain, {
     jobs,
@@ -229,7 +248,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   })
   registerAgentHandlers(options.ipcMain, { registry: agentRegistry })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
-  registerStorageHandlers(options.ipcMain)
+  registerStorageHandlers(options.ipcMain, {
+    repository: storageConfigs,
+    ...(options.storageSafeStorage ? { safeStorage: options.storageSafeStorage } : {}),
+    clock
+  })
 
   async function drainJobsForTests(): Promise<void> {
     await drainJobs()

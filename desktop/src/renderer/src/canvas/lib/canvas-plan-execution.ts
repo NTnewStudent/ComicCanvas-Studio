@@ -7,10 +7,10 @@
 import type { StoreApi } from 'zustand/vanilla'
 
 import type { JobTerminalEvent, JobTicket } from '../../../../../../shared/jobs'
-import type { CanvasPlan } from '../../../../../../shared/plan'
+import type { CanvasPlan, RunAction } from '../../../../../../shared/plan'
 import type { CanvasStoreState } from '../store/canvas.store'
 import { applyCanvasPlan, type ApplyCanvasPlanOptions, type ApplyCanvasPlanResult } from './apply-plan'
-import { terminalResultToNodePatch } from './job-reconciliation'
+import { terminalFailureToNodePatch, terminalResultToNodePatch } from './job-reconciliation'
 import { createPlanRunner, type PlanRunner, type PlanRunnerStep, type PlanRunnerSummary } from './plan-runner'
 
 export interface CanvasPlanExecutionOptions {
@@ -36,8 +36,17 @@ export interface CanvasPlanExecutionController {
   readonly currentRunner: PlanRunner | null
 }
 
-function markNodeRunning(store: StoreApi<CanvasStoreState>, nodeId: string): void {
-  store.getState().updateNodeData(nodeId, { status: 'pending', assetId: null })
+function jobTypeForRunAction(action: RunAction): 'canvas.polishText' | 'canvas.generateImage' {
+  return action === 'textPolish' ? 'canvas.polishText' : 'canvas.generateImage'
+}
+
+function markNodeRunning(store: StoreApi<CanvasStoreState>, step: PlanRunnerStep): void {
+  store.getState().updateNodeData(
+    step.nodeId,
+    step.action === 'textPolish'
+      ? { polishStatus: 'pending' }
+      : { status: 'pending', assetId: null }
+  )
 }
 
 function markNodeDone(store: StoreApi<CanvasStoreState>, nodeId: string, event: Extract<JobTerminalEvent, { channel: 'job.completed' }>): void {
@@ -47,8 +56,12 @@ function markNodeDone(store: StoreApi<CanvasStoreState>, nodeId: string, event: 
   }
 }
 
-function markNodeFailed(store: StoreApi<CanvasStoreState>, nodeId: string): void {
-  store.getState().updateNodeData(nodeId, { status: 'error' })
+function markNodeFailed(store: StoreApi<CanvasStoreState>, step: PlanRunnerStep, message?: string): void {
+  store.getState().updateNodeData(step.nodeId, terminalFailureToNodePatch(jobTypeForRunAction(step.action), {
+    errorClass: 'plan_runner_failed',
+    message: message ?? 'run_node_enqueue_failed',
+    retryable: false,
+  }))
 }
 
 function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
@@ -67,7 +80,7 @@ export function createCanvasPlanExecutionController(options: CanvasPlanExecution
   const jobToStep = new Map<string, PlanRunnerStep>()
 
   function runStep(step: PlanRunnerStep): void {
-    markNodeRunning(options.store, step.nodeId)
+    markNodeRunning(options.store, step)
 
     try {
       const ticket = options.runNode(step.nodeId)
@@ -76,14 +89,14 @@ export function createCanvasPlanExecutionController(options: CanvasPlanExecution
           jobToStep.set(resolvedTicket.jobId, step)
         }).catch(() => {
           // runNode crosses the preload/main-process boundary; enqueue failures become node error state.
-          markNodeFailed(options.store, step.nodeId)
+          markNodeFailed(options.store, step)
           runner?.notifyNodeTerminal(step.nodeId, 'failed', 'run_node_enqueue_failed')
         })
       } else {
         jobToStep.set(ticket.jobId, step)
       }
     } catch {
-      markNodeFailed(options.store, step.nodeId)
+      markNodeFailed(options.store, step)
       runner?.notifyNodeTerminal(step.nodeId, 'failed', 'run_node_enqueue_failed')
     }
   }
@@ -129,7 +142,7 @@ export function createCanvasPlanExecutionController(options: CanvasPlanExecution
       }
 
       jobToStep.delete(event.jobId)
-      markNodeFailed(options.store, step.nodeId)
+      markNodeFailed(options.store, step, event.error.message)
       runner?.notifyNodeTerminal(step.nodeId, 'failed', event.error.message)
     },
     get currentRunner() {

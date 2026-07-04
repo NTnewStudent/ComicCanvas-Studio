@@ -41,12 +41,23 @@ describe('M4 built-in canvas tools', () => {
 
     expect(tools.map((tool) => tool.descriptor.id).sort()).toEqual([
       'canvas.connectNodes',
+      'canvas.connectToCreate',
       'canvas.createNode',
+      'canvas.deleteEdge',
       'canvas.deleteNode',
+      'canvas.deleteSelection',
+      'canvas.duplicateNode',
+      'canvas.duplicateSelection',
+      'canvas.extractSelection',
+      'canvas.layoutSelection',
       'canvas.proposePlan',
       'canvas.queryGraph',
+      'canvas.renameNode',
       'canvas.runNode',
-      'canvas.updateNodeData'
+      'canvas.setNodePosition',
+      'canvas.updateEdge',
+      'canvas.updateNodeData',
+      'canvas.validateGraph',
     ])
     expect(tools.find((tool) => tool.descriptor.id === 'canvas.queryGraph')?.descriptor.concurrency).toBe('readonly')
     expect(tools.find((tool) => tool.descriptor.id === 'canvas.createNode')?.descriptor.permissions).toContainEqual({
@@ -127,8 +138,10 @@ describe('M4 built-in canvas tools', () => {
     expect(rejected.record.status).toBe('failed')
     expect(rejected.error).toEqual({
       errorClass: 'tool_runtime_failed',
+      code: 'invalid_edge',
       message: 'Connection rejected by shared connection matrix.',
-      retryable: false
+      retryable: false,
+      details: { source: 'node-new', target: 'text-1' }
     })
   })
 
@@ -183,5 +196,79 @@ describe('M4 built-in canvas tools', () => {
     expect(deleted.output).toEqual({ nodeId: 'text-1', deletedEdgeIds: ['edge-1'] })
     expect(graph.nodes.map((node) => node.id)).toEqual(['image-1'])
     expect(graph.edges).toEqual([])
+  })
+
+  it('rejects runNode when the shared node definition marks runtime unavailable', async () => {
+    const graph: CanvasGraphSnapshot = {
+      nodes: [
+        {
+          id: 'mj-1',
+          type: 'mjImage',
+          position: { x: 0, y: 0 },
+          data: {
+            label: 'MJ legacy',
+            prompt: 'legacy prompt',
+            modelId: 'stub-mj',
+            ratio: '16:9',
+            urls: [],
+            selectedIndex: 0,
+            assetId: null,
+            status: 'idle'
+          }
+        }
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 }
+    }
+    const enqueued: unknown[] = []
+    const tools = createCanvasTools({
+      graphStore: { getGraph: () => graph, setGraph: () => undefined },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-unexpected', status: 'pending', createdAt: 1 }
+        }
+      },
+      clock: () => 1
+    })
+    const runtime = createToolRuntime({ idFactory: () => 'invoke-mj-run', clock: () => 2, tools })
+
+    const result = await runtime.invoke({ toolId: 'canvas.runNode', input: { nodeId: 'mj-1' }, actor, traceId: 'trace-mj-run' })
+
+    expect(result.record.status).toBe('failed')
+    expect(result.error).toEqual({
+      errorClass: 'tool_runtime_failed',
+      message: 'Runtime unavailable for mjImage: MJ node/component is out of scope for local Phase A.',
+      retryable: false
+    })
+    expect(enqueued).toEqual([])
+  })
+
+  it('enqueues text polish jobs through the shared node definition runtime', async () => {
+    const graph = cloneGraph()
+    const enqueued: unknown[] = []
+    const tools = createCanvasTools({
+      graphStore: { getGraph: () => graph, setGraph: () => undefined },
+      queue: {
+        enqueue(input) {
+          enqueued.push(input)
+          return { jobId: 'job-text-polish', status: 'pending', createdAt: 1 }
+        }
+      },
+      clock: () => 1
+    })
+    const runtime = createToolRuntime({ idFactory: () => 'invoke-text-run', clock: () => 2, tools })
+
+    const result = await runtime.invoke({ toolId: 'canvas.runNode', input: { nodeId: 'text-1' }, actor, traceId: 'trace-text-run' })
+
+    expect(result.output).toEqual({ jobId: 'job-text-polish', status: 'pending', createdAt: 1 })
+    expect(enqueued).toEqual([
+      {
+        type: 'canvas.polishText',
+        targetId: 'text-1',
+        payload: { nodeId: 'text-1' },
+        requestedBy: actor
+      }
+    ])
   })
 })

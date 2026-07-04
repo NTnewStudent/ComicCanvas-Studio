@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Folder, Image, Loader2, Music, Search, Video, X } from 'lucide-react'
 
-import type { AssetFolder, AssetRecord } from '../../../../../../shared/assets'
+import type { AssetCategory, AssetFolder, AssetListRequest, AssetRecord } from '../../../../../../shared/assets'
 import type { AssetLibraryApi } from '../../assets/AssetPanel'
 import { cn } from '../../lib/cn'
+
+export type CanvasAssetInsertMode = 'image' | 'video' | 'audio' | 'character' | 'scene' | 'reference'
 
 export interface CanvasAssetPanelProps {
   open: boolean
   onClose: () => void
-  onInsertAsset: (asset: { id: string; url: string; type: 'image' | 'video' | 'audio'; name: string }) => void
+  onInsertAsset: (asset: { id: string; url: string; type: 'image' | 'video' | 'audio'; name: string; mode?: CanvasAssetInsertMode }) => void
 }
 
 type MediaTab = 'all' | 'image' | 'video' | 'audio'
@@ -22,7 +24,15 @@ interface FolderNode {
 const MEDIA_TABS: { key: MediaTab; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'image', label: '图片' },
-  { key: 'video', label: '视频' }
+  { key: 'video', label: '视频' },
+  { key: 'audio', label: '音频' }
+]
+
+const IMAGE_INSERT_MODES: { key: CanvasAssetInsertMode; label: string }[] = [
+  { key: 'image', label: '图片' },
+  { key: 'character', label: '角色' },
+  { key: 'scene', label: '场景' },
+  { key: 'reference', label: '引用' }
 ]
 
 function defaultApi(): AssetLibraryApi {
@@ -50,13 +60,14 @@ function titleize(value: string): string {
 }
 
 function assetLabel(asset: AssetRecord): string {
+  if (asset.displayName) return asset.displayName
   const dimensions =
     asset.metadata.width && asset.metadata.height ? ` ${asset.metadata.width}x${asset.metadata.height}` : ''
   return `${titleize(basename(asset.relativePath))}${dimensions}`
 }
 
 function assetDisplayName(asset: AssetRecord): string {
-  return basename(asset.relativePath) || asset.id
+  return asset.displayName ?? basename(asset.relativePath) ?? asset.id
 }
 
 function toInsertType(mediaType: AssetRecord['mediaType']): 'image' | 'video' | 'audio' {
@@ -74,9 +85,12 @@ function toInsertType(mediaType: AssetRecord['mediaType']): 'image' | 'video' | 
 export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPanelProps): JSX.Element | null {
   const api = useMemo<AssetLibraryApi>(() => defaultApi(), [])
   const [folders, setFolders] = useState<AssetFolder[]>([])
+  const [categories, setCategories] = useState<AssetCategory[]>([])
   const [assets, setAssets] = useState<AssetRecord[]>([])
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [mediaTab, setMediaTab] = useState<MediaTab>('all')
+  const [insertMode, setInsertMode] = useState<CanvasAssetInsertMode>('image')
   const [keyword, setKeyword] = useState('')
   const [debouncedKeyword, setDebouncedKeyword] = useState('')
   const [folderState, setFolderState] = useState<LoadState>('loading')
@@ -111,8 +125,12 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
     async function loadFolders(): Promise<void> {
       setFolderState('loading')
       try {
-        const items = await api.getAssetFolders()
-        setFolders(items)
+        const [folderItems, categoryItems] = await Promise.all([
+          api.getAssetFolders(),
+          api.getAssetCategories()
+        ])
+        setFolders(folderItems)
+        setCategories(categoryItems)
         setFolderState('ready')
       } catch {
         setFolderState('error')
@@ -126,12 +144,15 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
   const loadAssets = useCallback(async () => {
     setAssetState('loading')
     try {
-      const request: { folderId?: string; mediaType?: string; keyword?: string } = {}
+      const request: AssetListRequest = {}
       if (selectedFolderId) {
         request.folderId = selectedFolderId
       }
       if (mediaTab !== 'all') {
         request.mediaType = mediaTab
+      }
+      if (selectedCategoryId) {
+        request.categoryId = selectedCategoryId
       }
       if (debouncedKeyword.trim()) {
         request.keyword = debouncedKeyword.trim()
@@ -142,7 +163,7 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
     } catch {
       setAssetState('error')
     }
-  }, [api, selectedFolderId, mediaTab, debouncedKeyword])
+  }, [api, selectedFolderId, selectedCategoryId, mediaTab, debouncedKeyword])
 
   useEffect(() => {
     if (!open) {
@@ -156,11 +177,13 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
   }
 
   function handleInsert(asset: AssetRecord): void {
+    const mode = asset.mediaType === 'image' ? insertMode : toInsertType(asset.mediaType)
     onInsertAsset({
       id: asset.id,
       url: asset.safeUrl,
       type: toInsertType(asset.mediaType),
-      name: assetDisplayName(asset)
+      name: assetDisplayName(asset),
+      mode
     })
   }
 
@@ -215,6 +238,69 @@ export function CanvasAssetPanel({ open, onClose, onInsertAsset }: CanvasAssetPa
           </button>
         ))}
       </div>
+
+      <div className="px-3 pt-2.5">
+        <div className="flex gap-1 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setSelectedCategoryId(null)}
+            className={cn(
+              'shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+              selectedCategoryId === null
+                ? 'bg-bg-input text-text-base'
+                : 'text-text-secondary hover:bg-bg-input hover:text-text-base'
+            )}
+          >
+            全部分类
+          </button>
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              type="button"
+              aria-label={`分类 ${category.name}`}
+              onClick={() => {
+                setSelectedCategoryId(category.id)
+                setMediaTab('image')
+              }}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+                selectedCategoryId === category.id
+                  ? 'bg-brand text-bg-base'
+                  : 'text-text-secondary hover:bg-bg-input hover:text-text-base'
+              )}
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: category.color }}
+              />
+              {category.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {mediaTab === 'image' && (
+        <div className="px-3 pt-2.5">
+          <div className="grid grid-cols-4 gap-1 rounded-md border border-border-secondary bg-bg-card p-1">
+            {IMAGE_INSERT_MODES.map((mode) => (
+              <button
+                key={mode.key}
+                type="button"
+                onClick={() => setInsertMode(mode.key)}
+                aria-label={`插入为${mode.label}`}
+                className={cn(
+                  'rounded px-1.5 py-1 text-[11px] font-medium transition-colors',
+                  insertMode === mode.key
+                    ? 'bg-brand text-bg-base'
+                    : 'text-text-secondary hover:bg-bg-input hover:text-text-base'
+                )}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Folder toggle */}
       <div className="px-3 pt-2.5">

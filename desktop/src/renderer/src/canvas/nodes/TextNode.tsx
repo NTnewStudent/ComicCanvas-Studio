@@ -7,6 +7,8 @@ import { Handle, NodeResizer, Position } from '@xyflow/react'
 import React, { useEffect, useRef, useState } from 'react'
 
 import type { TextNodeData } from '../../../../../../shared/nodes'
+import { RichTextToolbar, type RichTextCommand } from '../components/RichTextToolbar'
+import { TextFocusModal, textToParagraphHtml } from '../components/TextFocusModal'
 import { useInlineRename } from '../hooks/use-inline-rename'
 import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
 import { cn } from '../../lib/cn'
@@ -17,6 +19,33 @@ export interface TextNodeProps {
   selected?: boolean
   onChange?: (id: string, patch: Partial<TextNodeData>) => void
   onRename?: (id: string, label: string) => void
+  onPolish?: (id: string) => void
+}
+
+function mentionChips(value: string): { id: string; name: string }[] {
+  const chips: { id: string; name: string }[] = []
+  const seen = new Set<string>()
+  const matcher = /\[([^\]|]+)\|([^\]]+)\]/g
+  let match: RegExpExecArray | null
+
+  while ((match = matcher.exec(value)) !== null) {
+    const id = match[1]
+    const name = match[2]
+    if (!id || !name || seen.has(id)) continue
+    seen.add(id)
+    chips.push({ id, name })
+  }
+
+  return chips
+}
+
+function htmlForCommand(command: RichTextCommand, content: string): string {
+  const html = textToParagraphHtml(content)
+  if (command === 'bold') return `<strong>${html}</strong>`
+  if (command === 'italic') return `<em>${html}</em>`
+  if (command === 'underline') return `<u>${html}</u>`
+  if (command === 'strikeThrough') return `<s>${html}</s>`
+  return `<mark>${html}</mark>`
 }
 
 /**
@@ -26,8 +55,9 @@ export interface TextNodeProps {
  * @throws Error never intentionally; empty rename is ignored.
  * @see docs/api-contracts/canvas-plan.md
  */
-function TextNodeComponent({ id, data, selected = false, onChange, onRename }: TextNodeProps): JSX.Element {
+function TextNodeComponent({ id, data, selected = false, onChange, onRename, onPolish }: TextNodeProps): JSX.Element {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isFocusOpen, setIsFocusOpen] = useState(false)
   const [content, setContent] = useState(data.content)
   const rename = useInlineRename({
     value: data.label,
@@ -74,6 +104,23 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename }: T
     onChange?.(id, { content: next })
   }
 
+  function updateContentAndHtml(next: string, html: string): void {
+    setContent(next)
+    onChange?.(id, { content: next, html })
+  }
+
+  function applyRichTextCommand(command: RichTextCommand): void {
+    onChange?.(id, { html: htmlForCommand(command, content) })
+  }
+
+  function requestPolish(): void {
+    onChange?.(id, { polishStatus: 'pending' })
+    onPolish?.(id)
+  }
+
+  const chips = mentionChips(content)
+  const isPolishing = data.polishStatus === 'pending' || data.polishStatus === 'running'
+
   return (
     <article
       ref={nodeRef}
@@ -83,6 +130,17 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename }: T
       )}
       data-node-id={id}
     >
+      {selected || isExpanded ? (
+        <div className="absolute left-3 right-3 top-[-48px] z-20 flex justify-center">
+          <RichTextToolbar
+            {...(data.polishStatus ? { polishStatus: data.polishStatus } : {})}
+            onCommand={applyRichTextCommand}
+            onOpenFocus={() => setIsFocusOpen(true)}
+            onPolish={requestPolish}
+          />
+        </div>
+      ) : null}
+
       <NodeResizer
         isVisible={selected}
         minWidth={NODE_MIN_WIDTH.text}
@@ -91,7 +149,7 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename }: T
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="flex min-h-7 items-center">
+      <header className="flex min-h-7 items-center gap-2">
         {rename.isRenaming ? (
           <input
             ref={renameRef}
@@ -112,6 +170,16 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename }: T
             {rename.value}
           </button>
         )}
+        {data.polishStatus ? (
+          <span
+            className={cn(
+              'ml-auto rounded-sm border border-border-secondary bg-bg-input px-2 py-1 text-[11px] font-medium text-text-muted',
+              isPolishing && 'cc-polish-shimmer text-brand'
+            )}
+          >
+            {isPolishing ? '润色中' : data.polishStatus === 'done' ? '润色完成' : data.polishStatus === 'error' ? '润色失败' : '等待润色'}
+          </span>
+        ) : null}
       </header>
 
       {isExpanded ? (
@@ -132,6 +200,40 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename }: T
           {content || '写一段节拍、提示词或场景备注'}
         </button>
       )}
+
+      {chips.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map((chip) => (
+            <span
+              key={chip.id}
+              className="inline-flex items-center rounded-full border border-brand/30 bg-success-subtle px-2 py-0.5 text-[11px] font-medium text-brand"
+            >
+              @{chip.name}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {selected || isExpanded ? (
+        <div
+          aria-label="Prompt 贡献预览"
+          className="max-h-16 overflow-auto rounded-sm border border-border-secondary bg-bg-input/60 px-2 py-1.5 text-[11px] leading-relaxed text-text-muted"
+        >
+          {content || '该文本节点尚无 prompt 贡献'}
+        </div>
+      ) : null}
+
+      {isFocusOpen ? (
+        <TextFocusModal
+          content={content}
+          onClose={() => setIsFocusOpen(false)}
+          onSave={(nextContent, html) => {
+            updateContentAndHtml(nextContent, html)
+            setIsFocusOpen(false)
+            setIsExpanded(false)
+          }}
+        />
+      ) : null}
 
       {/* 输入/输出连接点 */}
       <Handle type="target" position={Position.Left} className="cc-handle" />

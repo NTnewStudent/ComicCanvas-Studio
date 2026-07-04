@@ -5,8 +5,14 @@
 
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
-import { canConnect } from '../../../../../../shared/connection-matrix'
-import type { CanvasEdgeData, CanvasNodeData, EdgeType, NodeStatus, NodeType } from '../../../../../../shared/nodes'
+import {
+  connectCanvasNodes,
+  createCanvasNode,
+  deleteCanvasNode,
+  type CanvasActionFailureReason,
+} from '../../../../../../shared/canvas-actions'
+import type { CanvasGraphSnapshot } from '../../../../../../shared/graph'
+import type { CanvasEdgeData, CanvasNodeData, NodeType } from '../../../../../../shared/nodes'
 
 export interface CanvasPosition {
   x: number
@@ -37,7 +43,7 @@ export interface CanvasSnapshot {
   viewport: CanvasViewport
 }
 
-export type ConnectFailureReason = 'node_not_found' | 'connection_not_allowed' | 'duplicate_edge'
+export type ConnectFailureReason = CanvasActionFailureReason
 
 export type ConnectResult = { ok: true; edgeId: string } | { ok: false; reason: ConnectFailureReason }
 
@@ -51,8 +57,6 @@ export interface CanvasStoreState extends CanvasSnapshot {
   past: CanvasSnapshot[]
   future: CanvasSnapshot[]
   lastConnectError: { reason: ConnectFailureReason; at: number } | null
-  /** 节点运行状态（运行时数据，不参与 undo/redo） */
-  nodeRunStatus: Map<string, NodeStatus>
   addNode(this: void, type: NodeType, position: CanvasPosition, data?: Partial<CanvasNodeData>): string
   deleteNode(this: void, id: string): void
   updateNodeData(this: void, id: string, data: Partial<CanvasNodeData>): void
@@ -66,10 +70,6 @@ export interface CanvasStoreState extends CanvasSnapshot {
   applyChange(this: void, snapshot: CanvasSnapshot): void
   undo(this: void): void
   redo(this: void): void
-  /** 设置指定节点的运行状态 */
-  setNodeRunStatus(this: void, nodeId: string, status: NodeStatus): void
-  /** 获取指定节点的运行状态（未登记时返回 'idle'） */
-  getNodeRunStatus(this: void, nodeId: string): NodeStatus
 }
 
 const maxHistory = 50
@@ -93,94 +93,12 @@ function pushHistory(state: CanvasStoreState): Pick<CanvasStoreState, 'past' | '
   }
 }
 
-function defaultData(type: NodeType, sequence: number): CanvasNodeData {
-  if (type === 'text') {
-    return { label: `Text ${sequence}`, content: '' }
-  }
-
-  if (type === 'character') {
-    return { label: `Character ${sequence}`, description: '', assetId: null, tags: [] }
-  }
-
-  if (type === 'scene') {
-    return { label: `Scene ${sequence}`, description: '', assetId: null, category: '' }
-  }
-
-  if (type === 'audio') {
-    return { label: `Audio ${sequence}`, assetId: null, durationSeconds: 0, status: 'idle' }
-  }
-
-  if (type === 'videoCompose') {
-    return {
-      label: `Video Compose ${sequence}`,
-      inputOrder: [],
-      transitionName: null,
-      modelId: 'stub-compose',
-      assetId: null,
-      status: 'idle'
-    }
-  }
-
-  if (type === 'superResolution') {
-    return {
-      label: `Super Resolution ${sequence}`,
-      scene: 'aigc',
-      resolution: '1080p',
-      fps: 30,
-      assetId: null,
-      status: 'idle'
-    }
-  }
-
-  if (type === 'muxAudioVideo') {
-    return { label: `Mux Audio Video ${sequence}`, modelId: 'stub-mux', assetId: null, status: 'idle' }
-  }
-
-  if (type === 'mjImage') {
-    return {
-      label: `MJ Image ${sequence}`,
-      prompt: '',
-      modelId: 'stub-mj',
-      ratio: '16:9',
-      urls: [],
-      selectedIndex: 0,
-      assetId: null,
-      status: 'idle'
-    }
-  }
-
-  if (type === 'image' || type === 'imageConfigV2') {
-    return {
-      label: type === 'imageConfigV2' ? `生图 ${sequence}` : `Image ${sequence}`,
-      promptOverride: '',
-      modelId: 'stub-image',
-      orientation: 'landscape',
-      assetId: null,
-      status: 'idle'
-    }
-  }
-
+function snapshotFromState(state: CanvasSnapshot): CanvasGraphSnapshot {
   return {
-    label: type === 'videoConfigV2' ? `生视频 ${sequence}` : `Video ${sequence}`,
-    promptOverride: '',
-    modelId: 'stub-video',
-    orientation: 'landscape',
-    durationSeconds: 3,
-    firstFrameAssetId: null,
-    lastFrameAssetId: null,
-    assetId: null,
-    status: 'idle'
+    nodes: state.nodes,
+    edges: state.edges,
+    viewport: state.viewport,
   }
-}
-
-function edgeTypeFor(source: NodeType): EdgeType {
-  if (source === 'text') return 'promptOrder'
-  if (source === 'image' || source === 'imageConfigV2') return 'imageRole'
-  return 'default'
-}
-
-function findNodeType(nodes: CanvasStoreNode[], id: string): NodeType | null {
-  return nodes.find((node) => node.id === id)?.type ?? null
 }
 
 /**
@@ -202,23 +120,21 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
     past: [],
     future: [],
     lastConnectError: null,
-    nodeRunStatus: new Map<string, NodeStatus>(),
 
     addNode(type, position, data) {
       const id = idFactory()
 
       set((state) => {
-        const sequence = state.nodes.filter((node) => node.type === type).length + 1
-        const node: CanvasStoreNode = {
-          id,
+        const next = createCanvasNode(snapshotFromState(state), {
+          nodeId: id,
           type,
           position,
-          data: { ...defaultData(type, sequence), ...data }
-        }
+          ...(data ? { data } : {}),
+        })
 
         return {
           ...pushHistory(state),
-          nodes: [...state.nodes, node]
+          nodes: next.graph.nodes,
         }
       })
 
@@ -226,11 +142,14 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
     },
 
     deleteNode(id) {
-      set((state) => ({
-        ...pushHistory(state),
-        nodes: state.nodes.filter((node) => node.id !== id),
-        edges: state.edges.filter((edge) => edge.source !== id && edge.target !== id)
-      }))
+      set((state) => {
+        const next = deleteCanvasNode(snapshotFromState(state), { nodeId: id })
+        return {
+          ...pushHistory(state),
+          nodes: next.graph.nodes,
+          edges: next.graph.edges
+        }
+      })
     },
 
     updateNodeData(id, data) {
@@ -253,38 +172,23 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
 
     addEdge(source, target) {
       const state = get()
-      const sourceType = findNodeType(state.nodes, source)
-      const targetType = findNodeType(state.nodes, target)
-
-      if (!sourceType || !targetType) {
-        set({ lastConnectError: { reason: 'node_not_found', at: clock() } })
-        return { ok: false, reason: 'node_not_found' }
-      }
-
-      if (state.edges.some((edge) => edge.source === source && edge.target === target)) {
-        set({ lastConnectError: { reason: 'duplicate_edge', at: clock() } })
-        return { ok: false, reason: 'duplicate_edge' }
-      }
-
-      if (!canConnect(sourceType, targetType)) {
-        set({ lastConnectError: { reason: 'connection_not_allowed', at: clock() } })
-        return { ok: false, reason: 'connection_not_allowed' }
-      }
-
       const edgeId = edgeIdFactory(source, target)
-      const edge: CanvasStoreEdge = {
-        id: edgeId,
+      const createdAt = clock()
+      const next = connectCanvasNodes(snapshotFromState(state), {
+        edgeId,
         source,
         target,
-        data: {
-          edgeType: edgeTypeFor(sourceType),
-          createdAt: clock()
-        }
+        createdAt,
+      })
+
+      if (!next.ok) {
+        set({ lastConnectError: { reason: next.reason, at: createdAt } })
+        return { ok: false, reason: next.reason }
       }
 
       set((current) => ({
         ...pushHistory(current),
-        edges: [...current.edges, edge],
+        edges: next.graph.edges,
         lastConnectError: null
       }))
 
@@ -331,18 +235,6 @@ export function createCanvasStore(options: CanvasStoreOptions = {}): StoreApi<Ca
           future: state.future.slice(1)
         }
       })
-    },
-
-    setNodeRunStatus(nodeId, status) {
-      set((state) => {
-        const next = new Map(state.nodeRunStatus)
-        next.set(nodeId, status)
-        return { nodeRunStatus: next }
-      })
-    },
-
-    getNodeRunStatus(nodeId) {
-      return get().nodeRunStatus.get(nodeId) ?? 'idle'
     }
   }))
 }

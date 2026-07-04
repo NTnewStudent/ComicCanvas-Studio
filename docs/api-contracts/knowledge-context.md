@@ -8,7 +8,15 @@
 
 ## Scope
 
-This contract covers KnowledgeStore ingest, chunking, retrieval, deletion, rebuild, citation metadata, ContextBuilder priority rules, scoped Context Packs, and RAG behavior for local-first project knowledge.
+This contract covers KnowledgeStore ingest, chunking, retrieval, deletion,
+rebuild, citation metadata, ContextBuilder priority rules, scoped Context Packs,
+conversation summaries, and RAG behavior for local-first project knowledge.
+
+Detailed implementation spec:
+
+- `specs/conversation-context-engine/requirements.md`
+- `specs/conversation-context-engine/design.md`
+- `specs/conversation-context-engine/tasks.md`
 
 Non-goals:
 
@@ -73,11 +81,16 @@ Internal service request:
 ```ts
 interface ContextBuildInput {
   agentId: string
+  runId?: string
+  messageId?: string
+  workflowId?: string
   userMessage: string
   scope: KnowledgeScope
   selectedNodeIds: string[]
   selectedAssetIds: string[]
+  graphSnapshot?: unknown
   tokenBudget: number
+  policyOverride?: Partial<AgentContextPolicy>
 }
 ```
 
@@ -87,9 +100,64 @@ Response:
 interface ContextPack {
   id: string
   agentId: string
+  runId?: string
+  workflowId?: string
   sources: ContextSource[]
+  renderedContext: string
+  tokenEstimate: number
+  omittedSources: { kind: string; refId: string; reason: string }[]
+  warnings: { code: string; message: string; refId?: string }[]
   redactions: string[]
   createdAt: number
+}
+```
+
+### `context.getPack`
+
+Request:
+
+```ts
+interface ContextGetPackRequest {
+  contextPackId: string
+}
+```
+
+Response:
+
+```ts
+interface ContextPackInspection {
+  pack: ContextPack
+  sourceExcerpts: Array<{
+    kind: string
+    refId: string
+    priority: number
+    tokenEstimate: number
+    excerpt?: string
+    citation?: KnowledgeChunk['citation'] & { score?: number }
+  }>
+}
+```
+
+### `context.compact`
+
+Request:
+
+```ts
+interface ContextCompactRequest {
+  workflowId: string
+  fromMessageId?: string
+  toMessageId?: string
+  mode: 'auto' | 'manual'
+}
+```
+
+Response:
+
+```ts
+interface ContextCompactResponse {
+  jobId?: string
+  summaryId?: string
+  status: 'pending' | 'completed'
 }
 ```
 
@@ -97,7 +165,17 @@ Rules:
 
 - Retrieval SHALL respect scope and deletion state.
 - Retrieved chunks entering context SHALL include source metadata for citation/trace.
-- Context priority is deterministic: policy, user request, canvas selection, files/assets, retrieved chunks, messages, summaries.
+- Context priority is deterministic: policy, user request, canvas selection,
+  files/assets, retrieved chunks, messages, summaries.
+- `canvas.chatSend` SHALL remain ticket-only; full context building happens in
+  the `agent.run` job handler.
+- Current user request SHALL always be included in successful Context Packs.
+- Plans and job/tool results included from history SHALL be summarized by
+  default, not pasted as unbounded raw JSON or binary payloads.
+- Context Pack persistence SHALL store source refs, token estimates, omissions,
+  warnings, and redaction classes.
+- Conversation compaction SHALL preserve a boundary so summaries and full old
+  messages are not duplicated in future Context Packs.
 
 ## Errors
 
@@ -108,6 +186,9 @@ Rules:
 | `knowledge_index_failed` | Chunking or indexing failed. |
 | `knowledge_retrieval_failed` | Retrieval backend failed safely. |
 | `context_budget_exceeded` | Context cannot fit required priority items. |
+| `context_scope_denied` | Requested context source is outside agent/project scope. |
+| `context_pack_not_found` | Requested Context Pack does not exist. |
+| `context_compaction_failed` | Conversation summary could not be produced safely. |
 
 ## Permissions
 
@@ -115,6 +196,9 @@ Rules:
 - Retrieval is limited to active project/workspace/user-approved scopes.
 - ContextBuilder can include only sources allowed by agent context policy.
 - Deleted or removed documents SHALL be excluded from future retrieval.
+- Context inspection is read-only and must redact sensitive excerpts.
+- `context.compact` is read-only when deterministic/local; provider-backed
+  compaction must run as an async job and may require provider spend permission.
 
 ## Tests
 
@@ -123,3 +207,8 @@ Rules:
 - Integration: project/user scope restrictions are enforced.
 - Trace: chunks include citation metadata.
 - Redaction: summaries/memories exclude keys, auth headers, and hidden prompts.
+- Integration: `agent.run` builds a Context Pack before planner/model execution.
+- Integration: long histories compact into summaries without duplicating old
+  full messages.
+- UI/human review: Context Pack inspection shows sources, warnings, citations,
+  omissions, and redaction counts.

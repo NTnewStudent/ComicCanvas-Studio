@@ -53,4 +53,16 @@ describe('REQ-092 canvas visible copy quality', () => {
 
     expect(visibleCopy).not.toMatch(/閻㈢喎娴|閻㈢喕顫|鐟欏棝|鐡掑懎|闂婂磭|鐠囩兘|濞ｈ|婢跺秴|閸掔娀|鎼滅储|娌℃湁/u)
   })
+
+  it('keeps CanvasPage comments and state ownership notes readable', () => {
+    const source = readFileSync(CANVAS_PAGE, 'utf8')
+
+    expect(source).toContain('Canvas state ownership model')
+    expect(source).toContain('React Flow owns transient interaction state')
+    expect(source).toContain('Zustand owns the durable graph snapshot')
+    expect(source).toContain('syncReactFlowFromStore')
+    expect(source).toContain('skipNextPersistRef.current = true')
+    expect(source).toMatch(/const syncReactFlowFromStore[\s\S]*skipNextPersistRef\.current = true/u)
+    expect(source).not.toMatch(/[閳閸閹鐏鐎娣濞婢鎼]/u)
+  })
 })

@@ -1,0 +1,2 @@
+ALTER TABLE workflows ADD COLUMN cover_asset_id TEXT;
+ALTER TABLE workflows ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
