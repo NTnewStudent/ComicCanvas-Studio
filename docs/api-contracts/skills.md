@@ -8,13 +8,14 @@
 
 ## Scope
 
-This contract covers SkillRegistry discovery, metadata validation, lazy loading, invocation, versioning, hot reload, permissions, and invocation trace records for built-in, user-defined, and plugin skills.
+本契约覆盖 SkillRegistry 的发现、元数据校验、懒加载、调用、版本管理、
+热重载、权限，以及内置、用户自定义与插件 skill 的调用追踪记录。
 
-Non-goals:
+Non-goals（非目标）：
 
-- No automatic loading of every skill reference into every agent context.
-- No skill permission bypass around ToolRuntime.
-- No project product spec under `.codex/` or `.claude/`.
+- 不将每个 skill 引用自动加载进每个 agent context。
+- 不绕过 ToolRuntime 进行 skill 权限绕行。
+- `.codex/` 或 `.claude/` 下不放置项目产品规格文档。
 
 ## Request/Response Contracts
 
@@ -39,7 +40,7 @@ interface SkillListResponse {
 
 ### `skill.invoke`
 
-Internal service request:
+Internal service request（内部服务请求）：
 
 ```ts
 interface SkillInvokeRequest {
@@ -63,34 +64,34 @@ interface SkillInvocationRecord {
 }
 ```
 
-Rules:
+Rules（规则）：
 
-- Registry list responses expose metadata only.
-- Invocation loads only required instruction files and references.
-- Skills declare required tools and permissions before use.
-- Failed reload keeps previous valid skill snapshot.
+- Registry 的 list 响应只暴露元数据。
+- 调用时只加载所需的指令文件和引用。
+- Skill 在使用前需声明所需的工具与权限。
+- 重载失败时保留此前有效的 skill 快照。
 
 ## Errors
 
 | Error class | Meaning |
 | :--- | :--- |
-| `skill_not_found` | Skill ID is missing or disabled. |
-| `skill_metadata_invalid` | Metadata failed validation. |
-| `skill_reference_missing` | Required instruction/reference file is missing. |
-| `skill_permission_denied` | Required tool/permission exceeds agent policy. |
-| `skill_reload_failed` | Reload failed; previous valid snapshot remains active. |
+| `skill_not_found` | Skill ID 不存在或已被禁用。 |
+| `skill_metadata_invalid` | 元数据未通过校验。 |
+| `skill_reference_missing` | 所需的指令/引用文件缺失。 |
+| `skill_permission_denied` | 所需的工具/权限超出 agent 策略。 |
+| `skill_reload_failed` | 重载失败；此前有效的快照保持生效。 |
 
 ## Permissions
 
-- Skill invocation permissions are capped by invoking agent policy.
-- A skill cannot enable tools that the agent cannot use.
-- User/plugin skills default to disabled or `ask` until trusted.
-- Skill references may include local files only from approved skill roots.
+- Skill 调用权限受调用方 agent 策略上限约束。
+- Skill 不能启用 agent 本身无法使用的工具。
+- 用户/插件 skill 默认为禁用或 `ask`，直到被信任。
+- Skill 引用只能包含来自已批准 skill 根目录的本地文件。
 
 ## Tests
 
-- Unit: metadata validation for built-in, user, and plugin skills.
-- Unit: lazy loading loads selected references only.
-- Unit: permission overreach fails before tool execution.
-- Integration: reload failure keeps previous valid skill list.
-- Trace: invocation record stores skill ID, version, agent run ID, and loaded references.
+- Unit：内置、用户和插件 skill 的元数据校验。
+- Unit：懒加载只加载被选中的引用。
+- Unit：权限越界在工具执行前失败。
+- Integration：重载失败时保留此前有效的 skill 列表。
+- Trace：调用记录存储 skill ID、版本、agent run ID，以及已加载的引用。

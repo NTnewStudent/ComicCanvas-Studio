@@ -9,14 +9,14 @@ describe('core platform implementation readiness', () => {
     const readiness = readFileSync('docs/architecture/core-platform-implementation-readiness.md', 'utf8')
 
     for (const heading of [
-      '## DB Schema Draft',
-      '## Repository Ownership Boundaries',
-      '## Migration Policy',
-      '## Runtime Skeleton Plans',
-      '## Settings And Admin Surfaces',
-      '## Initial Built-In Tools',
-      '## Initial Built-In Skills',
-      '## Default Agent Lineup And Handoff Rules'
+      '## DB Schema 草案',
+      '## 仓储层归属边界',
+      '## 迁移策略',
+      '## 运行时骨架规划',
+      '## 设置与管理面',
+      '## 初始内置工具',
+      '## 初始内置 Skill',
+      '## 默认 Agent 阵容与交接规则'
     ]) {
       expect(readiness).toContain(heading)
     }
@@ -28,10 +28,10 @@ describe('core platform implementation readiness', () => {
     const review = readFileSync('docs/progress/no-demo-acceptance-review.md', 'utf8')
 
     for (const phrase of [
-      'Placeholder Scan',
+      '占位符扫描',
       'No-Demo Acceptance Review',
-      'M0 Exit Decision',
-      'M1 may start'
+      'M0 退出决策',
+      'M1 即可开始'
     ]) {
       expect(review).toContain(phrase)
     }

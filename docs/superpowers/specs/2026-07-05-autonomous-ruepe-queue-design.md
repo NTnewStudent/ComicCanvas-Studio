@@ -36,4 +36,4 @@ Plan source: approved autonomous queue plan (2026-07-05).
 
 ## Task 41–47 交付摘要
 
-见 approved plan file; implementation evidence recorded in spec tasks and `docs/progress/test-report.md`.
+见已批准的 plan file；实现证据记录在 spec tasks 与 `docs/progress/test-report.md` 中。

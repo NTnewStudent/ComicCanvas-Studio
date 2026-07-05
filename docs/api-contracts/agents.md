@@ -8,14 +8,14 @@
 
 ## Scope
 
-This contract covers AgentRegistry, built-in agents, custom agents, agent runs, context policy, tool/skill permissions, CanvasPlan output, sub-agent spawning, progress events, and trace metadata.
+本契约涵盖 AgentRegistry、内置 agent、自定义 agent、agent 运行、上下文策略、工具/skill 权限、CanvasPlan 输出、子 agent spawn、进度事件，以及 trace 元数据。
 
-Non-goals:
+Non-goals：
 
-- No hidden write path around tools.
-- No sub-agent permission expansion.
-- No executable CanvasPlan output.
-- No persisted graph writes from child draft tools before parent-controlled merge.
+- 不允许绕过工具的隐藏写入路径。
+- 不允许子 agent 权限扩张。
+- 不允许可执行的 CanvasPlan 输出。
+- 子 agent 草稿工具在父级受控合并之前，不允许写入持久化图。
 
 ## Request/Response Contracts
 
@@ -51,9 +51,9 @@ type AgentSaveResponse = AgentDefinition
 
 Rules:
 
-- Saved custom agents SHALL be persisted with `source: 'user'`.
-- Built-in agent IDs SHALL be editable by saving a persisted override with `source: 'builtin'`; code-defined built-in defaults remain the fallback when no override exists.
-- `name`, `instructions`, `maxTurns`, tool policy, skill policy, gateway policy, context policy, trigger policy, and permission policy SHALL be validated before persistence.
+- 保存的自定义 agent SHALL 以 `source: 'user'` 持久化。
+- 内置 agent ID SHALL 可通过保存一条 `source: 'builtin'` 的持久化覆盖记录来编辑；当不存在覆盖记录时，代码定义的内置默认值仍作为兜底。
+- `name`、`instructions`、`maxTurns`、工具策略、skill 策略、网关策略、上下文策略、触发策略与权限策略 SHALL 在持久化前完成校验。
 
 ### `agent.delete`
 
@@ -96,7 +96,7 @@ interface AgentRunTicket {
 }
 ```
 
-Terminal response:
+终态响应：
 
 ```ts
 type AgentResponse =
@@ -144,15 +144,15 @@ interface AgentPermissionRequiredEvent {
 
 Rules:
 
-- `agent.toolStarted` SHALL be emitted immediately before ToolRuntime executes an agent-requested tool call.
-- `agent.toolCompleted` SHALL be emitted after ToolRuntime returns for that call, including denied and failed outcomes.
-- `agent.permissionRequired` SHALL be emitted when a tool returns `decision: 'ask'` and the loop pauses for `agent.approveTool`.
-- Tool lifecycle events SHALL include `runId` and `messageId` so renderer timelines can correlate them with chat turns.
+- `agent.toolStarted` SHALL 在 ToolRuntime 执行一次 agent 发起的工具调用之前立即发出。
+- `agent.toolCompleted` SHALL 在该调用从 ToolRuntime 返回后发出，包括被拒绝与失败的结果。
+- `agent.permissionRequired` SHALL 在工具返回 `decision: 'ask'` 且主循环暂停等待 `agent.approveTool` 时发出。
+- 工具生命周期事件 SHALL 包含 `runId` 与 `messageId`，以便渲染层时间线能将其与聊天轮次关联。
 
-- `answer` is for ordinary conversation, coding/help questions, time/date questions, and general knowledge responses that do not require graph mutation.
-- `clarification` is for greetings, low-signal requests, and ambiguous tasks where the Agent needs more information before selecting tools or creating nodes.
-- `canvasPlan` is reserved for explicit canvas graph/node/workflow tasks and is delivered through the canvas plan path.
-- Non-`canvasPlan` terminal responses SHALL emit `agent.responseReady` and SHALL NOT store a CanvasPlan for `canvas.chatGetPlan`.
+- `answer` 用于普通对话、编码/帮助类问题、时间/日期问题，以及不需要修改图的常识性回答。
+- `clarification` 用于问候语、低信息量请求，以及 Agent 在选择工具或创建节点前需要更多信息的含糊任务。
+- `canvasPlan` 专用于显式的画布图/节点/工作流任务，并通过 canvas plan 路径交付。
+- 非 `canvasPlan` 的终态响应 SHALL 发出 `agent.responseReady`，且 SHALL NOT 为 `canvas.chatGetPlan` 存储 CanvasPlan。
 
 ### `agent.approveTool`
 
@@ -214,61 +214,61 @@ interface SpawnSubAgentResult {
 
 Rules:
 
-- Built-in agents SHALL include `general-purpose`, `canvas-orchestrator`, compatibility `orchestrator`, canvas, tooling, and PM roles.
-- `general-purpose` SHALL be the default conversation entry for canvas chat. Its description and instructions SHALL focus on understanding, requirement decomposition, ambiguity clarification, and delegation to local capabilities.
-- `canvas-orchestrator` SHALL own explicit canvas graph/node/workflow CanvasPlan generation. The legacy `orchestrator` ID SHALL remain a compatibility alias.
-- Agent runs SHALL analyze user intent before graph mutation or CanvasPlan output. Greetings, small talk, and low-signal requests SHALL return an `AgentResponse` clarification instead of creating graph nodes.
-- Intent analysis SHALL expose a visible progress summary with classification, complexity, execution mode, recommended agent, and local capability check. This is an auditable summary, not raw chain-of-thought.
-- `agent.getRun` trace metadata SHALL persist the structured `intentAnalysis` and `capabilityCheck` so UI surfaces can recover the Agent's visible reasoning summary after reload or job completion.
-- Simple explicit node-creation requests MAY use `executionMode: 'direct'` to produce a minimal CanvasPlan. Direct mode SHALL NOT bypass ToolRuntime, plan-apply gates, or user approval policy.
-- Requests to generate images or videos SHALL use generation config nodes (`imageConfigV2` / `videoConfigV2`) plus run steps; reference `image` and `video` nodes SHALL NOT be treated as generation nodes.
-- Built-in agents SHALL be editable through settings and persisted as overrides, but SHALL NOT be deletable.
-- Agent runs are asynchronous and return tickets.
-- Agent runs SHALL resolve the selected AgentDefinition before loop execution and SHALL reject disabled agents or triggers not allowed by the agent trigger policy.
-- Agent context loops SHALL initialize from the resolved AgentDefinition, trigger policy, user message, and current ToolRuntime descriptors.
-- Agent context loops SHALL filter tools by `allowedTools`, enabled state, and permission kinds before model/planner execution.
-- Agent-requested tool calls SHALL execute only through ToolRuntime; tool observations SHALL be appended to loop messages before the next model/planner turn.
-- Agent-requested tools that return a permission `ask` decision SHALL pause the loop with `agent_tool_approval_required`, preserve the pending tool call, input, reason, and required permissions, and SHALL NOT execute the tool until `agent.approveTool` resumes it.
-- `agent.approveTool` SHALL enqueue a new `agent.run` job, execute only the preserved pending tool call through ToolRuntime, append its observation to the paused loop, and continue model/planner turns until a sanitized CanvasPlan or terminal error is produced.
-- Agent context loops SHALL compact older assistant/tool messages deterministically against the agent context token budget while preserving the system prompt, current user request, and a compacted summary boundary.
-- Agent loops that exceed `maxTurns` SHALL terminate with structured metadata including `errorClass`, `turnsUsed`, dropped tools, compaction summary, and omitted message count.
-- Gateway-backed Agent models SHALL return JSON shaped as `toolCalls` or `AgentResponse`; invalid JSON SHALL be converted into a safe `clarification` response with dropped audit metadata instead of mutating the graph.
-- OpenAI-compatible gateways SHALL use native `tools` / `tool_calls` when `resolveAgentToolProtocol` selects `native`; stub and unknown gateways SHALL keep the JSON `toolCalls` protocol.
-- Agent-produced CanvasPlan SHALL be sanitized before application.
-- Child permissions SHALL be parent permissions intersected with target/requested policy.
-- Sub-agent spawn results SHALL include an independent trace with run ID, parent run/trace IDs, effective permissions, dropped permissions, terminal status, and timings.
-- Sub-agent canvas tools SHALL run against an isolated draft graph copy; `applySubAgentResult` SHALL sanitize that draft and persist a new graph version only when the parent explicitly merges it.
+- 内置 agent SHALL 包含 `general-purpose`、`canvas-orchestrator`、兼容别名 `orchestrator`，以及 canvas、tooling、PM 角色。
+- `general-purpose` SHALL 作为画布聊天的默认对话入口。其描述与指令 SHALL 聚焦于理解、需求拆解、歧义澄清，以及委派给本地能力。
+- `canvas-orchestrator` SHALL 负责显式的画布图/节点/工作流 CanvasPlan 生成。旧的 `orchestrator` ID SHALL 保留为兼容别名。
+- Agent 运行 SHALL 在修改图或输出 CanvasPlan 之前分析用户意图。问候语、闲聊与低信息量请求 SHALL 返回 `AgentResponse` 的 clarification，而不是创建图节点。
+- 意图分析 SHALL 暴露一份可见的进度摘要，包含分类、复杂度、执行模式、推荐 agent 与本地能力检查。这是可审计的摘要，不是原始思维链。
+- `agent.getRun` 的 trace 元数据 SHALL 持久化结构化的 `intentAnalysis` 与 `capabilityCheck`，使 UI 层能在重载或任务完成后恢复 Agent 的可见推理摘要。
+- 简单的显式建节点请求 MAY 使用 `executionMode: 'direct'` 来产出最简 CanvasPlan。直接模式 SHALL NOT 绕过 ToolRuntime、plan-apply 关卡或用户批准策略。
+- 生成图片或视频的请求 SHALL 使用生成配置节点（`imageConfigV2` / `videoConfigV2`）加运行步骤；引用型的 `image` 与 `video` 节点 SHALL NOT 被当作生成节点处理。
+- 内置 agent SHALL 可通过 settings 编辑并持久化为覆盖记录，但 SHALL NOT 可删除。
+- Agent 运行是异步的，返回票据。
+- Agent 运行 SHALL 在主循环执行前解析出所选的 AgentDefinition，并 SHALL 拒绝已禁用的 agent 或 agent 触发策略不允许的触发方式。
+- Agent 上下文循环 SHALL 从已解析的 AgentDefinition、触发策略、用户消息与当前 ToolRuntime 描述符初始化。
+- Agent 上下文循环 SHALL 在模型/planner 执行前，按 `allowedTools`、启用状态与权限类型过滤工具。
+- Agent 发起的工具调用 SHALL 只能通过 ToolRuntime 执行；工具观察结果 SHALL 在下一轮模型/planner 之前追加到循环消息中。
+- Agent 发起的工具若返回权限 `ask` 决策，SHALL 以 `agent_tool_approval_required` 暂停循环，保留待处理的工具调用、输入、理由与所需权限，且 SHALL NOT 执行该工具，直到 `agent.approveTool` 使其恢复。
+- `agent.approveTool` SHALL 入队一个新的 `agent.run` 任务，仅通过 ToolRuntime 执行那条被保留的待处理工具调用，将其观察结果追加到已暂停的循环中，并继续模型/planner 轮次，直到产出经过净化的 CanvasPlan 或终态错误。
+- Agent 上下文循环 SHALL 针对 agent 上下文 token 预算，确定性地压缩较早的 assistant/tool 消息，同时保留系统提示词、当前用户请求与一个压缩摘要边界。
+- 超出 `maxTurns` 的 Agent 循环 SHALL 以结构化元数据终止，包含 `errorClass`、`turnsUsed`、被丢弃的工具、压缩摘要与被省略的消息数量。
+- 由网关驱动的 Agent 模型 SHALL 返回形如 `toolCalls` 或 `AgentResponse` 的 JSON；非法 JSON SHALL 被转换为带有 dropped 审计元数据的安全 clarification 响应，而不是修改图。
+- 当 `resolveAgentToolProtocol` 选择 `native` 时，OpenAI 兼容网关 SHALL 使用原生 `tools` / `tool_calls`；stub 与未知网关 SHALL 保留 JSON `toolCalls` 协议。
+- Agent 产出的 CanvasPlan SHALL 在应用前经过净化。
+- 子级权限 SHALL 为父级权限与目标/请求策略的交集。
+- 子 agent spawn 结果 SHALL 包含一份独立的 trace，含运行 ID、父级运行/trace ID、有效权限、被丢弃的权限、终态状态与耗时。
+- 子 agent 的画布工具 SHALL 针对一份隔离的草稿图副本运行；`applySubAgentResult` SHALL 净化该草稿，且只有在父级明确合并时才持久化新的图版本。
 
 ## Errors
 
 | Error class | Meaning |
 | :--- | :--- |
-| `agent_not_found` | Agent ID does not exist or is disabled. |
-| `agent_policy_invalid` | Agent configuration violates policy schema. |
-| `agent_context_failed` | Context Pack could not be built safely. |
-| `agent_permission_denied` | Tool, skill, or spawn permission was denied. |
-| `agent_tool_approval_required` | Tool execution is paused until the user approves the pending tool call. |
-| `agent_builtin_readonly` | Built-in agent definition cannot be deleted. |
-| `agent_depth_exceeded` | Spawn depth exceeded configured maximum. |
-| `agent_max_turns_exceeded` | Agent loop reached the configured turn limit before producing a plan. |
-| `agent_run_failed` | Agent loop failed with safe error metadata. |
+| `agent_not_found` | Agent ID 不存在或已禁用。 |
+| `agent_policy_invalid` | Agent 配置违反策略 schema。 |
+| `agent_context_failed` | Context Pack 无法安全构建。 |
+| `agent_permission_denied` | 工具、skill 或 spawn 权限被拒绝。 |
+| `agent_tool_approval_required` | 工具执行暂停，直到用户批准该待处理工具调用。 |
+| `agent_builtin_readonly` | 内置 agent 定义不可删除。 |
+| `agent_depth_exceeded` | Spawn 深度超过配置的最大值。 |
+| `agent_max_turns_exceeded` | Agent 循环在产出 plan 之前达到配置的轮次上限。 |
+| `agent_run_failed` | Agent 循环失败，附带安全的错误元数据。 |
 
 ## Permissions
 
-- Custom agent creation/editing requires settings write permission.
-- Built-in agent editing requires settings write permission and stores an override row instead of mutating code defaults.
-- `allowedTools`, `allowedSkills`, gateway policy, context policy, trigger policy, and permission policy define maximum capability.
-- Sub-agent effective permissions SHALL be less than or equal to parent permissions.
+- 创建/编辑自定义 agent 需要 settings 写权限。
+- 编辑内置 agent 需要 settings 写权限，并存储为覆盖记录而非修改代码默认值。
+- `allowedTools`、`allowedSkills`、网关策略、上下文策略、触发策略与权限策略定义了能力上限。
+- 子 agent 的有效权限 SHALL 小于或等于父级权限。
 
 ## Tests
 
-- Unit: built-in agent registry contains required agent IDs.
-- Unit: custom agent policy validation rejects overbroad or malformed settings.
-- Integration: custom agent settings create, edit, list, and delete through typed IPC/preload APIs.
-- Integration: built-in agent settings save as persisted overrides and reject delete.
-- UI: agent form validates required fields, edits built-ins, and prevents built-in delete actions.
-- Unit: Agent context loop filters tools by policy, rejects disallowed triggers, executes ToolRuntime calls, feeds tool observations into the next turn, compacts over-budget context, and emits structured max-turns terminal metadata.
-- Property: sub-agent permission intersection never expands access.
-- Integration: sub-agent draft graph writes do not change the persisted workflow graph before parent merge.
-- Integration: `agent.run` returns job/run ticket and streams terminal event.
-- Injection: executable CanvasPlan strings are dropped or rejected before apply.
+- Unit：内置 agent 注册表包含必需的 agent ID。
+- Unit：自定义 agent 策略校验拒绝过宽或格式错误的配置。
+- Integration：自定义 agent 的 settings 通过类型化的 IPC/preload API 完成创建、编辑、列表与删除。
+- Integration：内置 agent 的 settings 保存为持久化覆盖记录并拒绝删除。
+- UI：agent 表单校验必填字段、可编辑内置项，并阻止对内置项的删除操作。
+- Unit：Agent 上下文循环按策略过滤工具、拒绝不允许的触发方式、执行 ToolRuntime 调用、将工具观察结果送入下一轮，压缩超预算的上下文，并发出结构化的 max-turns 终态元数据。
+- Property：子 agent 权限交集永不扩大访问范围。
+- Integration：子 agent 草稿图写入在父级合并之前不会改变持久化的工作流图。
+- Integration：`agent.run` 返回任务/运行票据并推送终态事件流。
+- Injection：可执行的 CanvasPlan 字符串在应用前被丢弃或拒绝。

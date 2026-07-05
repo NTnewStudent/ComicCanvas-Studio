@@ -8,13 +8,29 @@
       "Bash(git log*)",
       "Bash(git diff*)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git push -u*)",
+      "Bash(python*)",
+      "Bash(py *)",
+      "Read(**/*.{ts,tsx,js,json,md})",
+      "Grep(**/*.{ts,tsx,js})",
+      "Glob(**/*)"
     ],
     "deny": [
       "Bash(git push --force*)",
       "Bash(git reset --hard*)",
-      "Bash(rm -rf /)"
+      "Bash(git clean -f*)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /usr*)",
+      "Bash(rm -rf /var*)"
     ]
   },
-  "hooks": {}
+  "respectGitignore": true,
+  "model": "claude-opus-4-1",
+  "effortLevel": "high",
+  "theme": "auto",
+  "editorMode": "normal",
+  "autoCompactEnabled": true,
+  "fileCheckpointingEnabled": true,
+  "includeGitInstructions": true
 }

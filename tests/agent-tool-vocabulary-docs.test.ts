@@ -14,8 +14,8 @@ describe('Task 55 Agent-ready tool vocabulary docs', () => {
       clock: () => 1,
     })
 
-    expect(docs).toContain('## Agent-Ready Tool Vocabulary')
-    expect(docs).toContain('Generated from current `createCanvasTools` descriptors')
+    expect(docs).toContain('## Agent 可用工具词汇表')
+    expect(docs).toContain('根据当前 `createCanvasTools` descriptor 生成。')
 
     for (const tool of tools) {
       expect(docs).toContain(`| \`${tool.descriptor.id}\` |`)
@@ -27,15 +27,15 @@ describe('Task 55 Agent-ready tool vocabulary docs', () => {
   it('documents permissions, unsupported/manual-only actions, and Agent plan examples', () => {
     const docs = readFileSync('docs/api-contracts/tools-agents.md', 'utf8')
 
-    expect(docs).toContain('### Permission Model')
+    expect(docs).toContain('### 权限模型')
     expect(docs).toContain('`canvas.read`')
     expect(docs).toContain('`canvas.write`')
     expect(docs).toContain('`destructive`')
     expect(docs).toContain('`provider.spend`')
-    expect(docs).toContain('### Unsupported Or Manual-Only Actions')
-    expect(docs).toContain('MJ node/component actions')
-    expect(docs).toContain('viewport fit, hover menus, drag previews')
-    expect(docs).toContain('### Agent Plan Apply Examples')
+    expect(docs).toContain('### 不支持或仅限手动的操作')
+    expect(docs).toContain('MJ 节点/组件相关操作')
+    expect(docs).toContain('视口适配（viewport fit）、hover 菜单')
+    expect(docs).toContain('### Agent Plan 应用示例')
     expect(docs).toContain('canvas.createNode')
     expect(docs).toContain('canvas.connectNodes')
     expect(docs).toContain('canvas.runNode')

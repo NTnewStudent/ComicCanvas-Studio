@@ -1,26 +1,24 @@
-# Phase A Human Review Session Template
+# Phase A 人工复核会话模板
 
-Review date:
+复核日期：
 
-Reviewer:
+复核者：
 
-App build or commit:
+应用构建版本或 commit：
 
-Checklist source: `docs/progress/human-desktop-review-checklist.md`
+清单来源：`docs/progress/human-desktop-review-checklist.md`
 
-Runbook source: `docs/progress/phase-a-human-review-runbook.md`
+操作手册来源：`docs/progress/phase-a-human-review-runbook.md`
 
-## Session Rules
+## 会话规则
 
-- Record only manual desktop observations here.
-- Do not paste R2, gateway, or local machine secrets.
-- Do not use Agent automation rows `HDR-050` or `HDR-051` as Phase A evidence.
-- Do not include MJ parity, MJ multi-result UI, MJ URL refresh, MJ run recovery,
-  or MJ provider integration in Phase A acceptance.
-- A row can be deferred only by explicit product decision with owner, reason,
-  and follow-up location.
+- 此处只记录人工桌面观察结果。
+- 不要粘贴 R2、网关或本地机器的密钥。
+- 不要将 Agent 自动化相关行 `HDR-050` 或 `HDR-051` 用作 Phase A 证据。
+- Phase A 验收不包括 MJ 对等、MJ 多结果 UI、MJ URL 刷新、MJ 运行恢复或 MJ provider 集成。
+- 一行只能通过带有负责人、原因与后续跟进位置的明确产品决定来延后。
 
-## Required Row Results
+## 必需行结果
 
 | Row ID | Result | Reviewer / Date | Follow-up or Deferral |
 | :--- | :--- | :--- | :--- |
@@ -54,9 +52,9 @@ Runbook source: `docs/progress/phase-a-human-review-runbook.md`
 | HDR-TOOLS-001 | Pending |  |  |
 | HDR-PHASEA-001 | Pending |  |  |
 
-## Failure Records
+## 失败记录
 
-Use one block per failed row.
+每个失败的行使用一个记录块。
 
 ```text
 Row:
@@ -67,11 +65,9 @@ Reviewer:
 Date:
 ```
 
-## Product Deferral Records
+## 产品延后决定记录
 
-Use one block per deferred row. Deferrals must also be copied into
-`docs/progress/human-desktop-review-checklist.md` and
-`docs/progress/test-report.md` before Task 60 can start.
+每个被延后的行使用一个记录块。延后决定在 Task 60 启动之前，还必须同步复制到 `docs/progress/human-desktop-review-checklist.md` 与 `docs/progress/test-report.md` 中。
 
 ```text
 Row:
@@ -81,14 +77,13 @@ Follow-up location:
 Date:
 ```
 
-## Final Decision
+## 最终决策
 
-`HDR-PHASEA-001` result:
+`HDR-PHASEA-001` 结果：
 
-Decision notes:
+决策备注：
 
-Task 60 gate:
+Task 60 关卡：
 
-- Closed while `HDR-PHASEA-001` is Pending or Fail.
-- Open only after `HDR-PHASEA-001` is Pass, or after explicit product deferral
-  is recorded in both the checklist and test report.
+- 在 `HDR-PHASEA-001` 为 Pending 或 Fail 期间保持关闭。
+- 只有在 `HDR-PHASEA-001` 为 Pass 之后，或在清单与测试报告中都记录了明确产品延后决定之后，才能打开。

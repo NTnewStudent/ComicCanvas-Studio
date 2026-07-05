@@ -1,107 +1,53 @@
-# Infinite Canvas Architecture
+# 无限画布架构
 
-Task 61 records the architecture constraints for evolving the completed manual
-workflow editor into an infinite canvas. This is an architecture note, not an
-implementation switch. The Phase A acceptance gate still applies: infinite
-canvas implementation and performance claims wait until manual assets/workflows
-parity is accepted or explicitly deferred.
+Task 61 记录了将已完成的手动工作流编辑器演进为无限画布的架构约束。这是一份架构说明，而非实现开关。Phase A 验收门槛依然适用：无限画布的实现与性能结论，需等到手动 assets/workflows 的对等能力被验收通过，或明确推迟后才能推进。
 
-## Graph State Ownership
+## 图状态归属
 
-Zustand owns the durable graph snapshot: nodes, edges, viewport, undo/redo
-history, save payloads, snippet insertion, and Agent/tool graph mutations.
-React Flow owns transient viewport gestures, pending connection gestures, drag
-previews, hover state, temporary selection presentation, and fit-view animation.
+Zustand 拥有持久化图快照：nodes、edges、viewport、undo/redo 历史、保存负载、片段插入，以及 Agent/tool 引发的图变更。React Flow 拥有瞬态视口手势、待定连线手势、拖拽预览、hover 状态、临时选中态呈现，以及 fit-view 动画。
 
-Durable graph mutations must enter through shared graph actions, ToolRuntime, or
-service/repository calls. Renderer-only state may drive presentation, but it
-must not become the source of persisted truth. Realtime job writeback and
-autosave must patch the Zustand graph once, then let React Flow reconcile from
-the store to avoid duplicate history entries and autosave races.
+持久化图变更必须经由共享的图 action、ToolRuntime 或 service/repository 调用进入。仅渲染层的状态可以驱动呈现，但不得成为持久化真源。实时任务回写与自动保存必须只对 Zustand 图打一次补丁，然后让 React Flow 从 store 侧重新协调，以避免重复的历史记录与自动保存竞态。
 
-## Viewport Math
+## 视口数学
 
-Viewport coordinates are stored as `{ x, y, zoom }` in the persisted graph. All
-drop, context-menu, connect-to-create, snippet insertion, and Agent insertion
-positions must be resolved with React Flow `screenToFlowPosition` or an
-equivalent tested transform. The transform must account for zoom, pan offset,
-device pixel ratio assumptions, and the current canvas container bounds.
+视口坐标以 `{ x, y, zoom }` 的形式存储在持久化图中。所有拖放、右键菜单、连线创建、片段插入、Agent 插入位置，都必须通过 React Flow 的 `screenToFlowPosition` 或等效的、经过测试的变换来解析。该变换必须考虑 zoom、pan 偏移、设备像素比假设，以及当前画布容器边界。
 
-Fit-view and animated pan are transient UI operations. Saving a graph stores the
-resulting viewport only after the durable store accepts it; hover or animation
-intermediate values are not graph versions.
+Fit-view 与动画式平移是瞬态 UI 操作。保存图时，仅在持久化 store 接受之后才存储最终视口；hover 或动画过程中的中间值不构成图版本。
 
-## Virtualization Strategy
+## 虚拟化策略
 
-The first implementation should keep React Flow as the renderer and use its
-visible-node rendering options where possible. A later virtualization layer may
-skip expensive node internals outside the viewport, but it must preserve edge
-anchors, handles, selection boxes, keyboard navigation, and minimap summaries.
+初期实现应保留 React Flow 作为渲染器，并尽可能使用其可见节点渲染选项。后续的虚拟化层可以跳过视口外昂贵的节点内部渲染，但必须保留边锚点、handle、选框、键盘导航与小地图摘要。
 
-Node components must have stable dimensions. Status badges, thumbnails, loading
-states, hover menus, labels, and validation messages must not resize nodes in a
-way that shifts graph layout. Expensive previews should degrade to lightweight
-shells outside the visible-node query.
+节点组件必须保持稳定尺寸。状态徽标、缩略图、加载态、hover 菜单、标签与校验提示，都不得以改变图布局的方式调整节点大小。昂贵的预览应在可见节点查询范围之外降级为轻量外壳。
 
-## Spatial Indexing
+## 空间索引
 
-Large graph operations need a graph-domain spatial index owned outside React
-component render. The index should support a visible-node query, nearest-anchor
-placement, marquee selection, collision-aware insertion, minimap bounds, and
-deterministic layout checks.
+大规模图操作需要一个独立于 React 组件渲染的、图领域的空间索引。该索引应支持可见节点查询、最近锚点定位、框选、避让感知的插入、小地图边界，以及确定性布局校验。
 
-The initial index can be rebuilt from graph snapshots after durable changes.
-If graph patches become frequent, the index should move to incremental updates
-keyed by node ID and node bounding box.
+初始索引可在持久化变更后由图快照重建。若图补丁变得频繁，索引应转向以节点 ID 与节点包围盒为键的增量更新。
 
-## Selection Model
+## 选择模型
 
-Selection has two layers. React Flow may own transient pointer selection during
-drag or marquee gestures. Zustand owns durable selected IDs only when the
-selection is used by commands such as duplicate, delete, extract snippet,
-layout, Agent context, or reference highlighting.
+选择分为两层。React Flow 可以在拖拽或框选手势期间拥有瞬态指针选中态。Zustand 仅在选中态被用于复制、删除、提取片段、布局、Agent 上下文或引用高亮等命令时，才拥有持久化的选中 ID。
 
-Selection commands must operate on explicit node IDs and edge IDs. They must not
-read DOM state or visual classes as truth. Undo/redo should restore graph
-content, while transient hover and focus can reset safely.
+选择相关命令必须操作显式的节点 ID 与边 ID。它们不得读取 DOM 状态或视觉 class 作为真源。undo/redo 应恢复图内容，而瞬态 hover 与 focus 可以安全重置。
 
-## Minimap
+## 小地图
 
-The minimap is a navigation summary, not a second graph store. It should consume
-the same graph snapshot and spatial bounds as the canvas. For large graphs, the
-minimap may render simplified rectangles by node type/status and defer
-thumbnails.
+小地图是导航摘要，不是第二个图存储。它应消费与画布相同的图快照与空间边界。对于大型图，小地图可以按节点类型/状态渲染简化矩形，并推迟缩略图加载。
 
-Minimap clicks and drags update viewport intent through the same viewport math
-path used by fit-view and pan controls. Minimap interaction must not mutate node
-positions or graph versions.
+小地图的点击与拖动，应通过与 fit-view 和平移控件相同的视口数学路径更新视口意图。小地图交互不得改变节点位置或图版本。
 
-## Persistence And Autosave Invariants
+## 持久化与自动保存不变量
 
-Workflow persistence stores nodes, edges, viewport, graph version, validation
-warnings, and restore metadata. Autosave must debounce durable graph changes,
-coalesce rapid edits, and avoid saving transient hover, drag preview, or
-animation-only states.
+工作流持久化存储 nodes、edges、viewport、图版本、校验警告，以及恢复元数据。自动保存必须对持久化图变更做防抖，合并快速连续的编辑，并避免保存瞬态 hover、拖拽预览或纯动画状态。
 
-Large graph saves should eventually use graph patches or background
-serialization so UI interactions are not blocked. Until then, save/load tests
-must prove that persisted graphs restore node positions, edge semantics,
-viewport, warning summaries, asset references, and job terminal writeback.
+大型图的保存最终应使用图补丁或后台序列化，以避免阻塞 UI 交互。在此之前，保存/加载测试必须证明持久化的图能够恢复节点位置、边语义、视口、警告摘要、资产引用，以及任务终态回写。
 
-## Performance Gates
+## 性能门槛
 
-Task 62 should add 100, 500, and 1000 node gates where feasible. Gates should
-cover render smoke, pan/zoom responsiveness, drag/selection behavior, fit-view,
-save/load, snippet insertion, Agent/tool insertion layout, and memory-sensitive
-preview degradation.
+Task 62 应在可行范围内新增 100、500、1000 节点门槛。门槛应覆盖渲染冒烟测试、平移/缩放响应性、拖拽/选择行为、fit-view、保存/加载、片段插入、Agent/tool 插入布局，以及内存敏感的预览降级。
 
-The current engineering gate is `large-graph-performance-gate.ts` with
-`large-graph-performance-gates.test.ts`. It exercises 100, 500, and 1000 node
-graphs, visible-node query stability, a drag mutation, a pan/zoom viewport,
-and SQLite save/load reopen counts. It intentionally sets
-`desktopAcceptanceClaimed` to false.
+当前的工程门槛是 `large-graph-performance-gate.ts`，配套 `large-graph-performance-gates.test.ts`。它演练 100、500、1000 节点的图、可见节点查询稳定性、一次拖拽变更、一次平移/缩放视口，以及 SQLite 保存/加载重开次数。它有意将 `desktopAcceptanceClaimed` 设为 false。
 
-Performance tests may begin as deterministic smoke checks, then grow into
-browser-based timing checks after the Phase A acceptance gate. Passing unit
-tests alone must not be used as proof of real desktop infinite-canvas
-acceptance.
+性能测试可以先作为确定性冒烟检查开始，在 Phase A 验收门槛之后再演进为基于浏览器的计时检查。仅通过单元测试不得被当作真实桌面端无限画布验收的证明。

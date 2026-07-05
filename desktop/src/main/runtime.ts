@@ -24,6 +24,7 @@ import { createChatMessageRepository } from './db/repositories/chat-message.repo
 import { createCanvasSnippetRepository } from './db/repositories/canvas-snippet.repo'
 import { createJobRepository } from './db/repositories/job.repo'
 import { createStorageConfigRepository } from './db/repositories/storage.repo'
+import { createStyleRepository } from './db/repositories/style.repo'
 import { createKnowledgeRepository } from './db/repositories/knowledge.repo'
 import { createSkillRepository } from './db/repositories/skill.repo'
 import { registerAuditHandlers } from './ipc/audit.handler'

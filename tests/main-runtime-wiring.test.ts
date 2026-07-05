@@ -21,6 +21,24 @@ interface FakeIpcMain {
   handle(channel: string, handler: Handler): void
 }
 
+/**
+ * Removes a test temp directory, retrying on Windows EPERM while better-sqlite3
+ * releases its file handle after `runtime.close()` returns.
+ * @param dir - Temp directory to remove.
+ * @throws Error when the directory still cannot be removed after all attempts.
+ */
+async function removeTempDirWithRetry(dir: string, attempts = 10, delayMs = 200): Promise<void> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      rmSync(dir, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (attempt === attempts) throw error // exhausted retries; surface the real EPERM
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
 function createFakeIpcMain(): { ipcMain: FakeIpcMain; handlers: Map<string, Handler> } {
   const handlers = new Map<string, Handler>()
 
@@ -161,7 +179,7 @@ describe('main process runtime wiring', () => {
       expect(completed?.result.kind === 'asset' ? completed.result.metadata : null).toMatchObject({ safeUrl: 'cc-asset://asset/asset-runtime-1' })
     } finally {
       runtime?.close()
-      rmSync(tempDir, { recursive: true, force: true })
+      await removeTempDirWithRetry(tempDir)
     }
   })
 
@@ -220,7 +238,7 @@ describe('main process runtime wiring', () => {
       expect(window.webContents.send).toHaveBeenCalledWith('canvas.planReady', { messageId: 'message-comic', planId: 'plan-comic' })
     } finally {
       runtime?.close()
-      rmSync(tempDir, { recursive: true, force: true })
+      await removeTempDirWithRetry(tempDir)
     }
   })
 
@@ -314,7 +332,7 @@ describe('main process runtime wiring', () => {
       expect(styledAsset.metadata?.hash).not.toBe(unstyledExpectedHash)
     } finally {
       runtime?.close()
-      rmSync(tempDir, { recursive: true, force: true })
+      await removeTempDirWithRetry(tempDir)
     }
   })
 
@@ -395,7 +413,7 @@ describe('main process runtime wiring', () => {
     } finally {
       await runtime?.waitForIdleForTests()
       runtime?.close()
-      rmSync(tempDir, { recursive: true, force: true })
+      await removeTempDirWithRetry(tempDir)
     }
   })
 
@@ -477,7 +495,7 @@ describe('main process runtime wiring', () => {
     } finally {
       await runtime?.waitForIdleForTests()
       runtime?.close()
-      rmSync(tempDir, { recursive: true, force: true })
+      await removeTempDirWithRetry(tempDir)
     }
   })
 
@@ -557,7 +575,7 @@ describe('main process runtime wiring', () => {
       expect(asset.metadata?.hash).toBe(expectedHash)
     } finally {
       runtime?.close()
-      rmSync(tempDir, { recursive: true, force: true })
+      await removeTempDirWithRetry(tempDir)
     }
   })
 
@@ -609,7 +627,7 @@ describe('main process runtime wiring', () => {
       expect(completed?.result).toEqual({ kind: 'text', text: 'rough line' })
     } finally {
       runtime?.close()
-      rmSync(tempDir, { recursive: true, force: true })
+      await removeTempDirWithRetry(tempDir)
     }
   })
 

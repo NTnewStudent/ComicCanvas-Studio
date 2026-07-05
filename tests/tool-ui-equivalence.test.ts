@@ -163,6 +163,6 @@ describe('Tool/UI durable action equivalence inventory', () => {
     expect(contract).toContain('| workflow.project-template | `canvas.listWorkflows`, `canvas.importWorkflow`, `canvas.copyWorkflowTemplate` | IPC/service-backed |')
     expect(contract).toContain('| media.image-edit | `ImageEditIntent` through asset/node update services | Service-backed |')
     expect(contract).toContain('| viewport.fit-view | none | Transient UI-only |')
-    expect(contract).toContain('MJ node/component actions are excluded from Phase A Tool/UI equivalence')
+    expect(contract).toContain('MJ 节点/组件相关操作不包含在 Phase A 的 Tool/UI 等价关系范围内')
   })
 })

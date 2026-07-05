@@ -1,89 +1,63 @@
-# Phase A Human Review Runbook
+# Phase A 人工复核操作手册
 
-Date created: 2026-06-27
+创建日期：2026-06-27
 
-Canonical checklist: `docs/progress/human-desktop-review-checklist.md`
+标准清单：`docs/progress/human-desktop-review-checklist.md`
 
-Session template: `docs/progress/phase-a-human-review-session-template.md`
+会话模板：`docs/progress/phase-a-human-review-session-template.md`
 
-This runbook turns Phase A desktop acceptance into a repeatable manual review.
-It replaces automated real-desktop evidence. Automated tests can prove
-engineering behavior, but `HDR-PHASEA-001` is accepted only by a human reviewer
-or by an explicit product deferral recorded in the checklist and test report.
+本操作手册将 Phase A 桌面端验收转化为一套可重复的人工复核流程。它取代了自动化的真实桌面证据。自动化测试可以证明工程行为，但 `HDR-PHASEA-001` 只能由人工复核者通过，或由清单与测试报告中记录的产品方明确延后决定来接受。
 
-## Scope
+## 范围
 
-Review these Phase A areas:
+复核以下 Phase A 区域：
 
-- Assets and custom image categories: `HDR-042`, `HDR-043`,
-  `HDR-ASSET-001` through `HDR-ASSET-009`.
-- Workflows and snippets: `HDR-WF-001` through `HDR-WF-006`, `HDR-024`.
-- Canvas and node UI: `HDR-CANVAS-001` through `HDR-CANVAS-005`,
-  `HDR-NODE-001`, `HDR-NODE-002`.
-- Runtime and tools: `HDR-RUNTIME-001`, `HDR-RUNTIME-002`, `HDR-TOOLS-001`.
-- Final decision: `HDR-PHASEA-001`.
+- 资产与自定义图片分类：`HDR-042`、`HDR-043`、`HDR-ASSET-001` 到 `HDR-ASSET-009`。
+- Workflow 与片段：`HDR-WF-001` 到 `HDR-WF-006`、`HDR-024`。
+- 画布与节点 UI：`HDR-CANVAS-001` 到 `HDR-CANVAS-005`、`HDR-NODE-001`、`HDR-NODE-002`。
+- 运行时与工具：`HDR-RUNTIME-001`、`HDR-RUNTIME-002`、`HDR-TOOLS-001`。
+- 最终决策：`HDR-PHASEA-001`。
 
-Do not review Agent automation as Phase A acceptance evidence. `HDR-050` and
-`HDR-051` remain Pending until Task 60 is allowed to start.
+不要把 Agent 自动化作为 Phase A 验收证据来复核。`HDR-050` 与 `HDR-051` 在 Task 60 被允许启动之前保持 Pending。
 
-MJ node/component implementation is out of scope. Legacy MJ graphs may be
-opened only to verify readable unavailable behavior; no MJ parity, multi-result
-selection, URL refresh, run recovery, or provider integration is required.
+MJ 节点/组件实现不在范围内。旧版 MJ 图仅可打开以验证其“不可用”状态呈现是否清晰易读；不需要 MJ 对等、多结果选择、URL 刷新、运行恢复或 provider 集成。
 
-Seedance/live-person flows and LTM are out of scope.
+Seedance/真人相关流程与 LTM 不在范围内。
 
-## Preparation
+## 准备工作
 
-1. Confirm the app build or commit under review.
-2. Confirm local storage uses SQLite and asset files stay under app data or the
-   configured safe asset protocol.
-3. For R2 review, use the already verified `wenyi` profile from local SQLite
-   configuration. Do not paste secrets into notes, screenshots, logs, commits,
-   or this repository.
-4. Open `docs/progress/human-desktop-review-checklist.md` and keep one row per
-   reviewed flow updated with reviewer/date/result/notes.
-5. Copy `docs/progress/phase-a-human-review-session-template.md` into the review
-   notes area or use it directly as the session record.
-6. Run the automated evidence suite separately; failures do not get waived by a
-   manual Pass.
+1. 确认正在复核的应用构建版本或 commit。
+2. 确认本地存储使用 SQLite，且资产文件保持在 app data 目录下或经配置的安全资产协议中。
+3. 进行 R2 复核时，使用本地 SQLite 配置中已验证过的 `wenyi` profile。不要将密钥粘贴进笔记、截图、日志、commit 或本仓库中。
+4. 打开 `docs/progress/human-desktop-review-checklist.md`，为每个已复核的流程更新对应行的复核者/日期/结果/备注。
+5. 将 `docs/progress/phase-a-human-review-session-template.md` 复制到复核笔记区域，或直接用作会话记录。
+6. 单独运行自动化证据套件；失败项不会因为人工 Pass 而被豁免。
 
-## Review Order
+## 复核顺序
 
-1. Open the app and complete startup/navigation rows `HDR-001` through
-   `HDR-003` for basic confidence.
-2. Review workflow project lifecycle rows `HDR-010` through `HDR-015`, then
-   `HDR-WF-001` through `HDR-WF-006`.
-3. Review asset rows `HDR-042`, `HDR-043`, and `HDR-ASSET-001` through
-   `HDR-ASSET-009`.
-4. Review canvas rows `HDR-020` through `HDR-024` and `HDR-CANVAS-001` through
-   `HDR-CANVAS-005`.
-5. Review non-MJ node rows `HDR-030` through `HDR-033`, `HDR-NODE-001`, and
-   `HDR-NODE-002`.
-6. Review runtime/tool rows `HDR-RUNTIME-001`, `HDR-RUNTIME-002`, and
-   `HDR-TOOLS-001`.
-7. Update `HDR-PHASEA-001` only after all required Phase A rows are Pass or
-   explicitly deferred by product decision.
+1. 打开应用，完成启动/导航相关行 `HDR-001` 到 `HDR-003`，建立基本信心。
+2. 复核 workflow 项目生命周期相关行 `HDR-010` 到 `HDR-015`，然后是 `HDR-WF-001` 到 `HDR-WF-006`。
+3. 复核资产相关行 `HDR-042`、`HDR-043`，以及 `HDR-ASSET-001` 到 `HDR-ASSET-009`。
+4. 复核画布相关行 `HDR-020` 到 `HDR-024`，以及 `HDR-CANVAS-001` 到 `HDR-CANVAS-005`。
+5. 复核非 MJ 节点相关行 `HDR-030` 到 `HDR-033`、`HDR-NODE-001` 与 `HDR-NODE-002`。
+6. 复核运行时/工具相关行 `HDR-RUNTIME-001`、`HDR-RUNTIME-002` 与 `HDR-TOOLS-001`。
+7. 只有在所有必需的 Phase A 行都为 Pass，或已被产品方明确决定延后之后，才更新 `HDR-PHASEA-001`。
 
-## Result Rules
+## 结果规则
 
-- Use `Pass` only when the reviewer completed the flow without a blocking issue.
-- Use `Fail` when a blocking issue is found, and link a follow-up task.
-- Use `N/A` only when the flow is not applicable to the current slice.
-- Use `Pending` when the row has not been reviewed yet.
-- Use an explicit product deferral only when the product owner chooses to defer
-  a row; record the reason, owner, and follow-up location in the notes.
+- 只有当复核者完整走完流程且没有遇到阻塞性问题时，才使用 `Pass`。
+- 发现阻塞性问题时使用 `Fail`，并关联一个后续任务。
+- 只有当该流程不适用于当前切片时才使用 `N/A`。
+- 尚未复核的行使用 `Pending`。
+- 只有当产品负责人主动选择延后某一行时才使用明确的产品延后决定；在备注中记录原因、负责人与后续跟进位置。
 
-## Task 60 Gate
+## Task 60 关卡
 
-Task 60, Agent plan apply/run over the completed workflow vocabulary, must not
-start while `HDR-PHASEA-001` is Pending.
+Task 60（在已完成的 workflow 词汇表上进行 Agent plan 应用/运行）在 `HDR-PHASEA-001` 处于 Pending 状态期间不得启动。
 
-Task 60 may start only after one of these is true:
+Task 60 只能在以下条件之一成立后启动：
 
-- `HDR-PHASEA-001` is marked Pass by a human reviewer.
-- An explicit product deferral for Phase A acceptance is recorded in both
-  `docs/progress/human-desktop-review-checklist.md` and
-  `docs/progress/test-report.md`.
+- `HDR-PHASEA-001` 已被人工复核者标记为 Pass。
+- Phase A 验收的明确产品延后决定已同时记录在 `docs/progress/human-desktop-review-checklist.md` 与 `docs/progress/test-report.md` 中。
 
-Until that gate opens, PlanCard apply/run and Agent auto-run acceptance rows
-`HDR-050` and `HDR-051` stay Pending.
+在该关卡打开之前，PlanCard 应用/运行以及 Agent 自动运行验收相关行 `HDR-050` 与 `HDR-051` 保持 Pending。
