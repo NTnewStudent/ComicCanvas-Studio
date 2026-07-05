@@ -147,6 +147,8 @@ export type SkillIpcChannel =
   | 'skill.reload'
   | 'skill.getMetadata'
   | 'skill.invoke'
+  | 'skill.enable'
+  | 'skill.disable'
   | 'skill.changed'
 
 export type KnowledgeIpcChannel =
@@ -403,7 +405,9 @@ export interface IpcRequestMap {
   'skill.list': SkillListRequest
   'skill.reload': { skillId?: string }
   'skill.getMetadata': { skillId: string }
-  'skill.invoke': SkillInvokeRequest
+  'skill.invoke': SkillInvokeRequest & { agentId?: string }
+  'skill.enable': { skillId: string }
+  'skill.disable': { skillId: string }
   'knowledge.ingest': KnowledgeIngestRequest
   'knowledge.retrieve': KnowledgeQuery
   'knowledge.delete': { documentId: string }
@@ -485,7 +489,9 @@ export interface IpcResponseMap {
   'skill.list': SkillDefinition[]
   'skill.reload': { reloadedSkillIds: string[] }
   'skill.getMetadata': SkillDefinition
-  'skill.invoke': SkillInvocationRecord
+  'skill.invoke': SkillInvocationRecord | { errorClass: string; message: string; retryable: false }
+  'skill.enable': SkillDefinition | { errorClass: string; message: string; retryable: false }
+  'skill.disable': SkillDefinition | { errorClass: string; message: string; retryable: false }
   'knowledge.ingest': KnowledgeDocument
   'knowledge.retrieve': KnowledgeChunk[]
   'knowledge.delete': { documentId: string; deleted: true }

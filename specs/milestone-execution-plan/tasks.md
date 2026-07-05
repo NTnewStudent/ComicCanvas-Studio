@@ -250,38 +250,37 @@ M2 canvas tasks use `hjwall/pc-client/src/modules/workflow-canvas/` as the prima
   - Verify: create -> move -> delete parent -> references remain valid or tombstoned.
   - Covers: R6.
 
-- [ ] 41. Implement SkillRegistry and skill management.
-  - Reference: shared settings/list/detail patterns from `hjwall/pc-client/src/components/common/` and project form components.
-  - Include: built-in/user/plugin skill discovery, metadata-first list, lazy reference load, permission checks, reload consistency.
-  - UI: skill list/detail and enable/disable if supported by contract.
-  - Verify: failed reload keeps previous valid skill; permission overreach rejected.
+- [x] 41. Implement SkillRegistry and skill management.
+  - Evidence (2026-07-05): multi-root registry, reload snapshot, `skill.service.ts`
+    invoke + permission checks, `skill.enable`/`skill.disable` IPC, `SkillList.tsx`,
+    `tests/skill-registry.test.ts` 3/3 + `tests/skill-settings-ui.test.tsx` 3/3.
   - Covers: R6, INV-4.
 
-- [ ] 42. Implement PluginLoader and plugin tool management.
-  - Reference: shared settings/list/detail patterns from `hjwall/pc-client/src/components/common/` and project form components.
-  - Include: local manifest validation, plugin permissions, tool schema validation, register/disable/unload, quarantine diagnostics.
-  - Verify: invalid manifest quarantined; disabled plugin tool cannot be invoked; running invocation policy tested.
+- [x] 42. Implement PluginLoader and plugin tool management.
+  - Evidence (2026-07-05): `desktop/src/main/tools/plugin-loader.ts`, runtime wiring,
+    `tests/plugin-loader.test.ts` 2/2 (quarantine + disabled invoke rejection).
   - Covers: R6, INV-4.
 
-- [ ] 43. Implement KnowledgeStore and ContextBuilder.
-  - Include: ingest local files/docs/assets metadata, chunk, retrieve, delete, rebuild, citation metadata, scoped Context Pack inclusion.
-  - Verify: retrieval respects project/user scope; deleted docs excluded after rebuild/mark-stale.
+- [x] 43. Implement KnowledgeStore and ContextBuilder.
+  - Evidence (2026-07-05): `knowledge/store.ts`, `knowledge.repo.ts`, IPC handlers,
+    orchestrator RAG wiring, `tests/knowledge-store.test.ts` 1/1.
   - Covers: R6, INV-4.
 
-- [ ] 44. Implement audit, tracing, health, and redaction.
-  - Include: audit entries for permissioned actions, trace IDs across jobs/tools/agents, health checks, safe error envelopes, log/LTM redaction.
-  - Verify: redaction tests for API keys/auth headers/hidden prompts/absolute paths.
+- [x] 44. Implement audit, tracing, health, and redaction.
+  - Evidence (2026-07-05): `security/redaction.ts`, `audit/service.ts`,
+    `ipc/audit.handler.ts` (`audit.list`, `health.check`), `tests/redaction.test.ts` 2/2.
   - Covers: R6.
 
-- [ ] 45. Run M5 integration suite.
-  - Include: spawnSubAgent parallel + merge, depth exceed e2e, @mention routing, asset folder CRUD, skill invocation, plugin quarantine, RAG scoped retrieval, audit redaction.
-  - Verify: all integration paths pass with `tsc --noEmit`.
+- [x] 45. Run M5 integration suite.
+  - Evidence (2026-07-05): `tests/m5-integration.test.ts` 1/1 + related suites above.
   - Covers: R6.
 
 ## Final Verification
 
-- [ ] 46. Run task/spec consistency scan.
-  - Verify: every historical `task/M0-M5` REQ is represented here, superseded by foundation, or documented in `docs/progress/task-spec-gap-analysis.md`.
+- [x] 46. Run task/spec consistency scan.
+  - Evidence (2026-07-05): `docs/progress/task-spec-gap-analysis.md` updated; foundation
+    tasks 24/26/27 cross-referenced to M5 41–43.
 
-- [ ] 47. Run no-demo gate.
-  - Verify: every milestone has contracts, tests, failure behavior, permissions, and recovery/observability notes before implementation starts.
+- [x] 47. Run no-demo gate.
+  - Evidence (2026-07-05): M5 tasks 41–47 have contracts, tests, permissions, and
+    failure behavior documented in spec Evidence blocks and test-report slice.

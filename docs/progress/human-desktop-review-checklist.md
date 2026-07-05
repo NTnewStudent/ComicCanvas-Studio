@@ -36,6 +36,25 @@ Engineering completion may proceed when implementation review and automated
 evidence pass. Final product acceptance requires the relevant human desktop
 review rows to be Pass or explicitly deferred by product decision.
 
+## Product Deferral (2026-07-05)
+
+Product owner deferred batched human desktop acceptance until engineering tasks
+in the current RUEPE queue complete. Until the batch review session:
+
+- `HDR-PHASEA-001` and related HDR rows remain **Pending** in this checklist.
+- Engineering tasks gated on Phase A (for example assets-workflows task 60) may
+  close on automated evidence when implementation is complete.
+- Final product sign-off requires a later human session using
+  `docs/progress/hjwall-canvas-phase7-human-review-scenarios.md` and
+  `docs/progress/phase-a-human-review-runbook.md`.
+
+## Batch Acceptance Ready (2026-07-05)
+
+M5 engineering queue is complete (milestone-execution-plan 47/47). Human reviewer
+should follow `docs/progress/batch-human-acceptance-runbook-2026-07-05.md` to
+execute Phase 7 scenarios and fill Pass/Fail rows below. HDR rows remain Pending
+until a human completes the session.
+
 ## Human Phase A Acceptance Matrix
 
 Phase A human acceptance covers assets and custom image categories,

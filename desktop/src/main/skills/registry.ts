@@ -1,5 +1,5 @@
 /**
- * Built-in SkillRegistry — discovers `.claude/skills/{name}/SKILL.md` metadata and instructions.
+ * Built-in SkillRegistry — discovers skill metadata from approved roots.
  * @see docs/api-contracts/skills.md
  */
 
@@ -7,6 +7,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { SkillDefinition, SkillReference, SkillSource } from '../../../../shared/skills'
+import type { SkillRepository } from '../db/repositories/skill.repo'
+import { applySkillEnabledOverrides } from './skill.service'
 
 export interface SkillRegistry {
   /** Lists registered skills (metadata only). */
@@ -17,6 +19,16 @@ export interface SkillRegistry {
   loadInstructions(skillId: string): string | null
   /** Reloads skill metadata from disk. */
   reload(): string[]
+  /** Enables a skill and persists override when repository is configured. */
+  enable(skillId: string): SkillDefinition | null
+  /** Disables a skill and persists override when repository is configured. */
+  disable(skillId: string): SkillDefinition | null
+}
+
+export interface SkillRootConfig {
+  root: string
+  source: SkillSource
+  defaultEnabled: boolean
 }
 
 interface ParsedSkillFile {
@@ -58,20 +70,41 @@ function parseFrontmatter(content: string): ParsedSkillFile | null {
   }
 }
 
-function skillIdFromFolder(folderName: string): string {
+function skillIdFromFolder(folderName: string, source: SkillSource): string {
+  if (source === 'plugin') {
+    return `plugin:${folderName}`
+  }
+  if (source === 'user') {
+    return `user:${folderName}`
+  }
   return folderName
 }
 
 /**
- * Creates a filesystem-backed skill registry for built-in project skills.
- * @param options - Optional skill root override (tests).
+ * Creates a filesystem-backed skill registry for built-in, user, and plugin skills.
+ * @param options - Optional roots, repository, and clock overrides (tests).
  * @returns Skill registry API.
  */
-export function createSkillRegistry(options?: { root?: string }): SkillRegistry {
-  const root = options?.root ?? join(process.cwd(), '.claude/skills')
+export function createSkillRegistry(options?: {
+  roots?: SkillRootConfig[]
+  root?: string
+  repo?: SkillRepository
+  clock?: () => number
+}): SkillRegistry {
+  const roots: SkillRootConfig[] = options?.roots ?? [
+    {
+      root: options?.root ?? join(process.cwd(), '.claude/skills'),
+      source: 'builtin',
+      defaultEnabled: true
+    }
+  ]
+  const repo = options?.repo
+  const clock = options?.clock ?? Date.now
   let cache: SkillDefinition[] = []
+  const instructionCache = new Map<string, string>()
 
-  function scan(): SkillDefinition[] {
+  function scanRoot(config: SkillRootConfig): SkillDefinition[] {
+    const { root, source, defaultEnabled } = config
     if (!existsSync(root)) {
       return []
     }
@@ -93,7 +126,8 @@ export function createSkillRegistry(options?: { root?: string }): SkillRegistry 
         continue
       }
 
-      const id = skillIdFromFolder(folder)
+      const id = skillIdFromFolder(folder, source)
+      instructionCache.set(id, parsed.body)
       const references: SkillReference[] = [
         {
           id: `${id}-entry`,
@@ -105,7 +139,7 @@ export function createSkillRegistry(options?: { root?: string }): SkillRegistry 
 
       skills.push({
         id,
-        source: 'builtin' as SkillSource,
+        source,
         version: '1.0.0',
         name: parsed.name,
         description: parsed.description,
@@ -113,11 +147,24 @@ export function createSkillRegistry(options?: { root?: string }): SkillRegistry 
         references,
         requiredTools: [],
         requiredPermissions: [],
-        enabled: true
+        enabled: defaultEnabled
       })
     }
 
-    return skills.sort((left, right) => left.id.localeCompare(right.id))
+    return skills
+  }
+
+  function scan(): SkillDefinition[] {
+    const merged = new Map<string, SkillDefinition>()
+
+    for (const config of roots) {
+      for (const skill of scanRoot(config)) {
+        merged.set(skill.id, skill)
+      }
+    }
+
+    const skills = [...merged.values()].sort((left, right) => left.id.localeCompare(right.id))
+    return repo ? applySkillEnabledOverrides(skills, repo) : skills
   }
 
   function ensureCache(): SkillDefinition[] {
@@ -125,6 +172,18 @@ export function createSkillRegistry(options?: { root?: string }): SkillRegistry 
       cache = scan()
     }
     return cache
+  }
+
+  function updateSkillEnabled(skillId: string, enabled: boolean): SkillDefinition | null {
+    const skill = ensureCache().find((entry) => entry.id === skillId)
+    if (!skill) {
+      return null
+    }
+
+    const updated = { ...skill, enabled }
+    cache = cache.map((entry) => (entry.id === skillId ? updated : entry))
+    repo?.setEnabled(updated, enabled, clock())
+    return updated
   }
 
   return {
@@ -141,16 +200,51 @@ export function createSkillRegistry(options?: { root?: string }): SkillRegistry 
         return null
       }
 
-      if (!existsSync(skill.entry)) {
-        return null
+      if (existsSync(skill.entry)) {
+        const parsed = parseFrontmatter(readFileSync(skill.entry, 'utf8'))
+        if (parsed?.body) {
+          instructionCache.set(skillId, parsed.body)
+          return parsed.body
+        }
       }
 
-      const parsed = parseFrontmatter(readFileSync(skill.entry, 'utf8'))
-      return parsed?.body ?? null
+      return instructionCache.get(skillId) ?? null
     },
     reload() {
-      cache = scan()
-      return cache.map((skill) => skill.id)
+      const previous = cache
+
+      try {
+        const next = scan()
+        const anyRootExists = roots.some((config) => existsSync(config.root))
+
+        if (previous.length > 0 && next.length === 0 && anyRootExists) {
+          const hasSkillFolders = roots.some((config) => {
+            if (!existsSync(config.root)) {
+              return false
+            }
+            return readdirSync(config.root, { withFileTypes: true })
+              .filter((entry) => entry.isDirectory())
+              .some((entry) => existsSync(join(config.root, entry.name, 'SKILL.md')))
+          })
+
+          if (hasSkillFolders) {
+            // Reload failed to parse any skill; keep the previous valid snapshot.
+            return previous.map((skill) => skill.id)
+          }
+        }
+
+        cache = next
+        return cache.map((skill) => skill.id)
+      } catch {
+        // Filesystem errors during reload must not discard the last good snapshot.
+        return previous.map((skill) => skill.id)
+      }
+    },
+    enable(skillId) {
+      return updateSkillEnabled(skillId, true)
+    },
+    disable(skillId) {
+      return updateSkillEnabled(skillId, false)
     }
   }
 }

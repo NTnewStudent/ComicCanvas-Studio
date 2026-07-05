@@ -20,6 +20,7 @@ import type { CanvasPlanEventBus } from './plan-events'
 import { sanitizePlan } from './sanitize-plan'
 import { analyzeAgentIntent, formatIntentProgress, type AgentIntentAnalysis } from './intent-analysis'
 import { buildAgentContext } from '../knowledge/context-builder'
+import type { KnowledgeStore } from '../knowledge/store'
 import { buildSkillContext } from '../knowledge/skill-context'
 import type { SkillRegistry } from '../skills/registry'
 
@@ -149,6 +150,7 @@ export interface OrchestratorRuntimeOptions {
   workflowId?: string
   clock?: () => number
   skillRegistry?: SkillRegistry
+  knowledgeStore?: KnowledgeStore
 }
 
 export interface OrchestratorRuntime {
@@ -1274,11 +1276,28 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           ? options.chatMessages.listByWorkflowId(options.workflowId)
               .filter((record) => record.id !== messageId && (record.role === 'user' || record.role === 'assistant'))
           : []
+        const knowledgeChunks = agent.contextPolicy.includeKnowledge && options.knowledgeStore
+          ? options.knowledgeStore.retrieve({
+              query: message,
+              scope: {
+                projectId: options.workflowId ?? 'default',
+                userApprovedSourceIds: [options.workflowId ?? 'default']
+              },
+              limit: 5,
+              retrievalMode: 'lexical'
+            }).map((chunk) => ({
+              id: chunk.id,
+              text: chunk.text,
+              citation: chunk.citation,
+              score: chunk.score
+            }))
+          : undefined
         const contextResult = buildAgentContext({
           agentId,
           policy: agent.contextPolicy,
           workflowId: options.workflowId ?? 'default',
           recentMessages,
+          ...(knowledgeChunks ? { knowledgeChunks } : {}),
           ...(options.getCanvasGraph && agent.contextPolicy.includeCanvasGraph
             ? {
                 canvas: {

@@ -24,6 +24,8 @@ export interface ComicCanvasApi {
   listSkills(input?: IpcRequestMap['skill.list']): Promise<IpcResponseMap['skill.list']>
   getSkillMetadata(input: IpcRequestMap['skill.getMetadata']): Promise<IpcResponseMap['skill.getMetadata']>
   reloadSkills(input?: IpcRequestMap['skill.reload']): Promise<IpcResponseMap['skill.reload']>
+  enableSkill(input: IpcRequestMap['skill.enable']): Promise<IpcResponseMap['skill.enable']>
+  disableSkill(input: IpcRequestMap['skill.disable']): Promise<IpcResponseMap['skill.disable']>
   listGateways(): Promise<IpcResponseMap['gateway.list']>
   saveGateway(input: IpcRequestMap['gateway.save']): Promise<IpcResponseMap['gateway.save']>
   deleteGateway(input: IpcRequestMap['gateway.delete']): Promise<IpcResponseMap['gateway.delete']>
@@ -118,6 +120,9 @@ function invokeMain<TChannel extends 'agent.spawn'>(channel: TChannel, request: 
 function invokeMain<TChannel extends 'skill.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.getMetadata'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'skill.enable'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'skill.disable'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'skill.invoke'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'gateway.delete'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -295,6 +300,8 @@ const api: ComicCanvasApi = {
   listSkills: (input) => invokeMain('skill.list', input ?? {}),
   getSkillMetadata: (input) => invokeMain('skill.getMetadata', input),
   reloadSkills: (input) => invokeMain('skill.reload', input ?? {}),
+  enableSkill: (input) => invokeMain('skill.enable', input),
+  disableSkill: (input) => invokeMain('skill.disable', input),
   /**
    * Lists configured gateway providers.
    * @returns Gateway configuration views.

@@ -1,5 +1,46 @@
 # Test Report
 
+## 2026-07-05 - hjwall-canvas-full-migration Tasks 20–33 (RUEPE batch)
+
+Scope:
+
+- RUEPE sequential audit/closure of `specs/hjwall-canvas-full-migration/tasks.md`
+  tasks 20–33 (engineering checkbox; REQ-098 human rows still Pending).
+- Added Phase 7 scenario doc + `tests/hjwall-canvas-phase7-scenarios.test.ts`.
+
+Verification (environment: `npm install` at repo root; `better-sqlite3` native
+binding not built; `desktop/node_modules` not installed):
+
+```bash
+npx vitest run tests/style-contracts.test.ts tests/style-runtime-payload.test.ts tests/workflow-graph-compiler.test.ts
+npx vitest run tests/style-library-panel.test.tsx tests/project-style-selector.test.tsx tests/style-settings-ui.test.tsx
+npx vitest run tests/asset-service.test.ts -t "extracts"
+npx vitest run tests/asset-audio-support.test.ts tests/canvas-asset-panel.test.tsx
+npx vitest run tests/migrated-run-dispatch.test.ts tests/canvas-job-reconciliation.test.ts tests/sanitize-plan.test.ts tests/apply-plan-runner.test.ts
+npx vitest run tests/hjwall-canvas-phase7-scenarios.test.ts tests/progress-backlog.test.ts
+```
+
+Result:
+
+- Style composition (task 20): 11/11 passed.
+- Style UI (task 21): 7/7 passed (3 files); `style-renderer-ui` blocked (no `@xyflow/react` in `desktop/node_modules`).
+- Asset metadata (task 22): 2/2 pure extract tests passed; DB pipeline tests blocked.
+- Asset panel (task 23): 1/1 passed.
+- Run dispatch/reconcile/sanitize/plan-runner (tasks 25–27, 29): 29/29 passed.
+- Agent smoke (task 28): 2/3 passed; 1 DB integration case blocked.
+- Phase 7 static smoke (tasks 30–32): 1/1 passed.
+- RUEPE backlog pointer test: 4/4 passed.
+
+Residual environment gaps:
+
+- `style-renderer-ui` requires `bun install` at monorepo root (workspaces hoist
+  `@xyflow/react` to `desktop/node_modules`); `npm install` alone does not satisfy
+  the vitest alias in this checkout.
+
+**2026-07-05 follow-up:** `npm rebuild better-sqlite3` unblocked SQLite suites —
+`asset-reference-sync` (1), `asset-service` (11), `agent-orchestration-smoke`
+(3) = 15/15 passed.
+
 ## 2026-06-25 - M0 Foundation Gate
 
 ### M0-2 API Contract Docs
@@ -4110,3 +4151,46 @@ design (R4.7), with the two stub-provider-era gaps (parameter validation,
 asset-reference creation) tracked as shared project-wide follow-ups, not
 task-specific defects. Human desktop review remains tracked under
 REQ-098/HDR-031B.
+## 2026-07-05 - Task 60 closure (Agent plan apply, product deferral)
+
+Product owner deferred batched human desktop acceptance until engineering queue
+completion. Deferral recorded in `docs/progress/human-desktop-review-checklist.md`
+(Product Deferral section). `HDR-PHASEA-001` remains Pending.
+
+Automated evidence for assets-workflows task 60:
+
+- `tests/agent-plan-apply-run.test.ts` �?serial image→video plan, failure
+  short-circuit, auto-apply gate.
+- Related controller/gate tests in `canvas-plan-execution` path �?8/8 combined.
+
+Task 60 checkbox flipped `[ ]` -> `[x]` in
+`specs/hjwall-assets-workflows-100-migration/tasks.md`. Assets-workflows spec
+now 64/64 engineering tasks complete; human HDR-050/HDR-051 await batch review.
+
+## 2026-07-05 - Task 41 (M5 SkillRegistry) �?in progress
+
+Implemented reload snapshot consistency (`desktop/src/main/skills/registry.ts`),
+skill access validation (`validate-skill-access.ts`), settings `SkillList.tsx`
+(metadata-first list + reload), and tests:
+
+- `tests/skill-registry.test.ts` �?metadata list, lazy load, reload keeps prior
+  snapshot, permission overreach rejection.
+- `tests/skill-settings-ui.test.tsx` �?skill list UI metadata + reload.
+
+Pending for full task 41 closure: user/plugin skill roots, `skill.invoke` trace
+IPC, enable/disable persistence if added to contract.
+
+## 2026-07-05 - M5 Tasks 41-47 closure (RUEPE autonomous queue)
+
+Closed milestone-execution-plan tasks 41-47 and foundation tasks 24-27 cross-refs.
+
+Automated evidence:
+- tests/skill-registry.test.ts �� 3/3
+- tests/skill-settings-ui.test.tsx �� 3/3
+- tests/plugin-loader.test.ts �� 2/2
+- tests/knowledge-store.test.ts �� 1/1
+- tests/redaction.test.ts �� 2/2
+- tests/m5-integration.test.ts �� 1/1
+
+Human acceptance deferred to batch session:
+docs/progress/batch-human-acceptance-runbook-2026-07-05.md

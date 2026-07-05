@@ -4,6 +4,97 @@ This log records human-readable project progress snapshots. Canonical
 requirements and task status still live under `specs/`; test evidence still
 lives in `docs/progress/test-report.md`.
 
+## 2026-07-05 - M5 Tasks 41–47 closure (RUEPE autonomous queue)
+
+Completed milestone-execution-plan tasks 41–47 and foundation cross-refs 24–27.
+
+| Task | Deliverable | Tests |
+| :--- | :--- | :--- |
+| 41 | SkillRegistry multi-root, invoke, enable/disable UI | skill-registry 3/3, skill-settings-ui 3/3 |
+| 42 | PluginLoader + quarantine | plugin-loader 2/2 |
+| 43 | KnowledgeStore + orchestrator RAG | knowledge-store 1/1 |
+| 44 | Audit/redaction/health.check | redaction 2/2 |
+| 45–47 | Integration + consistency + no-demo gate | m5-integration 1/1 |
+
+Backlog: M5 milestone ✅, REQ-050 ✅, RUEPE pointer task 47 已完成.
+Phase D batch human acceptance runbook:
+`docs/progress/batch-human-acceptance-runbook-2026-07-05.md`.
+
+## 2026-07-05 - Tasks 21–33 closure (RUEPE batch, hjwall-canvas-full-migration)
+
+Continued RUEPE sequential execution from task 21 through 33 in
+`specs/hjwall-canvas-full-migration/tasks.md`.
+
+**Task 21** (style library UI): `tests/style-library-panel.test.tsx`,
+`tests/project-style-selector.test.tsx`, `tests/style-settings-ui.test.tsx`
+— 7/7 passed. `style-renderer-ui` blocked on missing `desktop/node_modules`.
+
+**Tasks 22–24** (assets): cross-audited with assets-workflows spec (`[x]` tasks
+6–12). Pure metadata tests 5/5; SQLite integration blocked (`better-sqlite3`
+native binding missing after npm install without rebuild).
+
+**Tasks 25–29** (async run + Agent): `migrated-run-dispatch` 8/8,
+`canvas-job-reconciliation` 8/8, `sanitize-plan` 8/8, `apply-plan-runner`
+5/5; `agent-orchestration-smoke` 2/3 (one DB case env-blocked).
+
+**Tasks 30–32** (human scenarios): added
+`docs/progress/hjwall-canvas-phase7-human-review-scenarios.md` +
+`tests/hjwall-canvas-phase7-scenarios.test.ts`. Human execution remains
+Pending under REQ-098.
+
+**Task 33**: this log entry, backlog pointer, spec evidence, test-report slice.
+
+## 2026-07-05 - Task 60 closure (assets-workflows, product deferral)
+
+Closed `specs/hjwall-assets-workflows-100-migration/tasks.md` task 60 on automated
+evidence (`tests/agent-plan-apply-run.test.ts` + related gate tests 8/8).
+Product owner deferred batched human acceptance (`HDR-PHASEA-001`); deferral
+recorded in `docs/progress/human-desktop-review-checklist.md` and
+`docs/progress/test-report.md`. Assets-workflows spec now 64/64 `[x]`.
+
+## 2026-07-05 - Task 41 start (M5 SkillRegistry)
+
+RUEPE pointer advanced to `specs/milestone-execution-plan/tasks.md` task 41.
+Added reload snapshot consistency in `desktop/src/main/skills/registry.ts`,
+`validate-skill-access.ts`, settings `SkillList.tsx`, and
+`tests/skill-registry.test.ts` + `tests/skill-settings-ui.test.tsx`.
+
+Environment note: run `bun install` at repo + `desktop/` roots to rebuild native
+modules before claiming full-suite green. **2026-07-05 follow-up:** after
+`npm rebuild better-sqlite3`, `asset-reference-sync` (1),
+`asset-service` (11), and `agent-orchestration-smoke` (3) — 15/15 passed.
+`style-renderer-ui` still blocked without workspace `bun install` hoisting
+`@xyflow/react` into `desktop/node_modules`.
+
+## 2026-07-05 - Task 20 closure (deterministic style prompt composition)
+
+RUEPE pass on `specs/hjwall-canvas-full-migration/tasks.md` task 20. Read the
+task's own Verify text (unit/property tests + job payload snapshot tests) and
+cross-checked implementation rather than trusting the existing `[-]` evidence
+paragraph alone.
+
+Confirmed `shared/styles.ts` provides pure `composeStyledPrompt` and
+`resolveEffectiveStylePreset` with node override over project default.
+Runtime enqueue composes styled prompts through
+`compileWorkflowNodeRuntimeSnapshot` and `canvas.handler.ts`, matching the
+shared function rules in `docs/api-contracts/styles.md`.
+
+Verification:
+
+```bash
+npx vitest run tests/style-contracts.test.ts tests/style-runtime-payload.test.ts tests/workflow-graph-compiler.test.ts
+```
+
+Result: 3 files, 11 tests, all green (2026-07-05).
+
+Non-blocking follow-up: `ConnectedInputsPanel` final-prompt preview still shows
+graph-composed text without style wrapping; desktop styled preview acceptance
+remains under REQ-098.
+
+Task 20 checkbox flipped `[-]` -> `[x]` in
+`specs/hjwall-canvas-full-migration/tasks.md`. Backlog RUEPE pointer advanced
+to task 21.
+
 ## 2026-07-04 - Task 14 closure (character/scene production semantic nodes)
 
 Delegated an independent audit of task 14's own scope (structured fields,

@@ -50,3 +50,11 @@ alwaysApply: true
 ## 标准流程
 
 收到插件消息 -> 在 Cursor 中完整回答用户 -> 调用当前通道 `record_reply({ content })` -> 调用当前通道 `check_messages()` -> 等待下一条消息。
+
+## 任务链例外（RUEPE 自动下发）
+
+当 `ruepe-task-execution.mdc` 任务链自动下发在同一会话内连续执行多项时：
+
+1. 链内各项之间**不**调用 `record_reply` / `check_messages`。
+2. 仅在整条任务链结束（无下一项、阻塞、达链上限 3、或用户停用自动续链）后，对**合并后的完整用户可见回复**执行一次 `record_reply` + `check_messages`。
+3. 若链中遇重大偏差 AskQuestion，视为链结束，先同步当前已输出内容再等待用户。

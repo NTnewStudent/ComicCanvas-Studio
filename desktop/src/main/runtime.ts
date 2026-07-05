@@ -8,6 +8,7 @@
  */
 
 import type { IpcRegistrar } from './ipc/types'
+import { join } from 'node:path'
 import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
 import { createGatewayAgentPlanner } from './agent/gateway-loop-model'
 import { createAgentRegistry } from './agent/registry'
@@ -23,7 +24,13 @@ import { createChatMessageRepository } from './db/repositories/chat-message.repo
 import { createCanvasSnippetRepository } from './db/repositories/canvas-snippet.repo'
 import { createJobRepository } from './db/repositories/job.repo'
 import { createStorageConfigRepository } from './db/repositories/storage.repo'
-import { createStyleRepository } from './db/repositories/style.repo'
+import { createKnowledgeRepository } from './db/repositories/knowledge.repo'
+import { createSkillRepository } from './db/repositories/skill.repo'
+import { registerAuditHandlers } from './ipc/audit.handler'
+import { registerKnowledgeHandlers } from './ipc/knowledge.handler'
+import { createAuditService } from './audit/service'
+import { createKnowledgeStore } from './knowledge/store'
+import { createPluginLoader } from './tools/plugin-loader'
 import { createWorkflowRepository } from './db/repositories/workflow.repo'
 import { registerAgentHandlers } from './ipc/agent.handler'
 import { registerSkillHandlers } from './ipc/skill.handler'
@@ -50,6 +57,7 @@ import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
 import { createFsTools } from './tools/fs'
 import { createAgentSpawnTool, createChildAgentRunner } from './tools/agent'
 import { createSkillRegistry } from './skills/registry'
+import { createSkillService } from './skills/skill.service'
 import { createToolRuntime } from './tools/runtime'
 import type { SafeStorageAdapter } from './security/key-vault'
 
@@ -140,7 +148,12 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     reloader.reload(localGateways.configs)
   }
   const agentRegistry = createAgentRegistry({ agents, clock })
-  const skillRegistry = createSkillRegistry()
+  const skillRepo = createSkillRepository(db)
+  const skillRegistry = createSkillRegistry({ repo: skillRepo, clock })
+  const skillService = createSkillService({ registry: skillRegistry, repo: skillRepo, clock })
+  const knowledgeRepo = createKnowledgeRepository(db)
+  const knowledgeStore = createKnowledgeStore({ repo: knowledgeRepo, clock })
+  const auditService = createAuditService({ clock })
   const assetCloudUrls = createAssetCloudUrlService({
     assetRoot: options.assetRoot,
     assets,
@@ -208,6 +221,8 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     ],
     clock
   })
+  const pluginLoader = createPluginLoader({ runtime: toolRuntime })
+  pluginLoader.loadFromDirectory(join(process.cwd(), 'plugins'))
   // Lazily build the agent spawn tool once the planner and toolRuntime are both available.
   // Registered after toolRuntime is created to avoid circular dependency during construction.
   function registerAgentSpawnTool(plannerInstance: typeof planner): void {
@@ -270,6 +285,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     getCanvasGraph: (workflowId) => graphStore.getGraph(workflowId),
     agentRuns,
     skillRegistry,
+    knowledgeStore,
     idFactory: options.messageIdFactory ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`),
     planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
     clock
@@ -372,7 +388,16 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       }, { runChild: childRunner })
     }
   })
-  registerSkillHandlers(options.ipcMain, { registry: skillRegistry })
+  registerSkillHandlers(options.ipcMain, { registry: skillRegistry, service: skillService, agents: agentRegistry })
+  registerKnowledgeHandlers(options.ipcMain, { store: knowledgeStore, repo: knowledgeRepo })
+  registerAuditHandlers(options.ipcMain, {
+    audit: auditService,
+    dbReady: () => true,
+    toolRuntime,
+    skillRegistry,
+    knowledgeReady: () => knowledgeRepo.listDocuments().length >= 0,
+    clock
+  })
   registerToolHandlers(options.ipcMain, { runtime: toolRuntime, currentUserId: options.currentUserId ?? 'user-local' })
   registerStorageHandlers(options.ipcMain, {
     repository: storageConfigs,

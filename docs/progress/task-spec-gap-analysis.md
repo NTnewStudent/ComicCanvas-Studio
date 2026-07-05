@@ -48,3 +48,4 @@ This document compares the historical `task/M0-M5` PRD files with the canonical 
 - Completed: added `specs/milestone-execution-plan/` to `specs/README.md`.
 - Completed: updated `docs/progress/backlog.md` to point execution planning to the new milestone spec.
 - Completed: added `task/README.md` warning that `task/` is historical draft material.
+- Completed (2026-07-05): M5 tasks 41–47 closed; foundation tasks 24–27 cross-referenced; skills/plugins/knowledge/audit runtime implemented.

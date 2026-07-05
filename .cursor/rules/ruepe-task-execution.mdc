@@ -1,0 +1,105 @@
+---
+description: RUEPE 五阶段任务执行规范 — backlog 指针、spec 逐项、测试门禁、进度双写
+alwaysApply: true
+---
+
+# RUEPE 任务执行规范
+
+Cursor 开发 Agent **每条用户消息**均按 **Read → Understand → Evaluate → Plan → Execute** 顺序处理。设计真源：`docs/superpowers/specs/2026-07-05-ruepe-task-execution-design.md`。
+
+## 任务来源
+
+1. **Read** `docs/progress/backlog.md` 中 **「当前执行项（RUEPE 真源，单项）」** 表：`spec`、`task`、`状态`、`阻塞原因`。
+2. 打开 `spec` 所指 `specs/.../tasks.md`，定位编号 `task` 的完整条目（含 Verify / Evidence / Requirements）。
+3. 指针缺失且无法从「当前焦点」「下一步」**唯一**推导 spec → **Evaluate** 输出阻塞，不实现产品代码。
+4. 用户显式指定其他 spec/任务 → 以用户为准，并同步更新 backlog 指针表。
+5. 同一 spec 内按文档顺序；不得跳过靠前的 `[ ]` / `[-]`（用户显式重排除外）。
+
+「当前焦点」= 战略；「当前执行项」= 战术单线程。
+
+## 五阶段（每条消息）
+
+| 阶段 | 要求 |
+| :--- | :--- |
+| **Read** | 指针 + spec 任务块 + 相关 `docs/api-contracts/`、`specs/.../design.md`、已有 Evidence、`docs/progress/project-log.md` |
+| **Understand** | 一句话目标与边界；上下游依赖；待澄清项 |
+| **Evaluate** | 对照代码/测试复核勾选是否可信；交叉核对 backlog REQ 与 spec 是否漂移；区分轻微优化 vs 重大偏差 |
+| **Plan** | 步骤、文件、风险、验证命令（`bun scripts/run-vitest.mjs run ...`、`bun run typecheck`） |
+| **Execute** | 实现/修复/或只读报告；**测试通过前不得将 spec 任务标 `[x]`** |
+
+**只读消息**（查进度、审核、解释）：五阶段仍执行；Execute = 报告，不改产品代码。回复可用 RUEPE 简表压缩，但不得跳过阶段思考。
+
+**重大偏差**（暂停实现，AskQuestion）：需求与实现矛盾、需未登记 IPC/契约、需跳过任务顺序、测试基线失败归属不明。
+
+**轻微优化**：Plan 中说明理由后采用。
+
+## 进度双写（任务完成时）
+
+1. **Spec**：`[-]` 开始 → 测试通过后 `[x]` + Evidence（命令与结果）。
+2. **Project log**：`docs/progress/project-log.md` 顶部 dated 条目。
+3. **Backlog 指针**：`task` 指向下一未完成项；更新 `状态`；清或填 `阻塞原因`。
+4. **聊天输出**（完成一项时）：
+
+```
+【任务 N】<名称>
+- 状态：已完成 / 阻塞
+- 理解摘要：…
+- 方案说明：…
+- 测试结果：…
+- 进度：<已完成>/<总数>（该 spec 内）
+```
+
+环境无法运行 `bun` 验证时 → 状态 **阻塞**，不得标 `[x]`。
+
+## 任务链自动下发
+
+完成一项 spec 任务（测试通过 + 进度双写完成）后，**默认**检查并自动下发下一项，无需用户再次发送「继续任务」。
+
+### 触发与停用
+
+- **默认开启**：执行类消息完成首项后自动尝试续链。
+- **停用词**（本条消息内）：「仅此项」「不要自动继续」「单线程停止」「只做一个」→ 完成首项后停止，不续链。
+- **只读消息**不触发任务链。
+
+### 续链算法（每项完成后）
+
+1. **Read** 更新后的 `docs/progress/backlog.md`「当前执行项」表（指针应已指向下一项）。
+2. 若 `状态` 为 **阻塞** → 输出「任务链暂停」摘要（`阻塞原因` + 建议动作），结束链。
+3. 若指针 `task` 在 spec 中对应 `[ ]` 或 `[-]` 且非阻塞 → 在同一会话内对下一项重新执行完整 RUEPE 五阶段。
+4. 若当前 spec 无更多 `[ ]`/`[-]` → 输出「本 spec 工程项已全部完成」摘要，结束链。
+5. **链上限**：单条用户消息最多连续完成 **3 项**（含首项）。达上限时输出进度，提示用户发送「继续任务」续链。
+
+### 输出与 QingTian
+
+- 链内每项仍输出独立【任务 N】块；链末可追加「任务链摘要」（已完成列表、当前指针、暂停/续跑提示）。
+- 任务链进行中**不**调用 `record_reply` / `check_messages`；仅在整条链结束后，对**合并后的完整用户可见回复**执行一次 QingTian 同步（见 `qingtian-mcp.mdc` 任务链例外）。
+
+## 禁止
+
+- 跳过 Read→Understand→Evaluate→Plan 直接写产品代码
+- 未验证通过标 `[x]` 或「已完成」
+- 并行推进第二项 spec 任务
+- 并行派发子 Agent 执行多项任务（当前单项内的**串行**只读探索除外，且不得并行写代码）
+- 静默重大替代方案
+- 擅自调整 spec 任务顺序
+
+## 规则冲突优先级
+
+1. `coding-standards`、`project-identity` 红线与安全禁止
+2. Superpowers `brainstorming` HARD-GATE 或 Plan mode：Execute 不写产品代码直至设计获批
+3. 本规则：串行 + 测试门禁 + 任务链自动下发
+4. `qingtian-mcp.mdc`：任务链结束后一次 `record_reply` + `check_messages`（链内 defer，见该规则任务链例外）
+5. 无用户明确要求不得 git commit
+
+## Superpowers 衔接
+
+- Plan（多文件）：`writing-plans`
+- Execute 前：`test-driven-development`
+- 声称完成前：`verification-before-completion`（须贴命令输出）
+- 大步骤结束：`requesting-code-review` / `code-reviewer`（串行，仍属当前单项）
+
+## 精简自检（Token 受限）
+
+```
+指针 → spec task N → R→U→E→P→E；测过再 [x]；完成后查下一项自动下发（链上限 3）；重大偏差先问。
+```

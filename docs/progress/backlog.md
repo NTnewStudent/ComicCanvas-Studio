@@ -2,7 +2,7 @@
 
 > 全局真源。需求编号 REQ-xxx，状态：⬜ 未开始 / 🔵 进行中 / ✅ 完成 / 🅿️ 暂缓
 > 全局 spec 入口见 `specs/README.md`；细粒度实现任务见 `specs/core-platform-foundation/tasks.md`、`specs/milestone-execution-plan/tasks.md` 与 `specs/canvas-agent-orchestration/tasks.md`。
-> 最近更新：2026-06-26
+> 最近更新：2026-07-05（RUEPE 当前执行项指针）
 
 ---
 
@@ -15,7 +15,7 @@
 | **M2** 画布完整 | 三节点完整交互、连接校验、确定性 prompt、资产管线 | ✅ |
 | **M3** 网关系统 | OpenAI 兼容适配 + 设置页 + 热拔插 + 真实生图/生视频 | ✅ |
 | **M4** Agent 编排 | 主循环 + Canvas 工具集 + Plan 清洗/应用/串行执行 | ✅ |
-| **M5** Agent 进阶 | super-agent + 子 agent spawn + 工具/agent 管理 UI | ⬜ |
+| **M5** Agent 进阶 | super-agent + 子 agent spawn + 工具/agent 管理 UI | ✅ |
 
 ---
 
@@ -95,7 +95,7 @@
 
 | ID | 需求 | 状态 |
 | :--- | :--- | :--- |
-| REQ-050 | super-agent（allowedTools '*'，默认入口） | ⬜ |
+| REQ-050 | super-agent（allowedTools '*'，默认入口） | ✅ |
 | REQ-051 | agent.spawnSubAgent（内联定义 + 权限继承 + 深度上限） | ✅ |
 | REQ-052 | 子 agent 隔离上下文执行 + 结果返回 | ✅ |
 | REQ-053 | 用户自定义 agent（设置页创建 + DB 持久化 + AgentRegistry） | ✅ |
@@ -170,6 +170,23 @@
 **下一步** → 先完成资产/工作流能力清单、当前 ToolRuntime 覆盖审计、资产分类模型与 UI parity；同时把 Agent 前置能力补齐为 Context Pack：最近对话、画布摘要、资产上下文、知识检索、压缩摘要。架构上新增 Node Definition + Port + Runtime Compiler + Gateway Binding 协议，避免后期第三方网关接入被硬编码节点逻辑卡住。
 **前端路线** → M2-M5 所有 renderer UI 均以 Tailwind + `cn` + `global/design/DESIGN.md` 为基线；优先参考 `hjwall/pc-client` 对应模块的组件、交互和测试模式，再按 ComicCanvas 契约重实现，参考项目不提交。
 
+战术单线程执行指针见下表；Cursor 开发 Agent 按 `.cursor/rules/ruepe-task-execution.mdc` 仅处理表中 **一项** spec 任务。完成一项后更新指针与 `docs/progress/project-log.md`。
+
+## 当前执行项（RUEPE 真源，单项）
+
+| 字段 | 值 |
+| :--- | :--- |
+| spec | `specs/milestone-execution-plan/tasks.md` |
+| task | 47 |
+| 状态 | 已完成 |
+| 阻塞原因 | — |
+
+> M5 milestone-execution-plan **47/47 `[x]`**（2026-07-05）。下一战术项：**Phase D 整批人工验收**（`docs/progress/batch-human-acceptance-runbook-2026-07-05.md`）。
+
+**文档漂移待同步（Evaluate 时交叉核对）：**
+
+- REQ-095 工程面已在 canvas spec tasks 22–24 与 assets-workflows tasks 6–12 闭环；本表 REQ 行简述待与人工验收结果一并更新（REQ-098 Pending）。
+
 ---
 
 ## hjwall Canvas Full Migration Reverification (REQ-090 ~ REQ-098)
@@ -184,10 +201,10 @@
 | REQ-091 | Workflow project lifecycle: create, list, switch, rename, delete, import, export, save/load restore. | 进行中（workflow JSON import/export IPC round trip, schemaVersion=1 validation, graph sanitize, invalid JSON rejection, secret/absolute-path rejection, imported-as-draft navigation, immutable version list/debug metadata, restore-as-new-version path, lenient draft validation warnings, strict run/validate blocking, renderer `/projects` JSON import/export/version UI, and dirty-save switch/beforeunload guards covered; 2026-07-04 修复 `canvas.createWorkflow` 未落初始图版本的缺陷，并补全 `workflow.repo.ts` 全部导出方法的 `@see docs/api-contracts/canvas-plan.md` JSDoc 锚点（任务4已转 `[x]`）；human desktop review pending） |
 | REQ-092 | Canvas interaction parity: toolbar, context menu, command palette, drag/drop media, snippets, shortcuts, connection feedback, zero asset polling. | 进行中（local media drop for image/video/audio engineering-complete with batch classification, asset import, cursor-near node creation, unsupported feedback, and audio `asset.import` persistence coverage; snippet core extract/insert with ID remap, one-undo insertion, persisted `canvas_snippets` storage, `canvasSnippet.*` IPC/preload APIs, compact CanvasPage snippet-library selector, direct ReactFlow connection feedback via shared validation, V2 @mention candidate/edge validation, selected-node duplicate/delete shortcuts, command palette filtering/execution, Ctrl/Cmd+K launch, fit-view command, select/pan ReactFlow mode wiring, connect-to-create shared validation and allowed-target filtering, visible canvas copy quality gate, CanvasPage React Flow/Zustand ownership cleanup with guarded store-to-React-Flow sync, hjwall-style top bar/left toolbar shell parity with import/export/save/job/theme/default-style/shortcut-help/viewport controls, toolbar/plus/context-menu/command-palette add-node paths, unified shortcut handling for save/undo/redo/duplicate/delete/fit/select/pan/command palette with editable-field and Mac Backspace guards, related-node highlight plus invalid/duplicate Chinese connection feedback, semantic edge components for prompt/image order, image role, output/reference rendering, and shared deletion, plus workflow/snippet, asset, character category, style, run/job, bottom input, and Agent-gated chat panel shell wiring covered; human desktop review pending） |
 | REQ-093 | Comic-drama node system expansion: text/image/video plus character, scene, audio, imageConfigV2, videoConfigV2, videoCompose, superResolution, muxAudioVideo, mjImage as vertical slices. | 进行中（shared node contracts + connection matrix + Plan whitelist slice + concrete production component shell for character/scene/audio/videoCompose/superResolution/muxAudioVideo/mjImage covered; TextNode inline/focus/rich/polish-status/mention/prompt preview covered; ImageNode/VideoNode safe preview, picker, edit entry, run/status, and writeback covered; ImageConfigV2/VideoConfigV2 prompt/model/style/ratio(/duration/resolution) controls, upstream references, selectable results, and writeback covered; 2026-07-04 修复 imageConfigV2/videoConfigV2 的真实运行调度缺陷——`CanvasPage.tsx` 的 `jobTypeForNodeType` 与 `canvas.handler.ts` 的 `buildRunDescriptor` 此前未识别这两种 V2 类型（video ConfigV2 会退化成裸 image job，videoConfigV2 的生成按钮此前是纯 mock，点击后卡在 `running` 永不结束），现已路由到 `compileWorkflowNodeRuntimeSnapshot` 拿到拼接后的 prompt/画风/时长/分辨率参数，并通过 CanvasPage 新增的 `ImageConfigV2NodeWrapper`/`VideoConfigV2NodeWrapper` 注入真实 `onRun` 回调；同时移除了与 `node.data.status` 并行的 `canvasStore.nodeRunStatus` Map 机制（旧写法两套状态源不一致），统一以 `node.data.status` 为唯一真源，回归测试见 `tests/migrated-run-dispatch.test.ts`(7 tests)/`tests/image-config-v2-parity.test.tsx`(3 tests)/`tests/video-config-v2-parity.test.tsx`(3 tests)全部通过，`tsc --noEmit` 无报错；CharacterNode/SceneNode structured fields, custom category metadata, asset viewing intents, single/multi reference generation intents, prompt contribution previews, and reference handles covered（2026-07-04 任务14独立审计复核，确认属实：字段/连接矩阵/prompt拼接/素材库插入钩子/序列化往返均为真实实现，非占位，`character-scene-node-parity.test.tsx`/`production-node-components-parity.test.tsx`/`workflow-graph-compiler.test.ts`/`canvas-panels-parity.test.ts` 11/11 通过；`CharacterNodeData.viewMode` 字段声明但未被读写，记为非阻塞后续项）；2026-07-04 任务15独立审计复核（同样不接受子agent报告原文，逐项对照源码复核）：`AudioNode.tsx` 为真实生产组件，播放/资产绑定/时长展示/mux引用角色/导入查看按钮均非占位；连接矩阵 `audio -> video/videoConfigV2/muxAudioVideo`（及反向阻断）已强制并测试；`shared/assets.ts`/`asset.handler.ts` 端到端识别 audio/.mp3/audio-mpeg；`import-metadata.ts` 内含真实手写 MP3 帧头时长解析器（非 stub）；`workflow-graph-compiler.ts` 正确归类 audio 媒体类型并传递 durationSeconds；直接运行审计涉及的全部9个测试文件/32个测试，全部通过。识别三项非阻塞缺口：(1) `onImport`/`onViewAsset` 为真实组件 prop 且有测试覆盖，但 `CanvasPage.tsx` 未经 wrapper 注入回调——与任务14中 CharacterNode/SceneNode 已接受的同一模式一致，记为三节点类型共享的后续项；(2) `canvas.generateAudio` 运行调度管线（jobTypeForNodeType/buildRunDescriptor/runtime.ts stub worker）完整存在但 UI 不可达，`workflow-node-definitions.ts` 仍将 audio 标记 `runnable: false`——与本任务验收文本（未像任务16/17那样要求"run dispatch"）及 design.md 优先级排序一致，视为面向未来的预留基础设施，非待删除的死代码；(3) 资产导入时计算的 `AssetMetadata.durationMs` 从未回填到节点级 `AudioNodeData.durationSeconds`（`NodeAssetOption` 无时长字段，各素材插入路径均未传递），记为非阻塞后续项（对应任务14 `viewMode` 死字段先例），手动输入时长仍可用，当前无测试/需求断言自动回填。AudioNode import/view intents, playback, duration display, mux input affordance, and reference role semantics covered（任务15已闭环，见上）; VideoComposeNode/MuxAudioVideoNode ordered/input role controls, transition/model options, ticket-only run intents, terminal output previews, and output writeback covered（2026-07-04 任务16闭环：审计发现并修复真实缺陷——`videoCompose`/`superResolution`/`muxAudioVideo` 此前在 `CanvasPage.tsx` 的 `nodeTypes` 中直接注册裸组件而非 wrapper，导致 `onRun` 始终为 `undefined`；三个组件的 `handleRun` 均为 `update({ status: 'running', url: '' }); onRun?.(id)`，点击"运行"后节点卡死在 `running` 永不恢复，且运行按钮在该状态下自我禁用，无恢复路径——这是真实的运行期回归缺陷，直接阻塞本任务"run dispatch to stub job"验收项。已新增 `VideoComposeNodeWrapper`/`SuperResolutionNodeWrapper`/`MuxAudioVideoNodeWrapper`，遵循既有 `ImageNodeWrapper`/`VideoConfigV2NodeWrapper` 先例通过 `useCanvasRunContext()` 注入真实 `onRun`，`handleRunNode`/`jobTypeForNodeType` 路由本已正确，仅 UI 接线缺失；新增 `tests/task16-post-production-run-dispatch.test.ts`（5 tests）填补覆盖缺口，`tsc --noEmit` 无报错，回归 22/22 通过。两项非阻塞缺口（`onWriteOutputAsset` 未接线、stub handler 不产生 asset 引用）与已闭环任务的既有模式一致，记为跨节点类型共享后续项）；SuperResolutionNode input video, scene/resolution/FPS controls, ticket-only run intent, terminal output preview, and output writeback covered（2026-07-04 任务17闭环：`superResolution` 端到端运行调度已通过任务16的 wrapper 修复验证，同时确认 Agent-tool 层 `tools/canvas/index.ts` 的 `canvas.runNode` 独立按 `getNodeDefinition` 路由到同一 job 类型；`mjImage` 确认为设计上刻意不可运行——`workflow-node-definitions.ts` 标记 `runnable: false, addable: false, connectCreate: false` 并附 `unavailableReason`，CanvasPage 的 `jobTypeForNodeType` 返回 `null`，Agent-tool 层抛出分类错误而非静默忽略，符合 R4.7"不支持的节点类型必须可见标注为不可用"验收条款，非缺陷；识别两项非阻塞缺口（`buildRunDescriptor` 对 scene/resolution/fps 等参数仅做可选字段透传、无 Zod 范围/枚举校验——项目范围内所有节点类型均无此类校验，非本任务特有缺口；`canvas.upscaleVideo` stub 不产生 asset 引用，与任务16已接受的同类 stub 缺口形状一致），均记为跨节点类型共享后续项，非阻塞本任务验收；回归 26/26 通过，`tsc --noEmit` 无报错）；MJ component deep parity and Seedance/live-person flows are out of scope for the local Phase A pass; text polish runtime remains in Task 45） |
-| REQ-094 | Style preset system: project default, node override, style library, deterministic prompt-before/prompt-after injection. | 进行中（shared contract + repository/IPC + runtime payload + image/video node selector + style library UI + project default selector slices） |
-| REQ-095 | Asset library completion: import, metadata, folders, search/filter/sort, safe URLs, references, tombstone/delete, insert to canvas. | 未开始 |
-| REQ-096 | Async run state for migrated node set: enqueue-only IPC, terminal events, one-shot reconciliation, prompt/reference snapshot composition. | 进行中（durable queue + worker + terminal fanout + real job.get/list/recover IPC + prompt/reference snapshot slices + typed migrated dispatch for audio/mjImage/videoCompose/superResolution/muxAudioVideo + typed migrated reopen reconciliation + typed migrated real-time writeback + canvas reopen one-shot reconciliation） |
-| REQ-097 | Agent orchestration over migrated canvas vocabulary: sanitized CanvasPlan, clarify behavior, applyPlan, PlanRunner, dropped warnings. | 进行中（migrated run actions preserved by sanitizePlan and mapped into PlanRunner steps; built-in comic-drama planner emits migrated nodes through chat IPC; PlanCard shows migrated node/action summary in automated tests and Electron-adjacent coverage; human desktop review for autoExecute terminal state pending） |
+| REQ-094 | Style preset system: project default, node override, style library, deterministic prompt-before/prompt-after injection. | ✅（工程面；人工验收 REQ-098 Pending） |
+| REQ-095 | Asset library completion: import, metadata, folders, search/filter/sort, safe URLs, references, tombstone/delete, insert to canvas. | ✅（工程面；人工验收 REQ-098 Pending） |
+| REQ-096 | Async run state for migrated node set: enqueue-only IPC, terminal events, one-shot reconciliation, prompt/reference snapshot composition. | ✅（工程面；人工验收 REQ-098 Pending） |
+| REQ-097 | Agent orchestration over migrated canvas vocabulary: sanitized CanvasPlan, clarify behavior, applyPlan, PlanRunner, dropped warnings. | ✅（工程面；人工验收 REQ-098 Pending） |
 | REQ-098 | User-centered completion evidence: automated tests plus human desktop review scenarios before final acceptance. | 进行中（`docs/progress/human-desktop-review-checklist.md` 已建立；人工审核结果待填写） |
 
 ---

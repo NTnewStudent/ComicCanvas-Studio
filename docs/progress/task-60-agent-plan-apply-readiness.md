@@ -19,8 +19,10 @@ auto-apply a ready `CanvasPlan` through the existing `applyPlan` +
 
 Manual PlanCard apply remains available when auto-run is off.
 
-Human gate `HDR-PHASEA-001` may still be Pending for product acceptance; automated
-tests and renderer wiring are in place for HDR-050 / HDR-051 desktop review.
+**Product deferral (2026-07-05):** `HDR-PHASEA-001` remains Pending; product owner
+deferred batched human acceptance until engineering queue completion. Task 60
+closed on automated evidence (`tests/agent-plan-apply-run.test.ts` 8/8 with
+related gate tests). HDR-050 / HDR-051 await the batch review session.
 
 ## Scope When Gate Opens
 
