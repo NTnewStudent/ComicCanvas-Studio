@@ -472,15 +472,14 @@
     `specs/canvas-agent-orchestration/tasks.md`.
   - Requirements: R14, R15.
 
-- [x] 60. Implement Agent plan apply/run over completed workflow vocabulary.
+- [ ] 60. Implement Agent plan apply/run over completed workflow vocabulary.
   - Include: same validation as manual UI, same style/assets/templates/snippets,
     serial run terminal state.
-  - Evidence (2026-07-05): `shared/agent-plan-apply.ts`,
-    `apply-agent-plan-on-ready.ts`, `canvas-plan-execution.ts`, `CanvasPage.tsx`
-    wiring; `tests/agent-plan-apply-run.test.ts` + `canvas-plan-execution` 8/8.
-    Product deferral for `HDR-PHASEA-001` recorded in
-    `docs/progress/human-desktop-review-checklist.md` and
-    `docs/progress/test-report.md` (engineering closure; human acceptance batched).
+  - Blocked: do not implement until `HDR-PHASEA-001` is Pass or there is an
+    explicit product deferral recorded in the human review checklist and test
+    report.
+  - Current state: Agent plan apply/run automation remains disabled; HDR-050
+    and HDR-051 stay manual-review pending.
   - Requirements: R14, R15.
 
 ## Phase 11 - Infinite Canvas Evolution

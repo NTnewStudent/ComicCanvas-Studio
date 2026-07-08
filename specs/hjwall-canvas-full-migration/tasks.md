@@ -587,181 +587,142 @@
   - Verify: repository and IPC tests.
   - Requirements: R5.
 
-- [x] 20. Implement deterministic style prompt composition.
+- [-] 20. Implement deterministic style prompt composition.
   - Include: pure `composeStyledPrompt`, node override over project default,
     preview/runtime byte equivalence.
   - Verify: unit/property tests and job payload snapshot tests.
-  - Evidence: Independently re-verified 2026-07-05 (RUEPE audit, not trusting
-    prior `[-]` text alone). `shared/styles.ts` exports pure
-    `composeStyledPrompt` and `resolveEffectiveStylePreset` (node
-    `stylePresetId` wins over project default; recoverable errors for missing/
-    disabled presets). Runtime path threads the same function through
-    `shared/workflow-graph-compiler.ts` (`compileWorkflowNodeRuntimeSnapshot`)
-    and `desktop/src/main/ipc/canvas.handler.ts` job enqueue payloads.
-    Automated evidence: `tests/style-contracts.test.ts` (6),
-    `tests/style-runtime-payload.test.ts` (3, node override + project default
-    + disabled-style blocking),
-    `tests/workflow-graph-compiler.test.ts` (2, styled snapshot prompts) — 11/11
-    passed via `npx vitest run` on 2026-07-05. `ConnectedInputsPanel` still
-    previews graph-composed prompt without style wrapping (base prompt layer
-    only); full styled desktop preview remains a non-blocking follow-up under
-    REQ-098 human review, not a blocker for this task's own Verify text (unit +
-    job payload snapshot). Human approval of desktop generation flow tracked
-    under REQ-098.
+  - Evidence: `docs/progress/test-report.md` records contract, node override,
+    default-workflow project style runtime payload tests, and non-default
+    workflowId runtime/stub hash tests. Human approval of the desktop
+    generation flow is tracked under REQ-098.
   - Requirements: R5, INV-3.
 
-- [x] 21. Implement style library UI and node/project selectors.
+- [-] 21. Implement style library UI and node/project selectors.
   - Include: no hardcoded frontend-only style list, loading/empty/error states,
     cover rendering, selected state.
   - Verify: component tests and human-review checklist coverage for desktop
     style selection flow.
-  - Evidence: Independently re-verified 2026-07-05. `ImageConfigV2Node` and
-    `VideoConfigV2Node` load enabled presets via `window.comicCanvas.listStyles`
-    (no hardcoded style list). `StyleLibrary.tsx`, `StyleLibraryPanel.tsx`, and
-    `ProjectStyleSelector.tsx` provide settings/canvas surfaces with cover
-    rendering, selected state, and localized loading/empty paths. Automated
-    evidence: `tests/style-library-panel.test.tsx` (2),
-    `tests/project-style-selector.test.tsx` (2),
-    `tests/style-settings-ui.test.tsx` (3) — 7/7 passed 2026-07-05.
-    `tests/style-renderer-ui.test.tsx` could not run in this environment because
-    `desktop/node_modules/@xyflow/react` is not installed (vitest alias target
-    missing); treat as environment blocker, not a product regression, until
-    `bun install` in `desktop/` is run. Human approval of cover display and stub
-    generation tracked under REQ-098.
+  - Evidence: `docs/progress/test-report.md` records component tests for
+    localized Style Library, cover rendering, node selectors, and project
+    selector. Human approval of cover display and stub generation is tracked
+    under REQ-098.
   - Requirements: R5.
 
 ## Phase 5 - Asset Library Completion
 
-- [x] 22. Complete asset import metadata extraction.
+- [ ] 22. Complete asset import metadata extraction.
   - Include: media type, mime, size, orientation where available, duration for
     video/audio where feasible, safe local path persistence.
   - Verify: asset pipeline tests and human-review checklist coverage for
     desktop import flow.
-  - Evidence: Re-verified 2026-07-05. `desktop/src/main/assets/import-metadata.ts`
-    implements PNG dimension/orientation, MP3 duration parsing, and hash/size
-    metadata. Cross-confirmed with `specs/hjwall-assets-workflows-100-migration`
-    task 6 (`[x]`). Pure tests passed:
-    `tests/asset-service.test.ts` extract cases (2),
-    `tests/asset-audio-support.test.ts` (2). SQLite-backed pipeline integration
-    tests blocked in this environment (missing `better-sqlite3` native binding
-    after `npm install --ignore-scripts`). Human import flow under REQ-098.
   - Requirements: R6, INV-5.
 
-- [x] 23. Complete asset panel user workflows.
+- [ ] 23. Complete asset panel user workflows.
   - Include: folder tree, search, media filter, sort, move, trash, force
     tombstone, insert-to-canvas, loading/empty/error states.
   - Verify: component tests and human-review checklist coverage for desktop
     asset library flow.
-  - Evidence: Re-verified 2026-07-05. `CanvasAssetPanel`, `/assets` page shell,
-    and categorized insertion flows exist; assets-workflows tasks 7–11 `[x]`.
-    `tests/canvas-asset-panel.test.tsx` (1/1) passed. Human asset-library flow
-    under REQ-098 / HDR-042.
   - Requirements: R6.
 
-- [x] 24. Wire asset references from canvas nodes and jobs.
+- [ ] 24. Wire asset references from canvas nodes and jobs.
   - Include: create/update references when nodes select assets or jobs finish,
     safe delete blocking references.
   - Verify: repository tests and human-review checklist coverage for referenced
     asset deletion.
-  - Evidence: Re-verified 2026-07-05. `desktop/src/main/assets/asset-reference-sync.ts`
-    and canvas/job reference wiring exist; assets-workflows task 12 `[x]`.
-    `tests/asset-reference-sync.test.ts` requires SQLite native module (blocked
-    in this environment). Code audit + prior green evidence in test-report;
-    human safe-delete flow under REQ-098 / HDR-043.
   - Requirements: R6, INV-5.
 
 ## Phase 6 - Async Run and Agent Orchestration
 
-- [x] 25. Expand run dispatch for the migrated node set.
+- [-] 25. Expand run dispatch for the migrated node set.
   - Include: job types, payload shape, graph snapshot prompt/reference
     composition, terminal writeback, no generated bytes in synchronous IPC.
   - Verify: IPC/job tests and human-review checklist coverage for desktop run
     ticket/result flow.
-  - Evidence: Re-verified 2026-07-05. `tests/migrated-run-dispatch.test.ts` (8/8)
-    passed including imageConfigV2/videoConfigV2/compose/mux/upscale paths.
-    `tests/apply-plan-runner.test.ts` maps migrated run steps. Human ticket/result
-    flow under REQ-098 / HDR-032.
+  - Evidence: `docs/progress/test-report.md` records RED/GREEN coverage for
+    audio job dispatch, mjImage semantic prompt/reference dispatch, typed queue
+    payloads for videoCompose, superResolution, and muxAudioVideo, plus
+    one-shot reopen reconciliation and real-time terminal writeback for typed
+    migrated report results. Keep partial until broader PlanRunner migrated run
+    steps are covered; human approval of desktop ticket/result behavior is
+    tracked under REQ-098.
   - Requirements: R7, INV-4.
 
-- [x] 26. Add one-shot job reconciliation on canvas reopen.
+- [-] 26. Add one-shot job reconciliation on canvas reopen.
   - Include: missed terminal event recovery without renderer polling loops.
   - Verify: integration tests and static no-polling scan.
-  - Evidence: Re-verified 2026-07-05. `tests/canvas-job-reconciliation.test.ts`
-    (8/8) passed; `CanvasPage.tsx` wires `reconcileCanvasNodesWithJobs` on load.
-    Human reopen behavior under REQ-098 / HDR-033.
+  - Evidence: `docs/progress/test-report.md` records pure reconciliation,
+    CanvasPage one-shot `job.list` wiring, REQ-096 regression tests, and
+    zero-polling scan. Human approval of desktop reopen behavior is tracked
+    under REQ-098.
   - Requirements: R7.
 
-- [x] 27. Expand CanvasPlan and sanitizePlan for migrated nodes/run actions.
+- [-] 27. Expand CanvasPlan and sanitizePlan for migrated nodes/run actions.
   - Include: accepted node types, run actions, dropped warnings, executable
     string stripping, connection matrix revalidation.
   - Verify: sanitizePlan property tests and applyPlan tests.
-  - Evidence: Re-verified 2026-07-05. `tests/sanitize-plan.test.ts` (8/8) preserves
-    migrated run actions; `tests/apply-plan-runner.test.ts` (5/5) maps migrated
-    steps. Orchestrator vocabulary covered in task 28 evidence. Human PlanCard
-    under REQ-098.
+  - Evidence: `docs/progress/test-report.md` records RED/GREEN coverage for
+    migrated run actions (`audioRun`, `mjImageRun`, `videoComposeRun`,
+    `superResolutionRun`, `muxAudioVideoRun`) being preserved by sanitizePlan
+    and mapped into PlanRunner steps by applyPlan. Keep partial until
+    orchestrator prompt generation proves the same vocabulary from a real user
+    request. Human approval of desktop PlanCard behavior is tracked under
+    REQ-098.
   - Requirements: R8.
 
-- [x] 28. Upgrade orchestrator prompts/tools to create comic-drama workflows.
+- [-] 28. Upgrade orchestrator prompts/tools to create comic-drama workflows.
   - Include: clarify behavior, character/scene/style awareness, legal plan
     generation, PlanCard summary.
   - Verify: orchestrator unit tests and agent orchestration smoke test.
-  - Evidence: Re-verified 2026-07-05. `tests/agent-orchestration-smoke.test.ts`:
-    2/3 passed (planner/unit paths); 1 DB-backed integration case blocked by
-    missing `better-sqlite3` binding in this environment. Comic-drama planner
-    emits migrated nodes (videoCompose, etc.) in passing tests. Style/clarify
-    branch depth remains non-blocking follow-up. Human autoExecute under REQ-098.
+  - Evidence: `docs/progress/test-report.md` records default built-in
+    orchestrator planner coverage for comic-drama requests producing text,
+    character, scene, mjImage, audio, videoCompose, and muxAudioVideo nodes
+    with migrated run actions through both direct planner and chat IPC runtime
+    paths. It also records PlanCard summary coverage for migrated node/action
+    labels plus real Electron evidence for the visible migrated PlanCard
+    summary. Keep partial until style-specific intent and clarify branches are
+    covered; human approval of desktop autoExecute result/state behavior is
+    tracked under REQ-098.
   - Requirements: R8.
 
-- [x] 29. Complete PlanRunner execution for migrated run steps.
+- [-] 29. Complete PlanRunner execution for migrated run steps.
   - Include: serial execution, failed short-circuit, manual rerun, terminal
     event injection.
   - Verify: PlanRunner tests and human-review checklist coverage for desktop
     autoExecute flow.
-  - Evidence: Re-verified 2026-07-05. `tests/apply-plan-runner.test.ts` (5/5)
-    covers serial run, failure short-circuit, and migrated plan apply mapping.
-    Human autoExecute terminal states under REQ-098 / HDR-052.
+  - Evidence: `docs/progress/test-report.md` records applyPlan mapping for
+    migrated run steps plus existing live terminal writeback coverage for
+    migrated job results. It also records a real Electron apply action for a
+    migrated PlanCard. Human approval of desktop autoExecute terminal states is
+    tracked under REQ-098.
   - Requirements: R8.
 
 ## Phase 7 - Human Desktop Review
 
-- [x] 30. Build the first full comic-drama human-review scenario.
+- [ ] 30. Build the first full comic-drama human-review scenario.
   - Scenario: create project -> add story text -> add character -> select style
     -> create imageConfigV2 -> run stub image -> create videoConfigV2 -> use
     generated image as first frame -> run stub video -> save -> reopen.
   - Verify: automated smoke where possible plus human desktop review checklist.
-  - Evidence: 2026-07-05. Documented Scenario A in
-    `docs/progress/hjwall-canvas-phase7-human-review-scenarios.md` with HDR step
-    mapping. `tests/hjwall-canvas-phase7-scenarios.test.ts` (1) static smoke.
-    Human execution Pending (REQ-098).
   - Requirements: R9, all INV.
 
-- [x] 31. Build the asset/snippet human-review scenario.
+- [ ] 31. Build the asset/snippet human-review scenario.
   - Scenario: import image/video/audio -> organize folders -> insert asset
     nodes -> select two or more nodes -> save snippet -> insert snippet into a
     different project -> save/reopen.
   - Verify: automated smoke where possible plus human desktop review checklist.
-  - Evidence: 2026-07-05. Scenario B in phase7 scenarios doc + static test.
-    Human execution Pending (REQ-098).
   - Requirements: R3, R6, R9.
 
-- [x] 32. Build the Agent orchestration human-review scenario.
+- [ ] 32. Build the Agent orchestration human-review scenario.
   - Scenario: ask Agent for a short comic-drama image-to-video chain with a
     named character and style -> review plan -> apply -> autoExecute with stub
     jobs -> observe terminal node states.
   - Verify: agent smoke plus human desktop review checklist.
-  - Evidence: 2026-07-05. Scenario C in phase7 scenarios doc (HDR-050..052 gate).
-    Static test coverage. Human execution Pending until HDR-PHASEA-001 Pass.
   - Requirements: R8, R9.
 
-- [x] 33. Update progress, backlog, and test reports after each completed
+- [ ] 33. Update progress, backlog, and test reports after each completed
   phase.
   - Include: command outputs, human-review outcomes, reviewer screenshots where
     provided, and known residual risks.
   - Verify: no phase marked accepted without current automated evidence and a
     human-review outcome or explicit pending-human-review note.
-  - Evidence: 2026-07-05 RUEPE batch: `docs/progress/project-log.md` entries for
-    tasks 20–32; backlog pointer updated; this spec tasks 20–33 closed with
-    evidence; `docs/progress/test-report.md` section 2026-07-05; REQ-095 drift
-    note in backlog. Engineering phases 4–7 complete; **product acceptance** still
-    requires REQ-098 human Pass rows, not contradicted by engineering `[x]`.
   - Requirements: R9.

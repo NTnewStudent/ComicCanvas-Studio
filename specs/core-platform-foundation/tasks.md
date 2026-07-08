@@ -119,20 +119,24 @@
   - Verify: planned tests cover unsupported capability preflight and normalization golden cases.
   - Covers: R5, INV-3.
 
-- [x] 24. Plan ToolRuntime and PluginLoader implementation.
-  - Cross-ref: implemented in milestone-execution-plan task 42 (`plugin-loader.ts`).
+- [ ] 24. Plan ToolRuntime and PluginLoader implementation. <!-- planning complete, runtime not implemented -->
+  - Must include: built-in tools, plugin manifest validation, permissions, concurrency, quarantine.
+  - Verify: planned tests cover plugin disable/unload and schema failure.
   - Covers: R6, INV-4, INV-7.
 
-- [x] 25. Plan AgentRuntime and AgentRegistry implementation.
-  - Cross-ref: M4 orchestrator + `agent/registry.ts` (milestone tasks 35–38).
+- [ ] 25. Plan AgentRuntime and AgentRegistry implementation. <!-- planning complete, runtime not implemented -->
+  - Must include: built-in agents, custom agents, Context Pack, sub-agent permission intersection, trace metadata.
+  - Verify: planned tests cover child permission monotonicity.
   - Covers: R7, INV-4.
 
-- [x] 26. Plan SkillRegistry implementation.
-  - Cross-ref: milestone-execution-plan task 41.
+- [ ] 26. Plan SkillRegistry implementation. <!-- planning complete, runtime not implemented -->
+  - Must include: discovery, metadata-first loading, lazy references, permission checks, hot reload.
+  - Verify: planned tests cover failed reload keeping previous valid version.
   - Covers: R8, INV-7.
 
-- [x] 27. Plan KnowledgeStore and ContextBuilder implementation.
-  - Cross-ref: milestone-execution-plan task 43.
+- [ ] 27. Plan KnowledgeStore and ContextBuilder implementation. <!-- planning complete, runtime not implemented -->
+  - Must include: ingest, chunking, retrieval, deletion, rebuild, citation metadata, deterministic budget priority.
+  - Verify: planned tests cover scope isolation and deletion exclusion.
   - Covers: R9, INV-6.
 
 ## Phase F - Product Surface Readiness
