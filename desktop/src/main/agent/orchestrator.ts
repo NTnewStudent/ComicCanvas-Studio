@@ -204,7 +204,7 @@ function fallbackOrchestratorAgent(agentId: string): AgentDefinition {
       name: 'General Purpose',
       description: 'Default conversation agent that understands, decomposes, clarifies, and delegates to local capabilities.',
       instructions: 'First understand the user message, decompose requirements, and inspect local capabilities. Ask for clarification when ambiguous. Never create canvas nodes for greetings or low-signal requests.',
-      allowedTools: ['canvas.queryGraph'],
+      allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search'],
       allowedSkills: '*',
       gatewayPolicy: { allowedChannels: ['text'] },
       contextPolicy: {
@@ -214,7 +214,7 @@ function fallbackOrchestratorAgent(agentId: string): AgentDefinition {
         includeKnowledge: false,
         maxContextTokens: 8000
       },
-      permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'diagnostics'], requireAskForDestructive: true },
+      permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'], requireAskForDestructive: true },
       triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
       maxTurns: 8,
       effort: 'high',
@@ -350,6 +350,43 @@ function generalQuestionResponse(message: string): AgentResponse {
     type: 'answer',
     summary: '用户提出了普通问题，应由通用 Agent 直接回答。',
     text: answer,
+    dropped: []
+  }
+}
+
+function smallTalkResponse(): AgentResponse {
+  return {
+    type: 'answer',
+    summary: '用户只是打招呼或进行低负担寒暄。',
+    text: '你好，我在。你可以直接和我聊天，也可以让我总结资料、分析需求，或者帮你创建、连接和运行当前画布里的节点。',
+    dropped: []
+  }
+}
+
+function searchUnavailableResponse(): AgentResponse {
+  return {
+    type: 'answer',
+    summary: '用户提出了依赖当前互联网信息的问题。',
+    text: '这个问题需要联网搜索后再总结来源，但当前本地确定性回复没有执行受控 web.search 工具调用。我不会假装已经搜索过；你可以批准联网搜索，或让我基于已有上下文先做非实时分析。',
+    dropped: ['web.search:not_executed']
+  }
+}
+
+function currentCanvasQueryUnavailableResponse(): AgentResponse {
+  return {
+    type: 'answer',
+    summary: '用户请求读取当前画布状态。',
+    text: '这个请求需要通过 canvas.queryGraph 读取当前画布状态。当前本地确定性回复不会创建、连接或运行节点，也不会把只读查询误转换成生成任务。',
+    dropped: ['canvas.queryGraph:not_executed']
+  }
+}
+
+function requirementPlanningResponse(): AgentResponse {
+  return {
+    type: 'clarification',
+    summary: '用户提出了系统能力或产品方案设计请求。',
+    question: '我可以先做需求分析并制定实施计划。你希望我优先保证哪一个结果：自然聊天体验、联网搜索总结，还是当前画布的自动编排执行？',
+    missing: ['成功标准', '执行边界', '是否允许改代码'],
     dropped: []
   }
 }
@@ -651,23 +688,26 @@ export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
     proposePlan(input): AgentResponse {
       const message = input.message.trim()
       const analysis = analyzeAgentIntent(message)
+      const isCurrentCanvasRead = /(查一下|查询|查看|看看|列出|读取).*(当前画布|这个画布|本画布|当前工作流|这个工作流|本工作流|节点|连线).*(有哪些|多少|列表|数量|状态|关系)|(?:list|query|inspect|read).*(current\s*canvas|nodes|edges|workflow|graph)/iu.test(message)
 
-      if (analysis.kind === 'general') {
-        return generalQuestionResponse(message)
-      }
-
-      if (analysis.kind !== 'canvasPlan') {
+      if (analysis.kind === 'smallTalk') return smallTalkResponse()
+      if (analysis.kind === 'generalChat') return generalQuestionResponse(message)
+      if (analysis.kind === 'searchSummary') return searchUnavailableResponse()
+      if (analysis.kind === 'requirementPlanning') return requirementPlanningResponse()
+      if (analysis.kind !== 'canvasOperation') {
         return clarificationResponse(
           analysis.summary,
-          analysis.kind === 'smallTalk'
-            ? '你好，我可以先理解你的目标、拆解需求、检查本地画布能力。请告诉我你想创建什么内容或工作流。'
-            : '请补充你希望我完成的任务类型和目标产物：例如只聊想法、创建画布节点、生成图片/视频，或编排完整工作流。',
+          '请补充你希望我完成的任务类型：聊天、联网总结、需求分析，或操作当前画布。',
           analysis.missing,
           []
         )
       }
 
       const wantsComicDrama = /漫画|短剧|角色|场景|配音|音频|合成|comic|drama|storyboard|episode|voice/i.test(message)
+
+      if (isCurrentCanvasRead) {
+        return currentCanvasQueryUnavailableResponse()
+      }
 
       if (analysis.executionMode === 'direct') {
         return responseFromCanvasPlan(directSimpleCanvasPlan(message))

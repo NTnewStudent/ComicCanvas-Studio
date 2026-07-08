@@ -7,6 +7,7 @@
 import type { AgentDefinition } from '../../../../shared/agents'
 import type { AgentResponse } from '../../../../shared/agents'
 import type { GatewayRequest, GatewayResult, GatewayType } from '../../../../shared/gateway'
+import type { CanvasPlan } from '../../../../shared/plan'
 import type { ToolDescriptor } from '../../../../shared/tools'
 import type { GatewayRegistry } from '../providers/registry'
 import type { ToolRuntime } from '../tools/runtime'
@@ -17,9 +18,9 @@ import {
   toolDescriptorsToGatewayTools,
   type AgentToolProtocol
 } from '../lib/agent-gateway-tools'
-import type { AgentContextLoopState, AgentLoopModel, AgentLoopStepResult, AgentToolCall, RunAgentContextLoopInput } from './context-loop'
+import type { AgentContextLoopState, AgentLoopEvent, AgentLoopModel, AgentLoopStepResult, AgentToolCall, RunAgentContextLoopInput } from './context-loop'
 import { resumeAgentContextLoopWithApproval, runAgentContextLoop } from './context-loop'
-import type { OrchestratorPlanner, OrchestratorPlannerDraft } from './orchestrator'
+import { createDefaultOrchestratorPlanner, type OrchestratorPlanner, type OrchestratorPlannerDraft } from './orchestrator'
 import { sanitizePlan } from './sanitize-plan'
 import { estimateCostUsd } from './cost'
 
@@ -186,14 +187,30 @@ function clarifyFromInvalidModelResponse(): AgentLoopStepResult {
   }
 }
 
-function noTextModelClarification(): AgentResponse {
-  return {
-    type: 'clarification',
-    summary: '未配置可用的文本模型。',
-    question: '我需要一个文本模型才能回答问题或进行通用对话。请在「设置 → 网关」中添加并启用一个文本模型（例如 OpenAI 兼容网关），然后重试。',
-    missing: ['文本模型网关'],
-    dropped: []
+type OrchestratorPlannerTerminal = AgentResponse | CanvasPlan
+type OrchestratorPlannerResult = ReturnType<OrchestratorPlanner['proposePlan']>
+
+function isAsyncPlannerResult(value: OrchestratorPlannerResult): value is AsyncGenerator<OrchestratorPlannerDraft, OrchestratorPlannerTerminal> {
+  return typeof value === 'object' && value !== null && Symbol.asyncIterator in value
+}
+
+async function resolvePlannerTerminal(value: OrchestratorPlannerResult): Promise<OrchestratorPlannerTerminal> {
+  if (!isAsyncPlannerResult(value)) {
+    return Promise.resolve(value)
   }
+
+  let next = await value.next()
+  while (!next.done) {
+    next = await value.next()
+  }
+
+  return next.value
+}
+
+async function localFallbackResponse(input: Parameters<OrchestratorPlanner['proposePlan']>[0]): Promise<AgentResponse> {
+  const local = createDefaultOrchestratorPlanner().proposePlan(input)
+  const value = await resolvePlannerTerminal(local)
+  return 'type' in value ? value : { type: 'canvasPlan', plan: sanitizePlan(value) }
 }
 
 function compactToolsForPrompt(tools: readonly ToolDescriptor[]): Array<{
@@ -255,6 +272,10 @@ function buildPrompt(state: AgentContextLoopState): string {
     '',
     'Hard rules:',
     '- Use the prior turns in Messages to accumulate context. A short follow-up like "创建"/"画布节点"/"create" refers to what was already discussed — never restart or re-ask details the user already gave.',
+    '- Use web.search before answering current, latest, price, news, or time-sensitive questions when that tool is available.',
+    '- If web.search is unavailable or denied, say that clearly. Never pretend to have searched.',
+    '- For pure greetings, return type=answer with a natural greeting and mention chat/search/planning/canvas help briefly.',
+    '- For system capability design requests, analyze requirements first and ask one key question before implementation or canvas mutations.',
     '- Prefer action over questions. When the user expresses a clear creative intent (e.g. "做一个角色"/"生成一张图"), produce a CanvasPlan NOW using sensible defaults derived from the conversation, and note any assumptions in the plan summary.',
     '- Ask at most ONE clarification in the entire conversation, and only when you genuinely cannot produce anything useful. NEVER ask which operation to perform — infer it (e.g. "想做一个角色" → create a character node; "画布节点" after describing a character → create that character node).',
     '- For pure greetings, small talk, or general questions with no canvas intent, return type=answer. Do not invent canvas nodes for those.',
@@ -308,6 +329,10 @@ function buildNativeSystemPrompt(state: AgentContextLoopState): string {
     '',
     'Hard rules:',
     '- Use prior turns in Messages; short follow-ups like "创建" refer to earlier context.',
+    '- Use web.search before answering current, latest, price, news, or time-sensitive questions when that tool is available.',
+    '- If web.search is unavailable or denied, say that clearly. Never pretend to have searched.',
+    '- For pure greetings, return type=answer with a natural greeting and mention chat/search/planning/canvas help briefly.',
+    '- For system capability design requests, analyze requirements first and ask one key question before implementation or canvas mutations.',
     '- Prefer action over questions for clear creative intents; produce a CanvasPlan with sensible defaults.',
     '- CanvasPlan is declarative JSON only. Never include executable code or provider secrets.',
     '- Image/video reference nodes do not generate. Use imageConfigV2 for imageRun and videoConfigV2 for videoRun.',
@@ -482,7 +507,7 @@ function summarizeToolInput(input: unknown): string {
   }
 }
 
-function loopEventToPlannerDraft(event: import('./context-loop').AgentLoopEvent): OrchestratorPlannerDraft | null {
+function loopEventToPlannerDraft(event: AgentLoopEvent): OrchestratorPlannerDraft | null {
   if (event.type === 'progress') {
     return { type: 'progress', message: event.message, progress: event.progress }
   }
@@ -554,9 +579,8 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
       const resolvedDefault = options.resolveDefaultModel ? options.resolveDefaultModel() : { gatewayId: options.defaultGatewayId, modelId: options.defaultModelId }
 
       if (options.resolveDefaultModel && resolvedDefault === null && !input.agent.gatewayPolicy.gatewayId) {
-        // No real text model is configured: ask the user to add one instead of prompting the stub.
-        yield { type: 'progress', message: '未检测到可用的文本模型', progress: 10 }
-        return noTextModelClarification()
+        yield { type: 'progress', message: '未检测到可用的文本模型，尝试本地确定性回复', progress: 10 }
+        return localFallbackResponse(input)
       }
 
       const gatewayId = input.agent.gatewayPolicy.gatewayId ?? resolvedDefault?.gatewayId
