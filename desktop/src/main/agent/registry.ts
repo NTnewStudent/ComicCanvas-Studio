@@ -34,7 +34,7 @@ const builtinAgents: AgentDefinition[] = [
     name: 'General Purpose',
     description: 'Understands the user, answers directly, reads/searches the project, and delegates canvas work.',
     instructions: GENERAL_PURPOSE_PROMPT,
-    allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep'],
+    allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search'],
     allowedSkills: '*',
     gatewayPolicy: { allowedChannels: ['text'] },
     contextPolicy: {
@@ -44,7 +44,7 @@ const builtinAgents: AgentDefinition[] = [
       includeKnowledge: false,
       maxContextTokens: 8000
     },
-    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics'], requireAskForDestructive: true },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'], requireAskForDestructive: true },
     triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
     maxTurns: 8,
     effort: 'high',

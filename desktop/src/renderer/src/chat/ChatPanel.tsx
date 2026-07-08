@@ -45,6 +45,8 @@ export interface ChatPanelApi {
   approveAgentTool?: (input: IpcRequestMap['agent.approveTool']) => Promise<IpcResponseMap['agent.approveTool']>
   /** @see docs/api-contracts/jobs.md */
   onJobProgress?: (handler: (event: IpcEventMap['job.progress']) => void) => () => void
+  /** @see docs/api-contracts/jobs.md */
+  onJobFailed?: (handler: (event: IpcEventMap['job.failed']) => void) => () => void
 }
 
 export interface ChatPanelProps {
@@ -391,6 +393,32 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
     })
   }, [api])
 
+  useEffect(() => {
+    if (!api.onJobFailed) return undefined
+
+    return api.onJobFailed((event) => {
+      if (!pendingJobIdRef.current || event.jobId !== pendingJobIdRef.current) {
+        return
+      }
+
+      const failedRunId = pendingRunIdRef.current
+      setStreamingText('')
+      setMessages((items) => [
+        ...items,
+        { id: `assistant-job-failed-${event.jobId}`, role: 'assistant', content: `Agent 执行失败：${event.error.message}` }
+      ])
+      setBusy(false)
+      setPendingMessageId(null)
+      pendingMessageIdRef.current = null
+      pendingJobIdRef.current = null
+      pendingRunIdRef.current = null
+      setPermissionRequest(null)
+      if (failedRunId) {
+        refreshRunTrace(failedRunId)
+      }
+    })
+  }, [api, refreshRunTrace])
+
   // Keep the newest turn visible as the transcript grows.
   useEffect(() => {
     const element = transcriptRef.current
@@ -717,7 +745,7 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan }: ChatPanelPr
       <AgentPermissionModal
         request={permissionRequest}
         busy={permissionBusy}
-        onApprove={handleApprovePermission}
+        onApprove={() => { void handleApprovePermission() }}
         onDismiss={handleDismissPermission}
       />
     </section>

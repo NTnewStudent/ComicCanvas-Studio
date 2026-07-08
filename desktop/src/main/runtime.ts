@@ -56,6 +56,7 @@ import { storageFactory } from './storage/storage-factory'
 import { createAssetTools } from './tools/asset'
 import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
 import { createFsTools } from './tools/fs'
+import { createWebSearchTools } from './tools/web-search'
 import { createAgentSpawnTool, createChildAgentRunner } from './tools/agent'
 import { createSkillRegistry } from './skills/registry'
 import { createSkillService } from './skills/skill.service'
@@ -216,6 +217,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
         assets,
         cloudUrls: assetCloudUrls
       }),
+      ...createWebSearchTools(),
       ...createFsTools({
         workspaceRoot: options.workspaceRoot ?? process.cwd()
       })
@@ -235,11 +237,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     toolRuntime.register(createAgentSpawnTool({
       parentAgent: agentRegistry.get('general-purpose') ?? {
         id: 'general-purpose', source: 'builtin', name: 'General Purpose', description: '',
-        instructions: '', allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep'],
+        instructions: '', allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search'],
         allowedSkills: '*',
         gatewayPolicy: { allowedChannels: ['text'] },
         contextPolicy: { includeCanvasGraph: false, includeSelectedAssets: false, includeRecentMessages: false, includeKnowledge: false, maxContextTokens: 4000 },
-        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics'], requireAskForDestructive: true },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'], requireAskForDestructive: true },
         triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'manual', autoRun: false },
         maxTurns: 4, effort: 'medium', enabled: true
       },

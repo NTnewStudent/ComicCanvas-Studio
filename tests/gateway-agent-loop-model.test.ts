@@ -91,8 +91,58 @@ function plannerDraftMessage(draft: OrchestratorPlannerDraft): string {
 }
 
 describe('Gateway-backed Agent loop planner', () => {
+  it('answers greetings locally when no text model is configured', async () => {
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke() {
+          throw new Error('gateway_should_not_be_called_for_greeting')
+        }
+      },
+      tools: createToolRuntime(),
+      listTools: () => [queryGraphDescriptor],
+      resolveDefaultModel: () => null
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-no-model-hi',
+      messageId: 'message-no-model-hi',
+      message: 'hi',
+      agentId: 'general-purpose',
+      agent: agent({
+        id: 'general-purpose',
+        name: 'General Purpose',
+        instructions: 'Answer ordinary messages.',
+        allowedTools: ['canvas.queryGraph'],
+        gatewayPolicy: { allowedChannels: ['text'] },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+      }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    const progress: string[] = []
+    let next = await stream.next()
+    while (!next.done) {
+      if (next.value.type === 'progress') {
+        progress.push(next.value.message)
+      }
+      next = await stream.next()
+    }
+
+    const response = expectAgentResponse(next.value)
+    expect(progress).toContain('未检测到可用的文本模型，尝试本地确定性回复')
+    expect(response.type).toBe('answer')
+    if (response.type !== 'answer') throw new Error('expected_answer_response')
+    expect(response.text).toContain('你好')
+    expect(response.text).toContain('画布')
+  })
+
   it('turns model toolCalls and tool observations into a sanitized CanvasPlan', async () => {
     const prompts: string[] = []
+    const gatewayIds: string[] = []
+    const modelKeys: string[] = []
     const runtime = createToolRuntime({
       idFactory: () => 'invoke-query',
       clock: () => 1_783_900_000_000,
@@ -109,18 +159,20 @@ describe('Gateway-backed Agent loop planner', () => {
       ]
     })
     const gateways = {
-      async invoke(_gatewayId: string, request: GatewayRequest): Promise<GatewayResult> {
+      invoke(gatewayId: string, request: GatewayRequest): Promise<GatewayResult> {
+        gatewayIds.push(gatewayId)
+        modelKeys.push(request.modelKey)
         prompts.push(request.prompt)
 
         if (prompts.length === 1) {
-          return textResult(JSON.stringify({
+          return Promise.resolve(textResult(JSON.stringify({
             type: 'toolCalls',
             message: 'Read the graph first.',
             calls: [{ id: 'call-query', toolId: 'canvas.queryGraph', input: {} }]
-          }))
+          })))
         }
 
-        return textResult(`\`\`\`json\n${JSON.stringify({ type: 'plan', plan: finalPlan })}\n\`\`\``)
+        return Promise.resolve(textResult(`\`\`\`json\n${JSON.stringify({ type: 'plan', plan: finalPlan })}\n\`\`\``))
       }
     }
     const planner = createGatewayAgentPlanner({
@@ -157,7 +209,11 @@ describe('Gateway-backed Agent loop planner', () => {
       'Agent produced a CanvasPlan'
     ])
     expect(prompts).toHaveLength(2)
+    expect(gatewayIds).toEqual(['agent-gateway', 'agent-gateway'])
+    expect(modelKeys).toEqual(['agent-model', 'agent-model'])
     expect(prompts[0]).toContain('Allowed tools')
+    expect(prompts[0]).toContain('Use web.search before answering current, latest, price, news, or time-sensitive questions')
+    expect(prompts[0]).toContain('If web.search is unavailable or denied, say that clearly')
     expect(prompts[1]).toContain('\\"nodeCount\\":0')
     expect(expectAgentResponse(next.value)).toEqual({ type: 'canvasPlan', plan: finalPlan })
   })
@@ -173,8 +229,8 @@ describe('Gateway-backed Agent loop planner', () => {
     }
     const planner = createGatewayAgentPlanner({
       gateways: {
-        async invoke() {
-          return textResult(JSON.stringify(unsafePlan))
+        invoke() {
+          return Promise.resolve(textResult(JSON.stringify(unsafePlan)))
         }
       },
       tools: createToolRuntime(),
@@ -210,8 +266,8 @@ describe('Gateway-backed Agent loop planner', () => {
   it('converts invalid model JSON into a safe clarify plan with dropped audit', async () => {
     const planner = createGatewayAgentPlanner({
       gateways: {
-        async invoke() {
-          return textResult('I think you should make a cool picture, but this is not JSON.')
+        invoke() {
+          return Promise.resolve(textResult('I think you should make a cool picture, but this is not JSON.'))
         }
       },
       tools: createToolRuntime(),
@@ -265,10 +321,10 @@ describe('Gateway-backed Agent loop planner', () => {
     })
     const planner = createGatewayAgentPlanner({
       gateways: {
-        async invoke(_gatewayId, request) {
+        invoke(_gatewayId, request) {
           requests.push(request)
           if (requests.length === 1) {
-            return {
+            return Promise.resolve({
               kind: 'text',
               text: '',
               toolCalls: [{
@@ -276,10 +332,10 @@ describe('Gateway-backed Agent loop planner', () => {
                 type: 'function',
                 function: { name: 'canvas.queryGraph', arguments: '{}' }
               }]
-            }
+            })
           }
 
-          return textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan }))
+          return Promise.resolve(textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan })))
         }
       },
       tools: runtime,

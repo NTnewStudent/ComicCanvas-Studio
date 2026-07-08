@@ -368,6 +368,30 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
       })
   }, [])
 
+  useEffect(() => {
+    const api = window.comicCanvas
+    if (!api?.onJobFailed) return
+
+    return api.onJobFailed((event) => {
+      if (!pendingJobIdRef.current || event.jobId !== pendingJobIdRef.current) return
+
+      const failedRunId = pendingRunIdRef.current
+      setStreamingText('')
+      setMessages((prev) => [
+        ...prev,
+        { id: `assistant-job-failed-${event.jobId}`, role: 'assistant', content: `Agent 执行失败：${event.error.message}` }
+      ])
+      setBusy(false)
+      pendingMessageIdRef.current = null
+      pendingJobIdRef.current = null
+      pendingRunIdRef.current = null
+      setPermissionRequest(null)
+      if (failedRunId) {
+        refreshRunTrace(failedRunId)
+      }
+    })
+  }, [refreshRunTrace])
+
   const handleApprovePermission = useCallback(async () => {
     const api = window.comicCanvas
     if (!api?.approveAgentTool || !permissionRequest) return

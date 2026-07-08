@@ -291,6 +291,36 @@ describe('M4 Chat UI', () => {
     expect(screen.queryByText('需要澄清。')).not.toBeInTheDocument()
   })
 
+  it('shows a visible assistant error when the pending Agent job fails', async () => {
+    const failedHandlers: Array<(event: { channel: 'job.failed'; jobId: string; error: { errorClass: string; message: string; retryable: boolean }; emittedAt: number }) => void> = []
+    const api = createApi({
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn().mockReturnValue(vi.fn()),
+      onJobFailed: vi.fn((handler: (event: { channel: 'job.failed'; jobId: string; error: { errorClass: string; message: string; retryable: boolean }; emittedAt: number }) => void) => {
+        failedHandlers.push(handler)
+        return vi.fn()
+      })
+    })
+
+    render(<ChatPanel api={api} onApplyPlan={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '你好' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    await waitFor(() => expect(api.sendCanvasChat).toHaveBeenCalled())
+    const handler = failedHandlers[0]
+    if (!handler) throw new Error('expected_job_failed_subscription')
+
+    handler({
+      channel: 'job.failed',
+      jobId: 'job-agent-1',
+      error: { errorClass: 'agent_run_failed', message: 'Agent runtime failed.', retryable: false },
+      emittedAt: 1
+    })
+
+    expect(await screen.findByText('Agent 执行失败：Agent runtime failed.')).toBeInTheDocument()
+  })
+
   it('uses the Tailwind cn helper and references the pc-client chat implementation baseline', () => {
     const source = readFileSync('desktop/src/renderer/src/chat/ChatPanel.tsx', 'utf8')
     const tasks = readFileSync('specs/milestone-execution-plan/tasks.md', 'utf8')

@@ -149,8 +149,8 @@ Rules:
 - `agent.permissionRequired` SHALL 在工具返回 `decision: 'ask'` 且主循环暂停等待 `agent.approveTool` 时发出。
 - 工具生命周期事件 SHALL 包含 `runId` 与 `messageId`，以便渲染层时间线能将其与聊天轮次关联。
 
-- `answer` 用于普通对话、编码/帮助类问题、时间/日期问题，以及不需要修改图的常识性回答。
-- `clarification` 用于问候语、低信息量请求，以及 Agent 在选择工具或创建节点前需要更多信息的含糊任务。
+- `answer` 用于问候语、普通对话、编码/帮助类问题、时间/日期问题，以及不需要修改图的常识性回答。
+- `clarification` 用于低信息量请求，以及 Agent 在选择工具或创建节点前需要更多信息的含糊任务。
 - `canvasPlan` 专用于显式的画布图/节点/工作流任务，并通过 canvas plan 路径交付。
 - 非 `canvasPlan` 的终态响应 SHALL 发出 `agent.responseReady`，且 SHALL NOT 为 `canvas.chatGetPlan` 存储 CanvasPlan。
 

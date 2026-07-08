@@ -92,19 +92,96 @@ function createDeferredResponse(): { promise: Promise<AgentResponse>; resolve: (
 }
 
 describe('M4 orchestrator AsyncGenerator runtime', () => {
-  it('treats low-signal greetings as clarification instead of creating canvas nodes', () => {
+  it('answers low-signal greetings without creating canvas nodes', () => {
     const response = createDefaultOrchestratorPlanner().proposePlan({
       runId: 'run-greeting',
       messageId: 'message-greeting',
-      message: 'hi',
+      message: '你好',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'answer',
+      summary: '用户只是打招呼或进行低负担寒暄。',
+      dropped: []
+    })
+    expect(response.type).toBe('answer')
+    if (response.type !== 'answer') throw new Error('expected_answer_response')
+    expect(response.text).toContain('你好')
+    expect(response.text).toContain('画布')
+  })
+
+  it('returns a visible search capability gap when no web search tool has run', () => {
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-search',
+      messageId: 'message-search',
+      message: '搜索一下今天 OpenAI 最新新闻',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'answer',
+      summary: '用户提出了依赖当前互联网信息的问题。',
+      dropped: ['web.search:not_executed']
+    })
+    expect(response.type).toBe('answer')
+    if (response.type !== 'answer') throw new Error('expected_search_gap_answer')
+    expect(response.text).toContain('联网搜索')
+    expect(response.text).toContain('没有执行')
+  })
+
+  it('does not turn current canvas read requests into generation plans in deterministic fallback', () => {
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-current-canvas-query',
+      messageId: 'message-current-canvas-query',
+      message: '查一下当前画布有哪些节点',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'answer',
+      summary: '用户请求读取当前画布状态。',
+      dropped: ['canvas.queryGraph:not_executed']
+    })
+    expect(response.type).toBe('answer')
+    if (response.type !== 'answer') throw new Error('expected_canvas_query_answer')
+    expect(response.text).toContain('当前画布')
+    expect(response.text).toContain('不会创建')
+  })
+
+  it('asks one key question for system capability design requests', () => {
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-planning',
+      messageId: 'message-planning',
+      message: '帮我设计当前系统的 Agent 能力',
       agentId: 'general-purpose',
     }) as AgentResponse
 
     expect(response).toMatchObject({
       type: 'clarification',
-      summary: '用户只是打招呼或尚未提出任务目标。',
-      question: expect.stringContaining('告诉我')
+      summary: '用户提出了系统能力或产品方案设计请求。',
+      missing: ['成功标准', '执行边界', '是否允许改代码']
     })
+    expect(response.type).toBe('clarification')
+    if (response.type !== 'clarification') throw new Error('expected_requirement_planning_clarification')
+    expect(response.question).toContain('优先')
+  })
+
+  it('asks for task type when the request is too vague to route safely', () => {
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-clarify',
+      messageId: 'message-clarify',
+      message: '帮我弄一下',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'clarification',
+      question: '请补充你希望我完成的任务类型：聊天、联网总结、需求分析，或操作当前画布。',
+      missing: ['任务类型', '目标节点或产物', '素材/模型/风格约束']
+    })
+    expect(response.type).toBe('clarification')
+    if (response.type !== 'clarification') throw new Error('expected_clarify_response')
   })
 
   it('answers ordinary non-canvas questions as an answer response without asking for canvas task details', () => {
@@ -326,7 +403,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         status: 'pending',
         trace: {
           intentAnalysis: {
-            kind: 'canvasPlan',
+            kind: 'canvasOperation',
             requirements: ['Generate image configuration nodes.']
           }
         }
@@ -429,7 +506,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
           agentId: 'orchestrator',
           planId: 'plan-agent-run-1',
           intentAnalysis: {
-            kind: 'canvasPlan',
+            kind: 'canvasOperation',
             executionMode: 'plan',
             requirements: ['Generate image configuration nodes.'],
             recommendedAgentId: 'canvas-orchestrator'
@@ -465,7 +542,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
           jobId: 'job-agent-run-1',
           trigger: 'canvasChat',
           intentAnalysis: {
-            kind: 'canvasPlan',
+            kind: 'canvasOperation',
             summary: '用户提出了明确的画布或生成工作流需求。',
             requirements: ['Generate image configuration nodes.'],
             missing: [],
@@ -528,10 +605,10 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       let modelTurns = 0
       const planner = createGatewayAgentPlanner({
         gateways: {
-          async invoke() {
+          invoke() {
             modelTurns += 1
             if (modelTurns > 1) {
-              return {
+              return Promise.resolve({
                 kind: 'text',
                 text: JSON.stringify({
                   kind: 'plan',
@@ -542,16 +619,16 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
                   question: null,
                   dropped: []
                 })
-              }
+              })
             }
 
-            return {
+            return Promise.resolve({
               kind: 'text',
               text: JSON.stringify({
                 type: 'toolCalls',
                 calls: [{ id: 'call-create', toolId: 'canvas.createNode', input: { type: 'text' } }]
               })
-            }
+            })
           }
         },
         tools: toolRuntime,
@@ -583,25 +660,29 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         errorClass: 'agent_tool_approval_required',
         message: 'Tool requires user approval before execution.'
       })
-      expect(events.getTerminalEvents()).toEqual([
-        {
-          channel: 'job.failed',
-          jobId: 'job-agent-approval-1',
-          error: expect.objectContaining({
-            errorClass: 'agent_tool_approval_required',
-            details: {
-              pendingApproval: {
-                callId: 'call-create',
-                toolId: 'canvas.createNode',
-                input: { type: 'text' },
-                reason: 'Creating nodes requires confirmation.',
-                requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
-              }
-            }
-          }),
-          emittedAt: 1_782_700_002_010
+      const terminalEvents = events.getTerminalEvents()
+      expect(terminalEvents).toHaveLength(1)
+      const terminalEvent = terminalEvents[0]
+      if (!terminalEvent || terminalEvent.channel !== 'job.failed') {
+        throw new Error('expected_failed_terminal_event')
+      }
+      expect(terminalEvent).toMatchObject({
+        channel: 'job.failed',
+        jobId: 'job-agent-approval-1',
+        emittedAt: 1_782_700_002_010
+      })
+      expect(terminalEvent.error).toMatchObject({
+        errorClass: 'agent_tool_approval_required',
+        details: {
+          pendingApproval: {
+            callId: 'call-create',
+            toolId: 'canvas.createNode',
+            input: { type: 'text' },
+            reason: 'Creating nodes requires confirmation.',
+            requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
+          }
         }
-      ])
+      })
       expect(runtime.getRun(ticket.runId)).toMatchObject({
         runId: 'run-approval-1',
         status: 'approval_required',
