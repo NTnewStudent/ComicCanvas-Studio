@@ -23,6 +23,8 @@ import { buildAgentContext } from '../knowledge/context-builder'
 import type { KnowledgeStore } from '../knowledge/store'
 import { buildSkillContext } from '../knowledge/skill-context'
 import type { SkillRegistry } from '../skills/registry'
+import { applyAgentEvent, createAssistantTurn } from '../../../../shared/chat-blocks'
+import type { ChatTurn } from '../../../../shared/chat-blocks'
 
 const DEFAULT_CHAT_AGENT_ID = 'general-purpose'
 const CANVAS_ORCHESTRATOR_AGENT_ID = 'canvas-orchestrator'
@@ -334,14 +336,37 @@ function weekdayName(date: Date): string {
   return ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'][date.getDay()] ?? '未知'
 }
 
+function dateWithOffset(days: number): Date {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date
+}
+
+function relativeDay(message: string): { label: string; offsetDays: number } | null {
+  if (/明天|tomorrow/iu.test(message)) {
+    return { label: '明天', offsetDays: 1 }
+  }
+
+  if (/昨天|yesterday/iu.test(message)) {
+    return { label: '昨天', offsetDays: -1 }
+  }
+
+  if (/今天|today/iu.test(message)) {
+    return { label: '今天', offsetDays: 0 }
+  }
+
+  return null
+}
+
 function generalQuestionResponse(message: string): AgentResponse {
   const normalized = message.trim().toLowerCase()
   let answer = '这是一个普通问题，我会按通用 Agent 模式回答；如果你希望我操作画布，请直接说明要创建的节点、素材或工作流。'
+  const day = relativeDay(normalized)
 
-  if (/今天星期几|今天周几|what day is it/iu.test(normalized)) {
-    answer = `今天是${weekdayName(new Date())}。`
-  } else if (/今天几号|今天日期|what date is it/iu.test(normalized)) {
-    answer = `今天是${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' }).format(new Date())}。`
+  if ((/(星期几|周几)/iu.test(normalized) || /what day (is it|is tomorrow|was yesterday)/iu.test(normalized)) && day) {
+    answer = `${day.label}是${weekdayName(dateWithOffset(day.offsetDays))}。`
+  } else if ((/几号|日期/iu.test(normalized) || /what date (is it|is tomorrow|was yesterday)/iu.test(normalized)) && day) {
+    answer = `${day.label}是${new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' }).format(dateWithOffset(day.offsetDays))}。`
   } else if (/现在几点|what time is it/iu.test(normalized)) {
     answer = `现在是${new Intl.DateTimeFormat('zh-CN', { timeStyle: 'short' }).format(new Date())}。`
   }
@@ -354,7 +379,20 @@ function generalQuestionResponse(message: string): AgentResponse {
   }
 }
 
-function smallTalkResponse(): AgentResponse {
+function assistantIdentityResponse(): AgentResponse {
+  return {
+    type: 'answer',
+    summary: '用户询问助手身份或能力边界。',
+    text: '我是 ComicCanvas Studio 里的通用 Agent 助手。你可以直接和我聊天，让我总结资料、分析需求、制定计划；当你要操作当前画布时，我会把任务交给画布专用 Agent，去创建节点、连接工作流并按规则执行。',
+    dropped: []
+  }
+}
+
+function smallTalkResponse(message: string): AgentResponse {
+  if (/你是谁|你是.*谁|你叫什么|介绍一下自己|自我介绍|你能做什么|你可以做什么|who\s*are\s*you|what\s*can\s*you\s*do/iu.test(message.trim())) {
+    return assistantIdentityResponse()
+  }
+
   return {
     type: 'answer',
     summary: '用户只是打招呼或进行低负担寒暄。',
@@ -690,7 +728,7 @@ export function createDefaultOrchestratorPlanner(): OrchestratorPlanner {
       const analysis = analyzeAgentIntent(message)
       const isCurrentCanvasRead = /(查一下|查询|查看|看看|列出|读取).*(当前画布|这个画布|本画布|当前工作流|这个工作流|本工作流|节点|连线).*(有哪些|多少|列表|数量|状态|关系)|(?:list|query|inspect|read).*(current\s*canvas|nodes|edges|workflow|graph)/iu.test(message)
 
-      if (analysis.kind === 'smallTalk') return smallTalkResponse()
+      if (analysis.kind === 'smallTalk') return smallTalkResponse(message)
       if (analysis.kind === 'generalChat') return generalQuestionResponse(message)
       if (analysis.kind === 'searchSummary') return searchUnavailableResponse()
       if (analysis.kind === 'requirementPlanning') return requirementPlanningResponse()
@@ -968,12 +1006,18 @@ async function consumeRunStream(
   let turnCount = 0
   let usageSummary: string | undefined
   let next = await stream.next()
+  // 与渲染层同源的块组装：终态序列化进 chat_messages.blocks_json 供会话恢复。
+  let persistedTurn: ChatTurn | null = null
 
   while (!next.done) {
     if (next.value.type === 'progress') {
       if (next.value.message.startsWith('用量：')) {
         usageSummary = next.value.message
       }
+      if (!persistedTurn) {
+        persistedTurn = createAssistantTurn({ id: 'pending', createdAt: Date.now() })
+      }
+      persistedTurn = applyAgentEvent(persistedTurn, { type: 'progress', message: next.value.message })
       options.events.emitProgress({
         channel: 'job.progress',
         jobId: options.jobId,
@@ -983,6 +1027,15 @@ async function consumeRunStream(
       })
     } else if (next.value.type === 'toolStarted') {
       turnCount += 1
+      if (!persistedTurn) {
+        persistedTurn = createAssistantTurn({ id: 'pending', createdAt: Date.now() })
+      }
+      persistedTurn = applyAgentEvent(persistedTurn, {
+        type: 'toolStarted',
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        inputSummary: next.value.inputSummary
+      })
       options.planEvents?.emitToolStarted({
         runId: next.value.runId,
         messageId: next.value.messageId,
@@ -991,6 +1044,15 @@ async function consumeRunStream(
         inputSummary: next.value.inputSummary
       })
     } else if (next.value.type === 'toolCompleted') {
+      if (persistedTurn) {
+        persistedTurn = applyAgentEvent(persistedTurn, {
+          type: 'toolCompleted',
+          callId: next.value.callId,
+          toolId: next.value.toolId,
+          status: next.value.status,
+          summary: next.value.summary
+        })
+      }
       options.planEvents?.emitToolCompleted({
         runId: next.value.runId,
         messageId: next.value.messageId,
@@ -1001,6 +1063,14 @@ async function consumeRunStream(
         summary: next.value.summary
       })
     } else if (next.value.type === 'permissionRequired') {
+      if (persistedTurn) {
+        persistedTurn = applyAgentEvent(persistedTurn, {
+          type: 'permissionRequired',
+          callId: next.value.callId,
+          toolId: next.value.toolId,
+          reason: next.value.reason
+        })
+      }
       options.planEvents?.emitPermissionRequired({
         runId: next.value.runId,
         messageId: next.value.messageId,
@@ -1014,9 +1084,22 @@ async function consumeRunStream(
     next = await stream.next()
   }
 
+  if (!persistedTurn) {
+    persistedTurn = createAssistantTurn({ id: 'pending', createdAt: Date.now() })
+  }
+
   if (next.value.response.type === 'canvasPlan' && next.value.plan && next.value.planId) {
     options.plansByMessage.set(next.value.messageId, next.value.plan)
     options.chatMessages?.updatePlan(next.value.messageId, JSON.stringify(next.value.plan), 'draft')
+    persistedTurn = applyAgentEvent(persistedTurn, { type: 'planReady', planId: next.value.planId })
+    options.chatMessages?.create({
+      id: `${next.value.messageId}-assistant`,
+      agentRunId: next.value.runId,
+      role: 'assistant',
+      content: next.value.plan.summary,
+      blocksJson: JSON.stringify(persistedTurn.blocks),
+      createdAt: Date.now()
+    })
     options.planEvents?.emitPlanReady({ messageId: next.value.messageId, planId: next.value.planId })
   } else {
     const response = next.value.response
@@ -1024,6 +1107,7 @@ async function consumeRunStream(
       throw new Error('agent_canvas_plan_missing_terminal_metadata')
     }
 
+    persistedTurn = applyAgentEvent(persistedTurn, { type: 'responseReady', response })
     const assistantText = responseText(response)
     if (assistantText) {
       options.chatMessages?.create({
@@ -1031,6 +1115,7 @@ async function consumeRunStream(
         agentRunId: next.value.runId,
         role: 'assistant',
         content: assistantText,
+        blocksJson: JSON.stringify(persistedTurn.blocks),
         createdAt: Date.now()
       })
     }
@@ -1329,7 +1414,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               id: chunk.id,
               text: chunk.text,
               citation: chunk.citation,
-              score: chunk.score
+              ...(chunk.score !== undefined ? { score: chunk.score } : {})
             }))
           : undefined
         const contextResult = buildAgentContext({

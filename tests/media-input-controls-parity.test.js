@@ -19,7 +19,7 @@ describe('Task 39 node asset picker and media input controls parity', () => {
     it('supports audio asset picker options and compact rendering', () => {
         const onSelect = vi.fn();
         render(_jsx(NodeAssetPickerModal, { mediaType: "audio", options: audioOptions, compact: true, onSelect: onSelect, onClose: vi.fn() }));
-        expect(screen.getByRole('dialog', { name: '选择音频资产' })).toBeInTheDocument();
+        expect(screen.getByRole('dialog', { name: '选择音频资产' })).toHaveClass('bg-bg-panel', 'shadow-pop');
         expect(screen.getByTestId('audio-asset-option-asset-audio-a')).toHaveAttribute('src', 'cc-asset://asset/asset-audio-a');
         expect(screen.getByTestId('node-asset-picker-grid')).toHaveAttribute('data-compact', 'true');
         fireEvent.click(screen.getByRole('button', { name: '选择音频资产 Voice take' }));

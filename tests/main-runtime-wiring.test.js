@@ -5,6 +5,25 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createMainProcessRuntime } from '../desktop/src/main/runtime';
 import { createStubProvider } from '../desktop/src/main/providers/stub.provider';
+/**
+ * Removes a test temp directory, retrying on Windows EPERM while better-sqlite3
+ * releases its file handle after `runtime.close()` returns.
+ * @param dir - Temp directory to remove.
+ * @throws Error when the directory still cannot be removed after all attempts.
+ */
+async function removeTempDirWithRetry(dir, attempts = 10, delayMs = 200) {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        try {
+            rmSync(dir, { recursive: true, force: true });
+            return;
+        }
+        catch (error) {
+            if (attempt === attempts)
+                throw error; // exhausted retries; surface the real EPERM
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+    }
+}
 function createFakeIpcMain() {
     const handlers = new Map();
     return {
@@ -122,7 +141,7 @@ describe('main process runtime wiring', () => {
         }
         finally {
             runtime?.close();
-            rmSync(tempDir, { recursive: true, force: true });
+            await removeTempDirWithRetry(tempDir);
         }
     });
     it('uses the built-in comic-drama planner through chat IPC when no external planner is injected', async () => {
@@ -174,7 +193,7 @@ describe('main process runtime wiring', () => {
         }
         finally {
             runtime?.close();
-            rmSync(tempDir, { recursive: true, force: true });
+            await removeTempDirWithRetry(tempDir);
         }
     });
     it('passes persisted project styles into runNode generation jobs', async () => {
@@ -262,7 +281,7 @@ describe('main process runtime wiring', () => {
         }
         finally {
             runtime?.close();
-            rmSync(tempDir, { recursive: true, force: true });
+            await removeTempDirWithRetry(tempDir);
         }
     });
     it('exposes persisted runNode job state through job.get before and after execution', async () => {
@@ -336,7 +355,7 @@ describe('main process runtime wiring', () => {
         finally {
             await runtime?.waitForIdleForTests();
             runtime?.close();
-            rmSync(tempDir, { recursive: true, force: true });
+            await removeTempDirWithRetry(tempDir);
         }
     });
     it('exposes persisted runNode jobs through filtered job.list IPC', async () => {
@@ -413,7 +432,7 @@ describe('main process runtime wiring', () => {
         finally {
             await runtime?.waitForIdleForTests();
             runtime?.close();
-            rmSync(tempDir, { recursive: true, force: true });
+            await removeTempDirWithRetry(tempDir);
         }
     });
     it('uses the requested workflow graph and default style when runNode includes workflowId', async () => {
@@ -488,7 +507,7 @@ describe('main process runtime wiring', () => {
         }
         finally {
             runtime?.close();
-            rmSync(tempDir, { recursive: true, force: true });
+            await removeTempDirWithRetry(tempDir);
         }
     });
     it('drains text polish runNode jobs as terminal text results', async () => {
@@ -536,7 +555,7 @@ describe('main process runtime wiring', () => {
         }
         finally {
             runtime?.close();
-            rmSync(tempDir, { recursive: true, force: true });
+            await removeTempDirWithRetry(tempDir);
         }
     });
     it('is installed by the Electron main entrypoint', () => {

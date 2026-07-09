@@ -1,5 +1,10 @@
 import { useNavigate } from 'react-router-dom'
 import { ChatPanel } from './ChatPanel'
+
+/**
+ * 独立聊天页 — 居中限宽列，ChatPanel 撑满可用高度。
+ * @returns 聊天页面元素。
+ */
 export default function ChatPage(): JSX.Element {
   const navigate = useNavigate()
 
@@ -9,8 +14,10 @@ export default function ChatPage(): JSX.Element {
   }
 
   return (
-    <div className="flex flex-col h-full p-4">
-      <ChatPanel onApplyPlan={handleApplyPlan} />
+    <div className="flex h-full min-h-0 justify-center p-4 md:p-6">
+      <div className="flex h-full min-h-0 w-full max-w-3xl flex-col">
+        <ChatPanel onApplyPlan={handleApplyPlan} />
+      </div>
     </div>
   )
 }

@@ -13,11 +13,13 @@ import { defineTool, ToolExecutionError, type ToolDefinition } from './runtime'
 export interface WebSearchToolsOptions {
   fetch?: typeof fetch
   endpoint?: string
+  timeoutMs?: number
   clock?: () => number
 }
 
 const networkPermission: ToolPermission = { kind: 'network', reason: 'Queries the public web for current information.' }
 const DEFAULT_ENDPOINT = 'https://www.bing.com/search?q='
+const DEFAULT_TIMEOUT_MS = 15_000
 
 const searchInputSchema = z.object({
   query: z.string().min(1),
@@ -142,6 +144,10 @@ function buildSearchUrl(endpoint: string, query: string): string {
   return endpoint.includes('{query}') ? endpoint.replaceAll('{query}', encodedQuery) : `${endpoint}${encodedQuery}`
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
 /**
  * Creates the controlled web search tool for Agent runs.
  * @param options - Optional fetch, endpoint, and clock overrides for tests.
@@ -151,6 +157,7 @@ function buildSearchUrl(endpoint: string, query: string): string {
 export function createWebSearchTools(options: WebSearchToolsOptions = {}): ToolDefinition<unknown, unknown>[] {
   const fetchImpl = options.fetch ?? fetch
   const endpoint = options.endpoint ?? DEFAULT_ENDPOINT
+  const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   const clock = options.clock ?? Date.now
 
   return [
@@ -169,12 +176,34 @@ export function createWebSearchTools(options: WebSearchToolsOptions = {}): ToolD
       async call(input) {
         const limit = input.limit ?? 5
         const url = buildSearchUrl(endpoint, input.query)
-        const response = await fetchImpl(url, {
-          headers: {
-            Accept: 'text/html,text/plain',
-            'User-Agent': 'ComicCanvasStudio/1.0 (+https://localhost)'
+        const controller = new AbortController()
+        const timeout = setTimeout(() => {
+          controller.abort()
+        }, timeoutMs)
+
+        let response: Response
+        try {
+          response = await fetchImpl(url, {
+            signal: controller.signal,
+            headers: {
+              Accept: 'text/html,text/plain',
+              'User-Agent': 'ComicCanvasStudio/1.0 (+https://localhost)'
+            }
+          })
+        } catch (error) {
+          if (controller.signal.aborted || isAbortError(error)) {
+            throw new ToolExecutionError({
+              code: 'web_search_timeout',
+              message: `Web search request timed out after ${timeoutMs}ms.`,
+              retryable: true,
+              details: { timeoutMs }
+            })
           }
-        })
+
+          throw error
+        } finally {
+          clearTimeout(timeout)
+        }
 
         if (!response.ok) {
           // Search endpoint failures are retryable network errors and should not leak raw response bodies.

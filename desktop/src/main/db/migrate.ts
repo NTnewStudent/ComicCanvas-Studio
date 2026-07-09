@@ -67,6 +67,10 @@ const migrations = [
   {
     id: '0013_workflow_template_metadata',
     fileName: '0013_workflow_template_metadata.sql'
+  },
+  {
+    id: '0014_chat_message_blocks',
+    fileName: '0014_chat_message_blocks.sql'
   }
 ] as const
 

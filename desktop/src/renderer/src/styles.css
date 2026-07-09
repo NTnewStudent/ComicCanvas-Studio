@@ -298,3 +298,144 @@
 .cc-stagger-3 { animation-delay: 150ms; }
 .cc-stagger-4 { animation-delay: 200ms; }
 .cc-stagger-5 { animation-delay: 250ms; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   聊天消息块 Markdown 排版（.cc-markdown — chat/blocks/TextBlock.tsx）
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.cc-markdown > :first-child { margin-top: 0; }
+.cc-markdown > :last-child { margin-bottom: 0; }
+
+.cc-markdown p {
+  margin: 0.35em 0;
+  line-height: 1.65;
+}
+
+.cc-markdown h1,
+.cc-markdown h2,
+.cc-markdown h3,
+.cc-markdown h4 {
+  margin: 0.8em 0 0.35em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--cc-text-primary);
+}
+
+.cc-markdown h1 { font-size: 1.25em; }
+.cc-markdown h2 { font-size: 1.15em; }
+.cc-markdown h3 { font-size: 1.05em; }
+.cc-markdown h4 { font-size: 1em; }
+
+.cc-markdown ul,
+.cc-markdown ol {
+  margin: 0.35em 0;
+  padding-left: 1.4em;
+}
+
+.cc-markdown li { margin: 0.15em 0; }
+.cc-markdown li > p { margin: 0; }
+
+.cc-markdown a {
+  color: var(--cc-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cc-markdown blockquote {
+  margin: 0.5em 0;
+  padding: 0.1em 0 0.1em 0.75em;
+  border-left: 2px solid var(--cc-border-secondary);
+  color: var(--cc-text-secondary);
+}
+
+.cc-markdown hr {
+  margin: 0.75em 0;
+  border: 0;
+  border-top: 1px solid var(--cc-border-subtle);
+}
+
+.cc-markdown table {
+  margin: 0.5em 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.cc-markdown th,
+.cc-markdown td {
+  padding: 0.3em 0.6em;
+  border: 1px solid var(--cc-border-subtle);
+  text-align: left;
+}
+
+.cc-markdown th {
+  background: var(--cc-bg-elevated);
+  color: var(--cc-text-primary);
+  font-weight: 600;
+}
+
+/* 行内代码 */
+.cc-markdown code {
+  font-family: var(--cc-font-mono);
+  font-size: 0.9em;
+  background: var(--cc-bg-elevated);
+  border: 1px solid var(--cc-border-subtle);
+  border-radius: var(--cc-radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+/* 代码块容器 — 覆盖行内样式 */
+.cc-markdown pre {
+  margin: 0.5em 0;
+  padding: 0.75em 0.9em;
+  background: var(--cc-bg-input);
+  border: 1px solid var(--cc-border-subtle);
+  border-radius: var(--cc-radius-lg);
+  overflow-x: auto;
+}
+
+.cc-markdown pre code {
+  display: block;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--cc-text-silver);
+}
+
+/*
+ * 代码高亮主题（rehype-highlight / highlight.js class）
+ * 配色引用 wf-neo design token，保持与整体主题一致。
+ */
+.cc-markdown .hljs-comment,
+.cc-markdown .hljs-quote { color: var(--cc-text-muted); font-style: italic; }
+
+.cc-markdown .hljs-keyword,
+.cc-markdown .hljs-selector-tag,
+.cc-markdown .hljs-tag { color: var(--cc-accent); }
+
+.cc-markdown .hljs-string,
+.cc-markdown .hljs-regexp,
+.cc-markdown .hljs-addition { color: var(--cc-success); }
+
+.cc-markdown .hljs-number,
+.cc-markdown .hljs-literal,
+.cc-markdown .hljs-symbol,
+.cc-markdown .hljs-bullet { color: var(--cc-warning); }
+
+.cc-markdown .hljs-title,
+.cc-markdown .hljs-function,
+.cc-markdown .hljs-name,
+.cc-markdown .hljs-section { color: var(--cc-info); }
+
+.cc-markdown .hljs-attr,
+.cc-markdown .hljs-attribute,
+.cc-markdown .hljs-variable,
+.cc-markdown .hljs-template-variable,
+.cc-markdown .hljs-type { color: var(--cc-text-silver); }
+
+.cc-markdown .hljs-deletion { color: var(--cc-danger); }
+
+.cc-markdown .hljs-emphasis { font-style: italic; }
+.cc-markdown .hljs-strong { font-weight: 600; }

@@ -34,6 +34,7 @@ import type { GatewayConfigInput, GatewayConfigView, GatewayFetchModelsRequest, 
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
 import type { CanvasPlan, PlanRunStep } from './plan'
 import type { AgentDefinition, AgentNonCanvasResponse, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
+import type { ChatTurn } from './chat-blocks'
 import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillListRequest } from './skills'
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
 import type { ToolDescriptor, ToolInvocationRecord, ToolPermission } from './tools'
@@ -133,6 +134,7 @@ export type AgentIpcChannel =
   | 'agent.getRun'
   | 'agent.approveTool'
   | 'agent.spawn'
+  | 'chat.history'
   | 'agent.responseReady'
   | 'agent.delta'
   | 'agent.toolStarted'
@@ -402,6 +404,7 @@ export interface IpcRequestMap {
   'agent.getRun': { runId: string }
   'agent.approveTool': AgentToolApprovalInput
   'agent.spawn': SpawnSubAgentInput
+  'chat.history': { workflowId: string }
   'skill.list': SkillListRequest
   'skill.reload': { skillId?: string }
   'skill.getMetadata': { skillId: string }
@@ -486,6 +489,7 @@ export interface IpcResponseMap {
   'agent.getRun': { runId: string; status: string; trace?: Record<string, unknown> }
   'agent.approveTool': AgentRunTicket | { errorClass: string; message: string; retryable: false }
   'agent.spawn': SpawnSubAgentResult
+  'chat.history': ChatTurn[]
   'skill.list': SkillDefinition[]
   'skill.reload': { reloadedSkillIds: string[] }
   'skill.getMetadata': SkillDefinition

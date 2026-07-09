@@ -3,7 +3,7 @@ import { z } from 'zod'
 
 import type { AgentDefinition } from '../shared/agents'
 import type { ToolDescriptor } from '../shared/tools'
-import { AgentLoopTerminalError, compactAgentMessages, createAgentContextLoop, filterAgentTools, runAgentContextLoop } from '../desktop/src/main/agent/context-loop'
+import { AgentLoopTerminalError, compactAgentMessages, createAgentContextLoop, filterAgentTools, resumeAgentContextLoopWithApproval, runAgentContextLoop } from '../desktop/src/main/agent/context-loop'
 import { createToolRuntime, defineTool } from '../desktop/src/main/tools/runtime'
 import type { CanvasPlan } from '../shared/plan'
 
@@ -173,9 +173,9 @@ describe('Agent context loop policy', () => {
   it('records denied model-requested tools without invoking ToolRuntime', async () => {
     let invoked = false
     const runtime = {
-      async invoke() {
+      invoke() {
         invoked = true
-        throw new Error('should_not_invoke')
+        return Promise.reject(new Error('should_not_invoke'))
       }
     }
     const loop = runAgentContextLoop({
@@ -196,7 +196,8 @@ describe('Agent context loop policy', () => {
       }
     })
 
-    for await (const _event of loop) {
+    for await (const event of loop) {
+      void event
       // Drain the loop so denied tool observations can feed the second turn.
     }
 
@@ -261,6 +262,110 @@ describe('Agent context loop policy', () => {
         requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
       }
     })
+    expect(caught instanceof AgentLoopTerminalError ? caught.pausedState?.messages.filter((message) => message.role === 'tool') : []).toEqual([])
+  })
+
+  it('executes remaining tool calls after an approved call before continuing the model loop', async () => {
+    const runtime = createToolRuntime({
+      idFactory: (() => {
+        let next = 0
+        return () => `invoke-approval-batch-${(next += 1)}`
+      })(),
+      clock: () => 1_783_700_000_150,
+      permissionPolicy: (tool) => tool.descriptor.id === 'canvas.createNode'
+        ? {
+            decision: 'ask',
+            decisionReason: 'Creating canvas nodes requires user approval.',
+            requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
+          }
+        : {
+            decision: 'allow',
+            decisionReason: 'Read is allowed.',
+            requiredPermissions: []
+          },
+      tools: [
+        defineTool({
+          descriptor: writeTool,
+          inputSchema: z.object({ type: z.string() }),
+          outputSchema: z.object({ nodeId: z.string() }),
+          renderToolUseMessage: () => 'Create node',
+          call() {
+            return { nodeId: 'node-approved' }
+          }
+        }),
+        defineTool({
+          descriptor: readTool,
+          inputSchema: z.object({}),
+          outputSchema: z.object({ nodeCount: z.number() }),
+          renderToolUseMessage: () => 'Query graph',
+          call() {
+            return { nodeCount: 1 }
+          }
+        })
+      ]
+    })
+    const initialLoop = runAgentContextLoop({
+      agent: agent({ permissionPolicy: { allowedPermissionKinds: ['canvas.write', 'canvas.read'], requireAskForDestructive: true } }),
+      message: '创建节点后读取画布',
+      trigger: 'manual',
+      availableTools: [writeTool, readTool],
+      tools: runtime,
+      traceId: 'trace-loop-approval-batch',
+      model: {
+        step() {
+          return {
+            type: 'toolCalls',
+            calls: [
+              { id: 'call-write', toolId: 'canvas.createNode', input: { type: 'text' } },
+              { id: 'call-read', toolId: 'canvas.queryGraph', input: {} }
+            ]
+          }
+        }
+      }
+    })
+    let caught: unknown
+
+    try {
+      for await (const event of initialLoop) {
+        void event
+      }
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(AgentLoopTerminalError)
+    if (!(caught instanceof AgentLoopTerminalError) || !caught.pausedState || !caught.pendingApproval) {
+      throw new Error('expected_paused_approval_state')
+    }
+
+    const resumed = resumeAgentContextLoopWithApproval({
+      agent: agent({ permissionPolicy: { allowedPermissionKinds: ['canvas.write', 'canvas.read'], requireAskForDestructive: true } }),
+      message: '创建节点后读取画布',
+      trigger: 'manual',
+      availableTools: [writeTool, readTool],
+      tools: runtime,
+      traceId: 'trace-loop-approval-batch-resume',
+      initialState: caught.pausedState,
+      approval: caught.pendingApproval,
+      approvedBy: { type: 'user', id: 'user-local' },
+      model: {
+        step(state) {
+          const toolCallIds = state.messages
+            .filter((message) => message.role === 'tool')
+            .map((message) => message.toolCallId)
+
+          expect(toolCallIds).toEqual(['call-write', 'call-read'])
+          return { type: 'plan', plan: finalPlan }
+        }
+      }
+    })
+    let next = await resumed.next()
+
+    while (!next.done) {
+      next = await resumed.next()
+    }
+
+    expect(next.value.response).toEqual({ type: 'canvasPlan', plan: finalPlan })
   })
 
   it('compacts older loop messages into a deterministic summary when over budget', () => {
@@ -345,7 +450,8 @@ describe('Agent context loop policy', () => {
     let caught: unknown
 
     try {
-      for await (const _event of loop) {
+      for await (const event of loop) {
+        void event
         // Drain until the max-turns terminal error is raised.
       }
     } catch (error) {

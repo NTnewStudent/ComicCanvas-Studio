@@ -34,6 +34,7 @@ import { createKnowledgeStore } from './knowledge/store'
 import { createPluginLoader } from './tools/plugin-loader'
 import { createWorkflowRepository } from './db/repositories/workflow.repo'
 import { registerAgentHandlers } from './ipc/agent.handler'
+import { registerChatHandlers } from './ipc/chat.handler'
 import { registerSkillHandlers } from './ipc/skill.handler'
 import { spawnSubAgent } from './agent/spawn-sub-agent'
 import { registerAssetHandlers } from './ipc/asset.handler'
@@ -276,10 +277,11 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       fallbackModelId: 'stub-text'
     })
     : createDefaultOrchestratorPlanner())
+  const chatMessages = createChatMessageRepository(db)
   const orchestrator = createOrchestratorRuntime({
     queue: autoQueue,
     events: jobEvents,
-    chatMessages: createChatMessageRepository(db),
+    chatMessages,
     planEvents,
     workflowId: 'default',
     planner,
@@ -391,6 +393,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       }, { runChild: childRunner })
     }
   })
+  registerChatHandlers(options.ipcMain, { chatMessages })
   registerSkillHandlers(options.ipcMain, { registry: skillRegistry, service: skillService, agents: agentRegistry })
   registerKnowledgeHandlers(options.ipcMain, { store: knowledgeStore, repo: knowledgeRepo })
   registerAuditHandlers(options.ipcMain, {

@@ -3,6 +3,36 @@
 本日志记录人类可读的项目进度快照。权威的需求与任务状态仍在 `specs/` 下维护；
 测试证据仍在 `docs/progress/test-report.md` 中维护。
 
+## 2026-07-08 - Agent 对话 UI + Harness 工程完善（方案 A，契约先行）
+
+Spec：`docs/superpowers/specs/2026-07-08-agent-chat-ui-harness-design.md`；
+计划：`docs/superpowers/plans/2026-07-08-agent-chat-ui-harness.md`。
+
+| 交付 | 说明 | 测试 |
+| :--- | :--- | :--- |
+| `shared/chat-blocks.ts` | 消息块契约 + 纯 reducer（主进程/渲染层同源组装） | chat-blocks 10/10 |
+| 块组件库 `chat/blocks/` | Markdown+代码高亮、思考折叠、工具块、内联权限、错误/用量 | chat-blocks-ui 9/9 |
+| `chat/store/chat.store.ts` | 统一 IPC 订阅 + Task 60 自动 apply + 运行快照兜底恢复 | chat-store 11/11 |
+| 会话持久化 | migration 0014 `blocks_json` + `chat.history` IPC + 恢复注水 | chat-history 3/3 |
+| `agent/compaction.ts` | L1 头尾裁剪 / L2 历史折叠 / L3 AutoCompact（降级硬截断） | agent-compaction 8/8 |
+| `agent/recovery.ts` | 网关退避重试、上下文超限反应式压缩、工具失败循环保护 | agent-recovery 6/6 |
+
+`ChatPanel` 与 `CanvasChatBox` 均切换为块渲染薄壳；权限批准从全屏 Modal 改为
+消息流内联块。新增 errorClass：`gateway_retry_exhausted`、`compaction_failed`、
+`tool_failure_loop`（已登记 `docs/api-contracts/agents.md`，含 `chat.history`
+契约与块契约）。Task 60 勾选为 `[x]`（自动化证据齐备；HDR-050/051 桌面人工
+验收仍为 post-gate 待办）。
+
+验证：`bun run typecheck` 通过；全量 `bun scripts/run-vitest.mjs run` 160 文件
+/ 619 测试全部通过。
+
+**同日追加 — 对话界面排版布局优化（REQ-100）**：`.cc-markdown` 聊天 Markdown
+排版 + wf-neo token 代码高亮主题（此前 rehype-highlight 只有 class 无配色）；
+`/chat` 页居中限宽全高列布局（消息区 flex-1 + 空态占位）；消息气泡角色化
+（用户 85%/assistant 94% 宽 + 不对称圆角）；画布浮窗消息区 46vh。验证：
+typecheck 通过，chat-blocks-ui/chat-ui/canvas-chatbox 28 测试通过。两项均已
+登记 backlog REQ-099/REQ-100。
+
 ## 2026-07-05 - M5 任务 41–47 收尾（RUEPE 自主队列）
 
 完成了 milestone-execution-plan 任务 41–47 以及基础交叉引用 24–27。

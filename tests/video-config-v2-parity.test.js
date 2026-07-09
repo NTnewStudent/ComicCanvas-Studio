@@ -2,7 +2,7 @@ import { jsx as _jsx } from "react/jsx-runtime";
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { ReactFlowProvider } from '@xyflow/react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import VideoConfigV2Node from '../desktop/src/renderer/src/canvas/nodes/VideoConfigV2Node';
 import { canvasStore } from '../desktop/src/renderer/src/canvas/store/canvas.store';
@@ -35,7 +35,7 @@ afterEach(() => {
     vi.restoreAllMocks();
     cleanup();
 });
-function renderVideoConfig() {
+function renderVideoConfig(onRun) {
     const data = {
         label: 'Video Config',
         promptOverride: '',
@@ -96,7 +96,7 @@ function renderVideoConfig() {
                 positionAbsoluteX: 0,
                 positionAbsoluteY: 0,
                 data
-            }) }) }));
+            }), ...(onRun ? { onRun } : {}) }) }));
 }
 describe('Task 31 videoConfigV2 parity', () => {
     it('shows prompt/model/style/duration/ratio/resolution controls', async () => {
@@ -128,11 +128,14 @@ describe('Task 31 videoConfigV2 parity', () => {
             url: 'cc-asset://asset/asset-video-result'
         });
     });
-    it('keeps generation async by exposing a run button without returning video data synchronously', () => {
-        renderVideoConfig();
+    it('delegates generation to the injected onRun callback instead of mutating state synchronously', () => {
+        const onRun = vi.fn();
+        renderVideoConfig(onRun);
         fireEvent.click(screen.getByTestId('video-v2-generate-btn'));
+        expect(onRun).toHaveBeenCalledWith('video-config');
+        // 组件不再自行写入 running 状态，真实调度交给 onRun（由 CanvasPage 的
+        // handleRunNode 负责设置 status 并调用 window.comicCanvas.runCanvasNode）。
         const node = canvasStore.getState().nodes.find((candidate) => candidate.id === 'video-config');
-        expect(node?.data).toMatchObject({ status: 'running', url: '' });
-        expect(within(screen.getByTestId('video-config-v2-toolbar')).getByRole('button', { name: /生成/u })).toBeDisabled();
+        expect(node?.data).toMatchObject({ status: 'done' });
     });
 });

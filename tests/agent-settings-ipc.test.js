@@ -69,12 +69,14 @@ describe('M5 custom Agent settings IPC', () => {
                 id: 'general-purpose',
                 source: 'builtin',
                 name: 'General Purpose',
-                allowedTools: ['canvas.queryGraph'],
+                allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search'],
                 gatewayPolicy: { allowedChannels: ['text'] },
+                permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'], requireAskForDestructive: true },
                 triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
             });
-            expect(general?.instructions).toContain('First understand the user message');
-            expect(general?.instructions).toContain('Never create canvas nodes for greetings');
+            expect(general?.instructions).toContain('general-purpose agent');
+            expect(general?.instructions).toContain('fs.read, fs.glob, fs.grep');
+            expect(general?.instructions).toContain('web.search');
             expect(canvasOrchestrator).toMatchObject({
                 id: 'canvas-orchestrator',
                 source: 'builtin',

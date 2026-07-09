@@ -210,6 +210,25 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
     expect(response.text).not.toContain('目标产物')
   })
 
+  it('answers tomorrow weekday questions locally', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-08T12:00:00+08:00'))
+
+    const response = createDefaultOrchestratorPlanner().proposePlan({
+      runId: 'run-tomorrow-weekday',
+      messageId: 'message-tomorrow-weekday',
+      message: '明天星期几',
+      agentId: 'general-purpose',
+    }) as AgentResponse
+
+    expect(response).toMatchObject({
+      type: 'answer',
+      summary: '用户提出了普通问题，应由通用 Agent 直接回答。',
+      text: '明天是星期四。',
+      dropped: []
+    })
+  })
+
   it('creates a direct text-node plan for simple text node requests without generation run steps', () => {
     const response = createDefaultOrchestratorPlanner().proposePlan({
       runId: 'run-direct-text',

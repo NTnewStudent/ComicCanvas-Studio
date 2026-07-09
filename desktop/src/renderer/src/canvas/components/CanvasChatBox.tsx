@@ -1,55 +1,38 @@
 /**
- * REQ-081 画布内 AI 对话（浮动 FAB + 展开面板）
+ * REQ-081 画布内 AI 对话（浮动 FAB + 展开面板）— 共享 chat store 薄壳。
  *
- * - FAB 按钮（48px 圆形，右下角）点击展开底部浮动面板
- * - 文本输入 + 发送，复用 canvas.chatSend IPC
- * - Agent @mention 路由
- * - Plan 结果预览（复用 PlanCard 模式）
- * - 自动执行 toggle
+ * - FAB 按钮（48px 圆形）点击展开底部浮动面板，可拖动
+ * - 消息块渲染、事件订阅与会话状态统一走 `chat/store/chat.store.ts`
+ * - Plan 预览、权限批准、思考块均由 `TurnView` 按块渲染
  * - nopan nodrag nowheel 避免 ReactFlow 事件冲突
  *
  * @see docs/api-contracts/canvas-plan.md
+ * @see docs/api-contracts/agents.md
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { AtSign, Bot, ChevronDown, Loader2, Send } from 'lucide-react'
+import { AtSign, Bot, Check, ChevronDown, Loader2, Send } from 'lucide-react'
+import { useStore } from 'zustand'
 
-import type { AgentDefinition, AgentResponse } from '../../../../../../shared/agents'
-import type { IpcEventMap } from '../../../../../../shared/ipc'
+import type { AgentDefinition } from '../../../../../../shared/agents'
 import type { CanvasPlan } from '../../../../../../shared/plan'
-import { formatAgentTraceSummary } from '../../chat/agent-trace-summary'
-import { applyAgentPlanOnReady } from '../../chat/agent/apply-agent-plan-on-ready'
-import { AgentPermissionModal, type AgentPermissionRequest } from '../../chat/agent/AgentPermissionModal'
-import { AgentRunStatusBar } from '../../chat/agent/AgentRunStatusBar'
-import { AgentSubAgentPanel, extractSubAgentItems } from '../../chat/agent/AgentSubAgentPanel'
-import { AgentToolTrace, type AgentToolTraceItem } from '../../chat/agent/AgentToolPill'
+import { TurnView } from '../../chat/blocks/TurnView'
 import { AgentMentionPopover } from '../../chat/AgentMentionPopover'
 import { PlanCard, type ApplyPlanOptions } from '../../chat/PlanCard'
+import { createChatStore, type ChatStoreApi } from '../../chat/store/chat.store'
 import { useMentionTrigger } from '../../chat/useMentionTrigger'
-
-/* ─── Types ─── */
-
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-}
 
 export interface CanvasChatBoxProps {
   open: boolean
   onToggle: () => void
   agentEnabled?: boolean
   onApplyPlan: (plan: CanvasPlan, options: ApplyPlanOptions) => void
+  /** 会话恢复用的 workflow 作用域。 */
+  workflowId?: string
 }
 
 const DEFAULT_AGENT_ID = 'general-purpose'
 const FAB_SIZE = 48
-
-function agentResponseMessage(response: AgentResponse): string | null {
-  if (response.type === 'answer') return response.text
-  if (response.type === 'clarification') return response.question
-  return null
-}
 
 function findDefaultAgent(agents: AgentDefinition[]): AgentDefinition | null {
   return agents.find((agent) => agent.id === DEFAULT_AGENT_ID && agent.enabled) ?? agents.find((agent) => agent.enabled) ?? null
@@ -62,22 +45,42 @@ function stripSelectedAgentMention(message: string, agent: AgentDefinition | nul
   return message.replace(new RegExp(`^@(?:${escapedName}|${escapedId})\\s+`, 'i'), '').trim()
 }
 
-/* ─── Component ─── */
+/**
+ * 从 preload bridge 构造 chat store 的 API 依赖面。
+ * @returns preload 可用时的 store API；bridge 缺失时返回 null。
+ */
+function storeApiFromPreload(): ChatStoreApi | null {
+  const api = window.comicCanvas
+  if (!api?.sendCanvasChat || !api.getCanvasPlan) {
+    return null
+  }
 
-const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: CanvasChatBoxProps): JSX.Element => {
+  return {
+    sendCanvasChat: (input) => api.sendCanvasChat(input),
+    getCanvasPlan: (input) => api.getCanvasPlan(input),
+    ...(api.approveAgentTool ? { approveAgentTool: (input) => api.approveAgentTool(input) } : {}),
+    ...(api.getAgentRun ? { getAgentRun: (input) => api.getAgentRun(input) } : {}),
+    ...(api.getChatHistory ? { getChatHistory: (input) => api.getChatHistory(input) } : {}),
+    ...(api.onCanvasPlanReady ? { onCanvasPlanReady: (handler) => api.onCanvasPlanReady(handler) } : {}),
+    ...(api.onAgentResponseReady ? { onAgentResponseReady: (handler) => api.onAgentResponseReady(handler) } : {}),
+    ...(api.onAgentDelta ? { onAgentDelta: (handler) => api.onAgentDelta(handler) } : {}),
+    ...(api.onAgentToolStarted ? { onAgentToolStarted: (handler) => api.onAgentToolStarted(handler) } : {}),
+    ...(api.onAgentToolCompleted ? { onAgentToolCompleted: (handler) => api.onAgentToolCompleted(handler) } : {}),
+    ...(api.onAgentPermissionRequired ? { onAgentPermissionRequired: (handler) => api.onAgentPermissionRequired(handler) } : {}),
+    ...(api.onJobProgress ? { onJobProgress: (handler) => api.onJobProgress(handler) } : {}),
+    ...(api.onJobCompleted ? { onJobCompleted: (handler) => api.onJobCompleted(handler) } : {}),
+    ...(api.onJobFailed ? { onJobFailed: (handler) => api.onJobFailed(handler) } : {}),
+  }
+}
+
+/**
+ * 画布浮动 Agent 对话框。
+ * @param props - 面板开合、Plan 应用回调与 workflow 作用域。
+ * @returns 浮动对话组件。
+ */
+const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, workflowId = 'default' }: CanvasChatBoxProps): JSX.Element => {
   const [input, setInput] = useState('')
   const [caretIndex, setCaretIndex] = useState(0)
-  const [autoExecute, setAutoExecute] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [thinking, setThinking] = useState<string[]>([])
-  const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
-  const [permissionRequest, setPermissionRequest] = useState<AgentPermissionRequest | null>(null)
-  const [permissionBusy, setPermissionBusy] = useState(false)
-  const [streamingText, setStreamingText] = useState<string>('')
-  const [runStartedAt, setRunStartedAt] = useState<number | null>(null)
-  const [runTrace, setRunTrace] = useState<Record<string, unknown> | null>(null)
-  const [plan, setPlan] = useState<CanvasPlan | null>(null)
   const [agents, setAgents] = useState<AgentDefinition[]>([])
   const [selectedAgent, setSelectedAgent] = useState<AgentDefinition | null>(null)
   const [activeAgentIndex, setActiveAgentIndex] = useState(0)
@@ -85,13 +88,41 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
   /** FAB 圆心 X（viewport px），初始居中；null 时先隐藏避免闪烁 */
   const [fabX, setFabX] = useState<number | null>(null)
   const dragRef = useRef({ active: false, startX: 0, startFabX: 0, moved: false })
-  const pendingMessageIdRef = useRef<string | null>(null)
-  const pendingJobIdRef = useRef<string | null>(null)
-  const pendingRunIdRef = useRef<string | null>(null)
-  const autoExecuteRef = useRef(autoExecute)
-  const selectedAgentRef = useRef(selectedAgent)
   const onApplyPlanRef = useRef(onApplyPlan)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    onApplyPlanRef.current = onApplyPlan
+  }, [onApplyPlan])
+
+  const handle = useMemo(() => {
+    const storeApi = storeApiFromPreload()
+    if (!storeApi) {
+      return null
+    }
+
+    return createChatStore({
+      api: storeApi,
+      applyPlan: (plan, options) => onApplyPlanRef.current(plan, options),
+    })
+  }, [])
+
+  const store = useMemo(() => handle?.store ?? createFallbackStore(), [handle])
+  const turns = useStore(store, (state) => state.turns)
+  const busy = useStore(store, (state) => state.busy)
+  const permissionBusy = useStore(store, (state) => state.permissionBusy)
+  const autoExecute = useStore(store, (state) => state.autoExecute)
+  const plansById = useStore(store, (state) => state.plansById)
+  const appliedPlanIds = useStore(store, (state) => state.appliedPlanIds)
+
+  useEffect(() => () => handle?.dispose(), [handle])
+
+  useEffect(() => {
+    if (handle) {
+      void handle.store.getState().restore(workflowId)
+    }
+  }, [handle, workflowId])
+
   const mentionTrigger = useMentionTrigger(input, caretIndex)
   const filteredAgents = useMemo(() => {
     const query = mentionTrigger?.query.toLowerCase() ?? ''
@@ -130,18 +161,6 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
     setActiveAgentIndex(0)
   }, [mentionTrigger?.query])
 
-  useEffect(() => {
-    autoExecuteRef.current = autoExecute
-  }, [autoExecute])
-
-  useEffect(() => {
-    selectedAgentRef.current = selectedAgent
-  }, [selectedAgent])
-
-  useEffect(() => {
-    onApplyPlanRef.current = onApplyPlan
-  }, [onApplyPlan])
-
   // Center the FAB horizontally on mount.
   useEffect(() => {
     setFabX(window.innerWidth / 2)
@@ -169,176 +188,7 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
     if (!wasDrag) onToggle()
   }, [onToggle])
 
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onJobProgress) return
-
-    return api.onJobProgress((event) => {
-      if (!pendingJobIdRef.current || event.jobId !== pendingJobIdRef.current || !event.message) return
-
-      const progressMessage = event.message
-      setThinking((prev) => (prev.includes(progressMessage) ? prev : [...prev, progressMessage]))
-    })
-  }, [])
-
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onAgentToolStarted) return
-
-    return api.onAgentToolStarted((event) => {
-      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
-      pendingRunIdRef.current = event.runId
-      setToolTrace((prev) => [
-        ...prev.filter((item) => item.callId !== event.callId),
-        {
-          callId: event.callId,
-          toolId: event.toolId,
-          status: 'running',
-          inputSummary: event.inputSummary
-        }
-      ])
-    })
-  }, [])
-
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onAgentToolCompleted) return
-
-    return api.onAgentToolCompleted((event) => {
-      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
-      setToolTrace((prev) => [
-        ...prev.filter((item) => item.callId !== event.callId),
-        {
-          callId: event.callId,
-          toolId: event.toolId,
-          status: event.status === 'completed' ? 'completed' : event.status === 'denied' ? 'denied' : 'failed',
-          summary: event.summary
-        }
-      ])
-    })
-  }, [])
-
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onAgentPermissionRequired) return
-
-    return api.onAgentPermissionRequired((event) => {
-      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
-      pendingRunIdRef.current = event.runId
-      setPermissionRequest({
-        runId: event.runId,
-        callId: event.callId,
-        toolId: event.toolId,
-        reason: event.reason
-      })
-      setBusy(true)
-    })
-  }, [])
-
-  /* ── Listen for plan ready events ── */
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onCanvasPlanReady) return
-
-    const unsub = api.onCanvasPlanReady((event: IpcEventMap['canvas.planReady']) => {
-      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
-
-      setBusy(true)
-      api
-        .getCanvasPlan({ messageId: event.messageId })
-        .then((nextPlan: CanvasPlan) => {
-          const applied = applyAgentPlanOnReady({
-            plan: nextPlan,
-            uiAutoExecute: autoExecuteRef.current,
-            agentAutoRun: selectedAgentRef.current?.triggerPolicy.autoRun,
-            applyPlan: (plan, options) => {
-              onApplyPlanRef.current(plan, options)
-              setPlan(null)
-            },
-          })
-
-          if (!applied) {
-            setPlan(nextPlan)
-          }
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `assistant-${event.planId}`,
-              role: 'assistant',
-              content: nextPlan.kind === 'clarify'
-                ? (nextPlan.question ?? '需要更多信息。')
-                : applied
-                  ? `计划已自动应用：${event.planId}`
-                  : `计划已就绪：${event.planId}`,
-            },
-          ])
-
-          if (applied) {
-            setThinking((prev) => (
-              prev.includes('计划已自动应用到画布并执行运行步骤。')
-                ? prev
-                : [...prev, '计划已自动应用到画布并执行运行步骤。']
-            ))
-          }
-        })
-        .catch(() => {
-          setMessages((prev) => [
-            ...prev,
-            { id: `assistant-error-${event.planId}`, role: 'assistant', content: '计划获取失败，请重试。' },
-          ])
-        })
-        .finally(() => {
-          const completedRunId = pendingRunIdRef.current
-          setBusy(false)
-          pendingMessageIdRef.current = null
-          pendingJobIdRef.current = null
-          pendingRunIdRef.current = null
-          setPermissionRequest(null)
-          if (completedRunId) {
-            refreshRunTrace(completedRunId)
-          }
-        })
-    })
-
-    return unsub
-  }, [])
-
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onAgentResponseReady) return
-
-    const unsub = api.onAgentResponseReady((event: IpcEventMap['agent.responseReady']) => {
-      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
-
-      const assistantText = agentResponseMessage(event.response)
-      if (!assistantText) return
-
-      setStreamingText('')
-      setMessages((prev) => [...prev, { id: `assistant-${event.runId}`, role: 'assistant', content: assistantText }])
-      setBusy(false)
-      refreshRunTrace(event.runId)
-      pendingMessageIdRef.current = null
-      pendingJobIdRef.current = null
-      pendingRunIdRef.current = null
-      setPermissionRequest(null)
-    })
-
-    return unsub
-  }, [])
-
-  // Accumulate streaming token deltas.
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onAgentDelta) return
-
-    return api.onAgentDelta((event) => {
-      if (!pendingMessageIdRef.current || event.messageId !== pendingMessageIdRef.current) return
-      setStreamingText((prev) => prev + event.delta)
-    })
-  }, [])
-
-  /* ── Auto-scroll messages ── */
+  /* ── Auto-scroll transcript ── */
   useEffect(() => {
     const element = scrollRef.current
     if (!element) return
@@ -347,85 +197,7 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
       return
     }
     element.scrollTop = element.scrollHeight
-  }, [messages, thinking])
-
-  // Show the transcript area when there's anything to show.
-  const showTranscript = messages.length > 0 || thinking.length > 0 || streamingText.length > 0 || toolTrace.length > 0
-  const subAgentItems = useMemo(() => extractSubAgentItems(toolTrace), [toolTrace])
-
-  const refreshRunTrace = useCallback((runId: string) => {
-    const api = window.comicCanvas
-    if (!api?.getAgentRun) {
-      return
-    }
-
-    void api.getAgentRun({ runId })
-      .then((run) => {
-        setRunTrace(run.trace ?? null)
-      })
-      .catch(() => {
-        setRunTrace(null)
-      })
-  }, [])
-
-  useEffect(() => {
-    const api = window.comicCanvas
-    if (!api?.onJobFailed) return
-
-    return api.onJobFailed((event) => {
-      if (!pendingJobIdRef.current || event.jobId !== pendingJobIdRef.current) return
-
-      const failedRunId = pendingRunIdRef.current
-      setStreamingText('')
-      setMessages((prev) => [
-        ...prev,
-        { id: `assistant-job-failed-${event.jobId}`, role: 'assistant', content: `Agent 执行失败：${event.error.message}` }
-      ])
-      setBusy(false)
-      pendingMessageIdRef.current = null
-      pendingJobIdRef.current = null
-      pendingRunIdRef.current = null
-      setPermissionRequest(null)
-      if (failedRunId) {
-        refreshRunTrace(failedRunId)
-      }
-    })
-  }, [refreshRunTrace])
-
-  const handleApprovePermission = useCallback(async () => {
-    const api = window.comicCanvas
-    if (!api?.approveAgentTool || !permissionRequest) return
-
-    setPermissionBusy(true)
-    try {
-      const result = await api.approveAgentTool({
-        runId: permissionRequest.runId,
-        callId: permissionRequest.callId,
-        approvedBy: 'canvas-user'
-      })
-      if ('errorClass' in result) {
-        throw new Error(result.message)
-      }
-      pendingRunIdRef.current = result.runId
-      pendingJobIdRef.current = result.jobId
-      setPermissionRequest(null)
-    } catch {
-      setMessages((prev) => [...prev, { id: `permission-error-${Date.now()}`, role: 'assistant', content: '工具批准失败，请重试。' }])
-      setPermissionRequest(null)
-      setBusy(false)
-    } finally {
-      setPermissionBusy(false)
-    }
-  }, [permissionRequest])
-
-  const handleDismissPermission = useCallback(() => {
-    setPermissionRequest(null)
-    setBusy(false)
-    pendingMessageIdRef.current = null
-    pendingJobIdRef.current = null
-    pendingRunIdRef.current = null
-    setMessages((prev) => [...prev, { id: `permission-denied-${Date.now()}`, role: 'assistant', content: '已拒绝工具调用，Agent 已停止。' }])
-  }, [])
+  }, [turns, busy])
 
   const selectAgent = useCallback((agent: AgentDefinition): void => {
     if (!mentionTrigger) {
@@ -440,51 +212,18 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
     setDismissedMentionValue(nextInput)
   }, [input, mentionTrigger])
 
-  /* ── Send message ── */
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback((): void => {
     const content = stripSelectedAgentMention(input.trim(), selectedAgent)
-    if (!agentEnabled || !content || busy) return
+    if (!agentEnabled || !content || busy || !handle) return
 
-    const api = window.comicCanvas
-    if (!api?.sendCanvasChat) return
-
-    setMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: 'user', content }])
+    void handle.store.getState().send({
+      message: content,
+      agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID,
+      agentAutoRun: selectedAgent?.triggerPolicy.autoRun,
+    })
     setInput('')
     setCaretIndex(0)
-    setBusy(true)
-    setPlan(null)
-    setThinking([])
-    setToolTrace([])
-    setPermissionRequest(null)
-    setStreamingText('')
-    setRunStartedAt(Date.now())
-    setRunTrace(null)
-
-    try {
-      const result = await api.sendCanvasChat({ message: content, agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID })
-      pendingMessageIdRef.current = result.messageId
-      pendingJobIdRef.current = result.jobId
-      pendingRunIdRef.current = result.runId
-      setThinking((prev) => [...prev, `Agent 已排队：${result.jobId}`])
-      if (api.getAgentRun) {
-        void api.getAgentRun({ runId: result.runId })
-          .then((run) => {
-            const lines = formatAgentTraceSummary(run.trace)
-            if (lines.length === 0) return
-
-            setThinking((prev) => {
-              const existing = new Set(prev)
-              const next = lines.filter((line) => !existing.has(line))
-              return next.length > 0 ? [...prev, ...next] : prev
-            })
-          })
-      }
-    } catch {
-      setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: 'assistant', content: '发送失败，请重试。' }])
-    } finally {
-      setBusy(false)
-    }
-  }, [agentEnabled, input, selectedAgent, busy])
+  }, [agentEnabled, busy, handle, input, selectedAgent])
 
   /* ── Keyboard: Enter sends, Shift+Enter newline ── */
   const handleKeyDown = useCallback(
@@ -517,29 +256,45 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
 
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault()
-        void handleSend()
+        handleSend()
       }
     },
     [activeAgent, filteredAgents.length, handleSend, input, mentionOpen, selectAgent],
   )
 
-  /* ── Apply plan callback ── */
-  const handleApplyPlan = useCallback(
-    (p: CanvasPlan, options: ApplyPlanOptions) => {
-      onApplyPlan(p, options)
-      setPlan(null)
-    },
-    [onApplyPlan],
-  )
+  const renderPlan = useCallback((planId: string): JSX.Element => {
+    const plan = plansById[planId]
+
+    if (!plan) {
+      return <p className="m-0 rounded-lg bg-bg-card px-3 py-2 text-[13px] text-text-secondary">计划已就绪：{planId}</p>
+    }
+
+    if (appliedPlanIds.includes(planId)) {
+      return (
+        <p className="m-0 inline-flex items-center gap-1.5 rounded-lg bg-bg-card px-3 py-2 text-[13px] text-text-secondary">
+          <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden="true" />
+          已应用到画布
+        </p>
+      )
+    }
+
+    return (
+      <PlanCard
+        plan={plan}
+        autoExecute={autoExecute}
+        onAutoExecuteChange={(value) => handle?.store.getState().setAutoExecute(value)}
+        onApplyPlan={(appliedPlan, options) => {
+          onApplyPlanRef.current(appliedPlan, options)
+          handle?.store.getState().markPlanApplied(planId)
+        }}
+      />
+    )
+  }, [appliedPlanIds, autoExecute, handle, plansById])
+
+  const showTranscript = turns.length > 0 || busy
 
   return (
     <div className="nopan nodrag nowheel pointer-events-none fixed inset-0 z-30">
-      <AgentPermissionModal
-        request={permissionRequest}
-        busy={permissionBusy}
-        onApprove={() => { void handleApprovePermission() }}
-        onDismiss={handleDismissPermission}
-      />
       {/* ── FAB 按钮：底部居中、可拖动（参考 hjwall） ── */}
       <div
         className="pointer-events-auto fixed bottom-6 z-40"
@@ -579,20 +334,6 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
         }`}
         style={{ transitionTimingFunction: 'cubic-bezier(0.34,1.56,0.64,1)' }}
       >
-        {/* Plan 预览卡片 */}
-        <AgentSubAgentPanel items={subAgentItems} />
-        <AgentToolTrace items={toolTrace} />
-        {plan && (
-          <div className="mb-2">
-            <PlanCard
-              plan={plan}
-              autoExecute={autoExecute}
-              onAutoExecuteChange={setAutoExecute}
-              onApplyPlan={handleApplyPlan}
-            />
-          </div>
-        )}
-
         {/* 主面板 */}
         <div className="overflow-hidden rounded-2xl border border-border-primary bg-bg-panel shadow-pop">
           {/* Header */}
@@ -620,54 +361,27 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
             </button>
           </div>
 
-          {/* 对话历史 */}
+          {/* 对话历史（块渲染） */}
           {showTranscript && (
             <div
               ref={scrollRef}
-              className="mx-4 mt-2 flex max-h-[200px] flex-col gap-2 overflow-y-auto rounded-lg bg-bg-input/50 p-3"
+              className="mx-4 mt-2 flex max-h-[46vh] flex-col gap-3 overflow-y-auto rounded-lg bg-bg-input/50 p-3"
             >
-              {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-xl px-3 py-1.5 text-[13px] ${
-                      msg.role === 'user'
-                        ? 'bg-brand text-bg-base'
-                        : 'bg-bg-card text-text-base'
-                    }`}
-                  >
-                    <span className="whitespace-pre-wrap break-all">{msg.content}</span>
-                  </div>
-                </div>
+              {turns.map((turn) => (
+                <TurnView
+                  key={turn.id}
+                  turn={turn}
+                  renderPlan={renderPlan}
+                  permissionBusy={permissionBusy}
+                  onApprovePermission={(callId) => { void handle?.store.getState().approvePermission(callId) }}
+                  onDenyPermission={(callId) => handle?.store.getState().denyPermission(callId)}
+                />
               ))}
-              {thinking.length > 0 && (
-                <details className="rounded-xl bg-bg-card/60 px-3 py-1.5 text-[12px] text-text-muted">
-                  <summary className="cursor-pointer select-none text-text-secondary">思考过程（{thinking.length}）</summary>
-                  <div className="mt-1.5 space-y-1">
-                    {thinking.map((line, index) => (
-                      <p key={`think-${index}`} className="m-0 whitespace-pre-wrap break-all font-mono leading-relaxed">
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                </details>
-              )}
-              {/* Live streaming partial text */}
-              {streamingText.length > 0 && (
-                <div className="flex justify-start">
-                  <div className="max-w-[80%] rounded-xl bg-bg-card px-3 py-1.5 text-[13px] text-text-base whitespace-pre-wrap break-all">
-                    {streamingText}
-                    <span className="ml-1 inline-block h-3.5 w-0.5 animate-pulse bg-brand" aria-hidden="true" />
-                  </div>
-                </div>
-              )}
               {busy && (
                 <div className="flex justify-start">
                   <div className="flex items-center gap-2 rounded-xl bg-bg-card px-3 py-1.5 text-[13px] text-text-secondary">
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />
-                    <span>AI 编排中…</span>
+                    <span>AI 思考中…</span>
                   </div>
                 </div>
               )}
@@ -707,7 +421,7 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
               {/* 自动执行开关 */}
               <button
                 type="button"
-                onClick={() => setAutoExecute((v) => !v)}
+                onClick={() => handle?.store.getState().setAutoExecute(!autoExecute)}
                 disabled={!agentEnabled}
                 className="flex items-center gap-2"
                 title="自动执行"
@@ -729,7 +443,7 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
               {/* 发送按钮 */}
               <button
                 type="button"
-                onClick={() => void handleSend()}
+                onClick={handleSend}
                 disabled={!canSend}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-bg-base transition hover:bg-brand-hover disabled:opacity-50"
                 title="发送"
@@ -741,12 +455,26 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan }: Can
                 )}
               </button>
             </div>
-            <AgentRunStatusBar busy={busy} runStartedAt={runStartedAt} trace={runTrace} />
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+/** 无 preload bridge（如纯组件测试）时的惰性空 store 单例。 */
+let fallbackStoreSingleton: ReturnType<typeof createChatStore>['store'] | null = null
+
+function createFallbackStore(): ReturnType<typeof createChatStore>['store'] {
+  if (!fallbackStoreSingleton) {
+    fallbackStoreSingleton = createChatStore({
+      api: {
+        sendCanvasChat: () => Promise.reject(new Error('preload bridge unavailable')),
+        getCanvasPlan: () => Promise.reject(new Error('preload bridge unavailable')),
+      },
+    }).store
+  }
+  return fallbackStoreSingleton
 }
 
 export default CanvasChatBox

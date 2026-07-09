@@ -495,4 +495,118 @@ describe('REQ-096 migrated node run dispatch', () => {
             },
         });
     });
+    it('enqueues imageConfigV2 nodes through the runtime snapshot with composed prompt, style, and ratio parameters (R4.4)', async () => {
+        const enqueued = [];
+        const { ipcMain, handlers } = createFakeIpcMain();
+        registerCanvasHandlers(ipcMain, {
+            currentUserId: 'user-1',
+            graphStore: {
+                getGraph: () => ({
+                    nodes: [
+                        {
+                            id: 'text-1',
+                            type: 'text',
+                            position: { x: 0, y: 0 },
+                            data: { label: 'Beat', content: 'rainy hero key art' },
+                        },
+                        {
+                            id: 'image-config-1',
+                            type: 'imageConfigV2',
+                            position: { x: 260, y: 0 },
+                            data: {
+                                label: 'Image Config',
+                                promptOverride: '',
+                                modelId: 'sd-xl',
+                                orientation: 'landscape',
+                                ratio: '16:9',
+                                status: 'idle',
+                            },
+                        },
+                    ],
+                    edges: [
+                        { id: 'edge-1', source: 'text-1', target: 'image-config-1', data: { edgeType: 'promptOrder', createdAt: 1 } },
+                    ],
+                    viewport: { x: 0, y: 0, zoom: 1 },
+                }),
+            },
+            queue: {
+                enqueue(input) {
+                    enqueued.push(input);
+                    return { jobId: 'job-image-config-1', status: 'pending', createdAt: 1 };
+                },
+            },
+        });
+        await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'image-config-1' })).resolves.toEqual({
+            jobId: 'job-image-config-1',
+            status: 'pending',
+            createdAt: 1,
+        });
+        expect(enqueued).toHaveLength(1);
+        expect(enqueued[0]).toMatchObject({
+            type: 'canvas.generateImage',
+            targetId: 'image-config-1',
+            requestedBy: { type: 'user', id: 'user-1' },
+            payload: {
+                nodeId: 'image-config-1',
+                nodeType: 'imageConfigV2',
+                prompt: 'rainy hero key art',
+                modelKey: 'sd-xl',
+                parameters: { orientation: 'landscape', ratio: '16:9' },
+            },
+        });
+    });
+    it('enqueues videoConfigV2 nodes through the runtime snapshot with duration/resolution parameters (R4.4)', async () => {
+        const enqueued = [];
+        const { ipcMain, handlers } = createFakeIpcMain();
+        registerCanvasHandlers(ipcMain, {
+            currentUserId: 'user-1',
+            graphStore: {
+                getGraph: () => ({
+                    nodes: [
+                        {
+                            id: 'video-config-1',
+                            type: 'videoConfigV2',
+                            position: { x: 0, y: 0 },
+                            data: {
+                                label: 'Video Config',
+                                promptOverride: 'slow push through rainy alley',
+                                modelId: 'stub-video',
+                                orientation: 'landscape',
+                                ratio: '16:9',
+                                duration: 8,
+                                resolution: '720p',
+                                status: 'idle',
+                            },
+                        },
+                    ],
+                    edges: [],
+                    viewport: { x: 0, y: 0, zoom: 1 },
+                }),
+            },
+            queue: {
+                enqueue(input) {
+                    enqueued.push(input);
+                    return { jobId: 'job-video-config-1', status: 'pending', createdAt: 1 };
+                },
+            },
+        });
+        await expect(handlers.get('canvas.runNode')?.({}, { nodeId: 'video-config-1' })).resolves.toEqual({
+            jobId: 'job-video-config-1',
+            status: 'pending',
+            createdAt: 1,
+        });
+        expect(enqueued).toHaveLength(1);
+        expect(enqueued[0]).toMatchObject({
+            type: 'canvas.generateVideo',
+            targetId: 'video-config-1',
+            requestedBy: { type: 'user', id: 'user-1' },
+            payload: {
+                nodeId: 'video-config-1',
+                nodeType: 'videoConfigV2',
+                prompt: 'slow push through rainy alley',
+                modelKey: 'stub-video',
+                parameters: { orientation: 'landscape', ratio: '16:9', duration: 8, resolution: '720p' },
+            },
+        });
+    });
 });

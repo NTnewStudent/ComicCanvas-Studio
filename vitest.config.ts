@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 
 export default defineConfig({
   resolve: {
+    extensions: ['.ts', '.tsx', '.mts', '.mjs', '.js', '.jsx', '.json'],
     alias: {
       '@xyflow/react': resolve(import.meta.dirname, 'desktop/node_modules/@xyflow/react'),
       'react-router-dom': resolve(import.meta.dirname, 'desktop/node_modules/react-router-dom'),

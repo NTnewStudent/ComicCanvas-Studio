@@ -104,6 +104,81 @@ describe('M4 chat plan IPC', () => {
             rmSync(tempDir, { recursive: true, force: true });
         }
     });
+    it('emits responseReady without storing a CanvasPlan for ordinary Agent answers', async () => {
+        const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-chat-response-'));
+        const dbPath = join(tempDir, 'chat-response.sqlite');
+        migrateDatabaseAtPath(dbPath);
+        const db = openDatabaseAtPath(dbPath);
+        try {
+            const now = 1_783_000_000_000;
+            const jobs = createJobRepository(db);
+            const chatMessages = createChatMessageRepository(db);
+            const jobEvents = createJobEventBus();
+            const planEvents = createCanvasPlanEventBus();
+            const queue = createJobQueue({
+                jobs,
+                idFactory: () => 'job-agent-answer',
+                clock: () => now
+            });
+            const runtime = createOrchestratorRuntime({
+                queue,
+                events: jobEvents,
+                chatMessages,
+                planEvents,
+                clock: () => now + 10,
+                workflowId: 'workflow-1',
+                idFactory: (prefix) => `${prefix}-answer`,
+                planIdFactory: () => 'plan-should-not-exist',
+                planner: {
+                    proposePlan() {
+                        return {
+                            type: 'answer',
+                            summary: '用户提出了普通问题，应由通用 Agent 直接回答。',
+                            text: '今天是星期二。',
+                            dropped: []
+                        };
+                    }
+                }
+            });
+            const worker = createJobWorker({
+                jobs,
+                events: jobEvents,
+                leaseOwner: 'agent-worker',
+                clock: () => now + 20,
+                handlers: {
+                    'agent.run': runtime.createJobHandler()
+                }
+            });
+            const ticket = runtime.chatSend({ message: '今天星期几', agentId: 'general-purpose', requestedBy: 'user-1' });
+            expect(ticket).toEqual({ runId: 'run-answer', jobId: 'job-agent-answer', messageId: 'message-answer', status: 'pending' });
+            expect(await worker.runNext()).toBe('job-agent-answer');
+            expect(runtime.getPlan('message-answer')).toBeNull();
+            expect(chatMessages.getById('message-answer')?.planJson).toBeNull();
+            expect(chatMessages.getById('message-answer-assistant')).toMatchObject({
+                id: 'message-answer-assistant',
+                agentRunId: 'run-answer',
+                role: 'assistant',
+                content: '今天是星期二。'
+            });
+            expect(planEvents.getPlanReadyEvents()).toEqual([]);
+            expect(planEvents.getResponseReadyEvents()).toEqual([
+                {
+                    runId: 'run-answer',
+                    messageId: 'message-answer',
+                    response: {
+                        type: 'answer',
+                        summary: '用户提出了普通问题，应由通用 Agent 直接回答。',
+                        text: '今天是星期二。',
+                        dropped: []
+                    }
+                }
+            ]);
+        }
+        finally {
+            db.close();
+            rmSync(tempDir, { recursive: true, force: true });
+        }
+    });
     it('fans canvas.planReady events out to live renderer windows', () => {
         const live = createWindow();
         const closed = createWindow(true);
@@ -115,9 +190,31 @@ describe('M4 chat plan IPC', () => {
         expect(events.getPlanReadyEvents()).toEqual([planReady]);
         expect(() => events.emitPlanReady(planReady)).toThrow('canvas_plan_ready_duplicate');
     });
+    it('fans agent.responseReady events out to live renderer windows', () => {
+        const live = createWindow();
+        const closed = createWindow(true);
+        const events = createIpcCanvasPlanEventBus(() => [live, closed]);
+        const responseReady = {
+            runId: 'run-1',
+            messageId: 'message-1',
+            response: {
+                type: 'answer',
+                summary: '普通问答',
+                text: '今天是星期二。',
+                dropped: []
+            }
+        };
+        events.emitResponseReady(responseReady);
+        expect(live.webContents.send).toHaveBeenCalledWith('agent.responseReady', responseReady);
+        expect(closed.webContents.send).not.toHaveBeenCalled();
+        expect(events.getResponseReadyEvents()).toEqual([responseReady]);
+        expect(() => events.emitResponseReady(responseReady)).toThrow('agent_response_ready_duplicate');
+    });
     it('exposes a renderer-safe planReady subscription through preload', () => {
         const preload = readFileSync('desktop/src/preload/index.ts', 'utf8');
         expect(preload).toContain('onCanvasPlanReady');
         expect(preload).toContain("subscribeMain('canvas.planReady'");
+        expect(preload).toContain('onAgentResponseReady');
+        expect(preload).toContain("subscribeMain('agent.responseReady'");
     });
 });

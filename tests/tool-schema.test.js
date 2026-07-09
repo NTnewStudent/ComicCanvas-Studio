@@ -1,0 +1,32 @@
+import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import { enrichToolDescriptorWithInputSchema, zodInputSchemaToJson } from '../desktop/src/main/lib/tool-schema';
+describe('tool-schema', () => {
+    it('exports Zod input schemas as JSON Schema with field descriptions', () => {
+        const schema = z.object({
+            nodeId: z.string().describe('Canvas node ID.'),
+            offset: z.number().optional().describe('Optional offset.')
+        });
+        const json = zodInputSchemaToJson(schema);
+        expect(json.type).toBe('object');
+        expect(json.properties.nodeId?.description).toBe('Canvas node ID.');
+    });
+    it('enriches tool descriptors for tool.list responses', () => {
+        const descriptor = {
+            id: 'canvas.queryGraph',
+            name: 'Query Canvas Graph',
+            description: 'Reads graph.',
+            category: 'canvas',
+            owner: { kind: 'builtin', id: 'core' },
+            inputSchemaRef: 'canvas.queryGraph.input',
+            outputSchemaRef: 'canvas.graph.output',
+            permissions: [],
+            concurrency: 'readonly',
+            enabled: true
+        };
+        const enriched = enrichToolDescriptorWithInputSchema(descriptor, z.object({}));
+        expect(enriched.inputParametersJsonSchema).toMatchObject({
+            type: 'object'
+        });
+    });
+});

@@ -30,6 +30,9 @@ const currentCanvasActionPattern = /查一下|查询|查看|看看|列出|读取
 const currentCanvasTopologyQueryPattern = /(查一下|查询|查看|看看|列出|读取).*(节点|连线|工作流).*(有哪些|多少|列表|数量|状态|关系)|(?:list|query|inspect|read).*(nodes|edges|workflow|graph)/iu
 const vagueRequestPattern = /^(帮我弄一下|帮我做一下|处理一下|搞一下|随便做点|做点东西|弄个东西|make\s*something|do\s*something)$/iu
 const greetingPattern = /^(hi|hello|hey|哈喽|你好|您好|嗨|在吗|在不在|早|早上好|晚上好|下午好)$/iu
+/** 口语化寒暄变体（如「你好啊」「嗨呀」），normalize 后匹配。 */
+const casualGreetingPattern = /^(你好|您好|嗨|哈喽|hello|hi|hey|在吗|在不在)(啊|呀|哦|呢|嘛|哈)?$/iu
+const assistantIdentityPattern = /^(你是谁|你是.*谁|你叫什么|介绍一下自己|自我介绍|你能做什么|你可以做什么|who\s*are\s*you|what\s*can\s*you\s*do)$/iu
 const explicitLookupPattern = /查一下|搜索|联网|search|look\s*up/iu
 const currentInfoSignalPattern = /最新|刚刚|新闻|价格|行情|排名|latest|news|price/iu
 const currentTimeQuestionPattern = /^(what\s*time\s*is\s*it|what\s*date\s*is\s*it)$/iu
@@ -133,13 +136,26 @@ export function analyzeAgentIntent(message: string): AgentIntentAnalysis {
     }
   }
 
-  if (greetingPattern.test(normalized)) {
+  if (greetingPattern.test(normalized) || casualGreetingPattern.test(normalized)) {
     return {
       kind: 'smallTalk',
       summary: '用户只是打招呼或尚未提出任务目标。',
       requirements: ['Answer the greeting conversationally.'],
       missing: [],
       localCapabilities: ['通用问答'],
+      recommendedAgentId: 'general-purpose',
+      executionMode: 'direct',
+      complexity: 'low'
+    }
+  }
+
+  if (assistantIdentityPattern.test(normalized)) {
+    return {
+      kind: 'smallTalk',
+      summary: '用户询问助手身份或能力边界。',
+      requirements: ['Answer the assistant identity question conversationally.'],
+      missing: [],
+      localCapabilities: ['通用问答', '能力介绍', '画布任务委派'],
       recommendedAgentId: 'general-purpose',
       executionMode: 'direct',
       complexity: 'low'

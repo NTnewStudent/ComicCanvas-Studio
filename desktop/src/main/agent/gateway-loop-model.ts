@@ -20,9 +20,11 @@ import {
 } from '../lib/agent-gateway-tools'
 import type { AgentContextLoopState, AgentLoopEvent, AgentLoopModel, AgentLoopStepResult, AgentToolCall, RunAgentContextLoopInput } from './context-loop'
 import { resumeAgentContextLoopWithApproval, runAgentContextLoop } from './context-loop'
+import { analyzeAgentIntent } from './intent-analysis'
 import { createDefaultOrchestratorPlanner, type OrchestratorPlanner, type OrchestratorPlannerDraft } from './orchestrator'
 import { sanitizePlan } from './sanitize-plan'
 import { estimateCostUsd } from './cost'
+import { GatewayRetryExhaustedError, isContextOverflowError, withGatewayRetry } from './recovery'
 
 interface GatewayAgentLoopModelOptions {
   gateways: Pick<GatewayRegistry, 'invoke'>
@@ -35,8 +37,15 @@ interface GatewayAgentLoopModelOptions {
   /** Optional fallback gateway+model tried once when the primary call fails. */
   fallbackGatewayId?: string
   fallbackModelId?: string
+  /** Resolved type of the fallback gateway, used to block text fallback to stubs. */
+  fallbackGatewayType?: GatewayType
   /** Optional streaming token delta callback forwarded to the provider. */
   onDelta?: (delta: string) => void
+}
+
+interface EffectiveTextModel {
+  gatewayId?: string
+  modelId?: string
 }
 
 export interface GatewayAgentPlannerOptions {
@@ -211,6 +220,113 @@ async function localFallbackResponse(input: Parameters<OrchestratorPlanner['prop
   const local = createDefaultOrchestratorPlanner().proposePlan(input)
   const value = await resolvePlannerTerminal(local)
   return 'type' in value ? value : { type: 'canvasPlan', plan: sanitizePlan(value) }
+}
+
+function isDeterministicLocalQuestion(message: string): boolean {
+  return /(?:今天|明天|昨天).*(?:星期几|周几|几号|日期)|现在几点|what day (?:is it|is tomorrow|was yesterday)|what date (?:is it|is tomorrow|was yesterday)|what time is it/iu.test(message.trim())
+}
+
+function localFirstProgressMessage(message: string): string | null {
+  if (analyzeAgentIntent(message).kind === 'smallTalk') {
+    if (/你是谁|你是.*谁|你叫什么|介绍一下自己|自我介绍|你能做什么|你可以做什么|who\s*are\s*you|what\s*can\s*you\s*do/iu.test(message.trim())) {
+      return '识别为身份问答，使用本地确定性回复'
+    }
+
+    return '识别为寒暄，使用本地确定性回复'
+  }
+
+  if (isDeterministicLocalQuestion(message)) {
+    return '识别为本地确定性问题，使用本地回复'
+  }
+
+  return null
+}
+
+function shouldUseLocalFirstResponse(message: string): boolean {
+  return localFirstProgressMessage(message) !== null
+}
+
+function localFirstProgress(message: string): string {
+  return localFirstProgressMessage(message) ?? '使用本地确定性回复'
+}
+
+function isStubGateway(options: Pick<GatewayAgentPlannerOptions, 'resolveGatewayType'>, gatewayId: string | undefined): boolean {
+  return gatewayId === 'stub-main' || (gatewayId !== undefined && options.resolveGatewayType?.(gatewayId) === 'stub')
+}
+
+function textModelSelection(gatewayId: string | undefined, modelId: string | undefined): EffectiveTextModel {
+  const out: EffectiveTextModel = {}
+
+  if (gatewayId) {
+    out.gatewayId = gatewayId
+  }
+
+  if (modelId) {
+    out.modelId = modelId
+  }
+
+  return out
+}
+
+function resolvePlannerDefaultTextModel(options: GatewayAgentPlannerOptions): EffectiveTextModel | null {
+  if (options.resolveDefaultModel) {
+    return options.resolveDefaultModel()
+  }
+
+  return textModelSelection(options.defaultGatewayId, options.defaultModelId)
+}
+
+function resolveEffectiveTextModel(
+  options: Pick<GatewayAgentPlannerOptions, 'resolveGatewayType'>,
+  agent: AgentDefinition,
+  resolvedDefault: EffectiveTextModel | null | undefined
+): EffectiveTextModel {
+  const defaultIsReal = Boolean(resolvedDefault?.gatewayId && !isStubGateway(options, resolvedDefault.gatewayId))
+  const agentGatewayId = agent.gatewayPolicy.gatewayId
+
+  if (!agentGatewayId) {
+    return textModelSelection(resolvedDefault?.gatewayId, agent.gatewayPolicy.modelId ?? resolvedDefault?.modelId)
+  }
+
+  if (isStubGateway(options, agentGatewayId) && defaultIsReal) {
+    return textModelSelection(resolvedDefault?.gatewayId, resolvedDefault?.modelId)
+  }
+
+  return textModelSelection(agentGatewayId, agent.gatewayPolicy.modelId ?? resolvedDefault?.modelId)
+}
+
+function createPlannerLoopModelOptions(
+  options: GatewayAgentPlannerOptions,
+  agent: AgentDefinition,
+  runId: string,
+  onDelta: ((delta: string) => void) | undefined
+): GatewayAgentLoopModelOptions {
+  const modelOptions: GatewayAgentLoopModelOptions = {
+    gateways: options.gateways,
+    agent,
+    runId
+  }
+
+  if (options.fallbackGatewayId) {
+    modelOptions.fallbackGatewayId = options.fallbackGatewayId
+  }
+
+  if (options.fallbackModelId) {
+    modelOptions.fallbackModelId = options.fallbackModelId
+  }
+
+  if (options.fallbackGatewayId && options.resolveGatewayType) {
+    const fallbackGatewayType = options.resolveGatewayType(options.fallbackGatewayId)
+    if (fallbackGatewayType) {
+      modelOptions.fallbackGatewayType = fallbackGatewayType
+    }
+  }
+
+  if (onDelta) {
+    modelOptions.onDelta = onDelta
+  }
+
+  return modelOptions
 }
 
 function compactToolsForPrompt(tools: readonly ToolDescriptor[]): Array<{
@@ -453,13 +569,29 @@ export function createGatewayAgentLoopModel(options: GatewayAgentLoopModelOption
   async function invokeWithFallback(gatewayId: string, request: GatewayRequest): Promise<GatewayResult> {
     const ctx = options.onDelta ? { onDelta: options.onDelta } : undefined
     try {
-      return await options.gateways.invoke(gatewayId, request, ctx)
+      // 瞬时失败（超时/网络/5xx）指数退避重试 2 次（500ms/2000ms）后再走 fallback。
+      return await withGatewayRetry(() => options.gateways.invoke(gatewayId, request, ctx), {
+        retries: 2,
+        baseDelayMs: 500,
+      })
     } catch (primaryError) {
+      // 上下文超限不是瞬时故障：交给上层反应式压缩，不切换 fallback。
+      if (isContextOverflowError(primaryError)) {
+        throw primaryError
+      }
+      if (request.channel === 'text' && options.fallbackGatewayType === 'stub') {
+        throw primaryError
+      }
       if (options.fallbackGatewayId && options.fallbackModelId) {
         const fallbackRequest: GatewayRequest = { ...request, modelKey: options.fallbackModelId }
-        return options.gateways.invoke(options.fallbackGatewayId, fallbackRequest)
+        try {
+          return await options.gateways.invoke(options.fallbackGatewayId, fallbackRequest)
+        } catch (fallbackError) {
+          // 主网关重试与备用网关都失败：以稳定 errorClass 终态。
+          throw new GatewayRetryExhaustedError(fallbackError)
+        }
       }
-      throw primaryError
+      throw new GatewayRetryExhaustedError(primaryError)
     }
   }
 
@@ -568,23 +700,27 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
         throw new Error('agent_not_found')
       }
 
-      const modelOptions: GatewayAgentLoopModelOptions = {
-        gateways: options.gateways,
-        agent: input.agent,
-        runId: input.runId,
-        ...(options.fallbackGatewayId ? { fallbackGatewayId: options.fallbackGatewayId } : {}),
-        ...(options.fallbackModelId ? { fallbackModelId: options.fallbackModelId } : {}),
-        ...(input.onDelta ? { onDelta: input.onDelta } : {})
+      if (shouldUseLocalFirstResponse(input.message)) {
+        yield { type: 'progress', message: localFirstProgress(input.message), progress: 10 }
+        return localFallbackResponse(input)
       }
-      const resolvedDefault = options.resolveDefaultModel ? options.resolveDefaultModel() : { gatewayId: options.defaultGatewayId, modelId: options.defaultModelId }
+
+      const modelOptions = createPlannerLoopModelOptions(options, input.agent, input.runId, input.onDelta)
+      const resolvedDefault = resolvePlannerDefaultTextModel(options)
 
       if (options.resolveDefaultModel && resolvedDefault === null && !input.agent.gatewayPolicy.gatewayId) {
         yield { type: 'progress', message: '未检测到可用的文本模型，尝试本地确定性回复', progress: 10 }
         return localFallbackResponse(input)
       }
 
-      const gatewayId = input.agent.gatewayPolicy.gatewayId ?? resolvedDefault?.gatewayId
-      const modelId = input.agent.gatewayPolicy.modelId ?? resolvedDefault?.modelId
+      const effectiveModel = resolveEffectiveTextModel(options, input.agent, resolvedDefault)
+      const gatewayId = effectiveModel.gatewayId
+      const modelId = effectiveModel.modelId
+
+      if (options.resolveDefaultModel && (!gatewayId || isStubGateway(options, gatewayId))) {
+        yield { type: 'progress', message: '未检测到可用的真实文本模型，使用本地确定性回复', progress: 10 }
+        return localFallbackResponse(input)
+      }
 
       if (gatewayId) {
         modelOptions.gatewayId = gatewayId
@@ -632,17 +768,11 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
         : loopResult.response
     },
     async *resumeApprovedTool(input): AsyncGenerator<OrchestratorPlannerDraft, AgentResponse> {
-      const modelOptions: GatewayAgentLoopModelOptions = {
-        gateways: options.gateways,
-        agent: input.agent,
-        runId: input.runId,
-        ...(options.fallbackGatewayId ? { fallbackGatewayId: options.fallbackGatewayId } : {}),
-        ...(options.fallbackModelId ? { fallbackModelId: options.fallbackModelId } : {}),
-        ...(input.onDelta ? { onDelta: input.onDelta } : {})
-      }
-      const resolvedDefault = options.resolveDefaultModel ? options.resolveDefaultModel() : { gatewayId: options.defaultGatewayId, modelId: options.defaultModelId }
-      const gatewayId = input.agent.gatewayPolicy.gatewayId ?? resolvedDefault?.gatewayId
-      const modelId = input.agent.gatewayPolicy.modelId ?? resolvedDefault?.modelId
+      const modelOptions = createPlannerLoopModelOptions(options, input.agent, input.runId, input.onDelta)
+      const resolvedDefault = resolvePlannerDefaultTextModel(options)
+      const effectiveModel = resolveEffectiveTextModel(options, input.agent, resolvedDefault)
+      const gatewayId = effectiveModel.gatewayId
+      const modelId = effectiveModel.modelId
 
       if (gatewayId) {
         modelOptions.gatewayId = gatewayId

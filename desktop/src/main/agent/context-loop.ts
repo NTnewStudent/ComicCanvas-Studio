@@ -7,6 +7,8 @@ import type { AgentDefinition, AgentResponse, AgentTriggerKind } from '../../../
 import type { CanvasPlan } from '../../../../shared/plan'
 import type { ToolActor, ToolDescriptor, ToolInvocationRecord, ToolPermission } from '../../../../shared/tools'
 import type { ToolInvocationResult, ToolRuntime } from '../tools/runtime'
+import { foldHistory, trimToolResult } from './compaction'
+import { CompactionFailedError, createToolFailureGuard, isContextOverflowError } from './recovery'
 
 export interface AgentContextLoopInput {
   agent: AgentDefinition
@@ -36,6 +38,8 @@ export interface AgentContextLoopState {
   tokenEstimate: number
   compactionSummary: string | null
   omittedMessages: number
+  /** Tool calls from the same assistant message that must run after a paused approval resumes. */
+  pendingToolCalls: AgentToolCall[]
   /**
    * Pre-built context string (canvas summary, recent messages, knowledge chunks)
    * injected once after the system prompt. Empty string means no additional context.
@@ -47,7 +51,7 @@ export type AgentLoopMessage =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: AgentToolCall[] }
-  | { role: 'tool'; toolId: string; invocationId: string; status: ToolInvocationRecord['status']; content: string }
+  | { role: 'tool'; toolId: string; invocationId: string; toolCallId?: string; status: ToolInvocationRecord['status']; content: string }
 
 const MAX_READONLY_TOOL_BATCH = 8
 
@@ -184,22 +188,13 @@ function buildSystemPrompt(agent: AgentDefinition, trigger: AgentTriggerKind): s
   ].join('\n')
 }
 
-const MAX_TOOL_RESULT_CHARS = 2048
-
-function truncateToolResultContent(content: string): string {
-  if (content.length <= MAX_TOOL_RESULT_CHARS) {
-    return content
-  }
-
-  return `${content.slice(0, MAX_TOOL_RESULT_CHARS)}…[truncated]`
-}
-
 function toolResultContent(result: ToolInvocationResult): string {
+  // L1 分层压缩：头尾保留式裁剪（见 compaction.ts）。
   if (result.error) {
-    return truncateToolResultContent(`Tool failed: ${result.error.errorClass}: ${result.error.message}`)
+    return trimToolResult(`Tool failed: ${result.error.errorClass}: ${result.error.message}`)
   }
 
-  return truncateToolResultContent(JSON.stringify(result.output ?? result.record))
+  return trimToolResult(JSON.stringify(result.output ?? result.record))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -374,6 +369,7 @@ export function createAgentContextLoop(input: AgentContextLoopInput): AgentConte
     tokenEstimate: estimateTokens(messages),
     compactionSummary: null,
     omittedMessages: 0,
+    pendingToolCalls: [],
     additionalContext: input.additionalContext ?? ''
   }
 }
@@ -398,7 +394,8 @@ function cloneAgentContextLoopState(state: AgentContextLoopState): AgentContextL
     ...state,
     allowedTools: state.allowedTools.map((tool) => ({ ...tool, permissions: tool.permissions.map((permission) => ({ ...permission })) })),
     droppedTools: [...state.droppedTools],
-    messages: state.messages.map(cloneAgentLoopMessage)
+    messages: state.messages.map(cloneAgentLoopMessage),
+    pendingToolCalls: state.pendingToolCalls.map((call) => ({ ...call }))
   }
 }
 
@@ -411,11 +408,12 @@ async function* executeAgentToolCall(
   state: AgentContextLoopState,
   call: AgentToolCall,
   allowedToolIds: Set<string>,
-  actor: ToolActor
+  actor: ToolActor,
+  remainingCalls: readonly AgentToolCall[] = []
 ): AsyncGenerator<AgentLoopEvent, 'continue' | 'approval'> {
   if (!allowedToolIds.has(call.toolId)) {
     state.droppedTools.push(call.toolId)
-    state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
+    state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, toolCallId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
     return 'continue'
   }
 
@@ -429,18 +427,12 @@ async function* executeAgentToolCall(
   })
 
   yield { type: 'tool', call, result }
-  state.messages.push({
-    role: 'tool',
-    toolId: call.toolId,
-    invocationId: result.record.invocationId,
-    status: result.record.status,
-    content: toolResultContent(result)
-  })
 
   const pendingApproval = approvalRequestFromDeniedTool(call, result)
 
   if (pendingApproval) {
     state.transition = 'approval_required'
+    state.pendingToolCalls = remainingCalls.map((remaining) => ({ ...remaining }))
     yield { type: 'permissionRequired', call, request: pendingApproval }
     throw new AgentLoopTerminalError({
       errorClass: 'agent_tool_approval_required',
@@ -453,6 +445,15 @@ async function* executeAgentToolCall(
       pausedState: state
     })
   }
+
+  state.messages.push({
+    role: 'tool',
+    toolId: call.toolId,
+    invocationId: result.record.invocationId,
+    toolCallId: call.id,
+    status: result.record.status,
+    content: toolResultContent(result)
+  })
 
   return 'continue'
 }
@@ -471,7 +472,7 @@ async function* executeAgentToolCalls(
 
     if (!allowedToolIds.has(call.toolId)) {
       state.droppedTools.push(call.toolId)
-      state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
+      state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, toolCallId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
       index += 1
       continue
     }
@@ -510,17 +511,13 @@ async function* executeAgentToolCalls(
         const entry = batch[batchIndex] as AgentToolCall
         const result = results[batchIndex] as ToolInvocationResult
         yield { type: 'tool', call: entry, result }
-        state.messages.push({
-          role: 'tool',
-          toolId: entry.toolId,
-          invocationId: result.record.invocationId,
-          status: result.record.status,
-          content: toolResultContent(result)
-        })
-
         const pendingApproval = approvalRequestFromDeniedTool(entry, result)
         if (pendingApproval) {
           state.transition = 'approval_required'
+          state.pendingToolCalls = [
+            ...batch.slice(batchIndex + 1),
+            ...calls.slice(index)
+          ].map((remaining) => ({ ...remaining }))
           yield { type: 'permissionRequired', call: entry, request: pendingApproval }
           throw new AgentLoopTerminalError({
             errorClass: 'agent_tool_approval_required',
@@ -533,12 +530,21 @@ async function* executeAgentToolCalls(
             pausedState: state
           })
         }
+
+        state.messages.push({
+          role: 'tool',
+          toolId: entry.toolId,
+          invocationId: result.record.invocationId,
+          toolCallId: entry.id,
+          status: result.record.status,
+          content: toolResultContent(result)
+        })
       }
 
       continue
     }
 
-    yield* executeAgentToolCall(input, state, call, allowedToolIds, actor)
+    yield* executeAgentToolCall(input, state, call, allowedToolIds, actor, calls.slice(index + 1))
     index += 1
   }
 }
@@ -555,8 +561,22 @@ export async function* runAgentContextLoop(input: RunAgentContextLoopInput): Asy
   const allowedToolIds = new Set(state.allowedTools.map((tool) => tool.id))
   const actor = input.actor ?? { type: 'agent', id: input.agent.id }
   const accUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
+  // 故障恢复：同一工具连续失败保护 + 每 run 至多一次的反应式压缩。
+  const failureGuard = createToolFailureGuard()
+  let reactiveCompacted = false
 
   while (state.turnCount < state.maxTurns) {
+    // L2 分层压缩：超过 70% 预算时先折叠最旧的已完成工具对。
+    const foldBudget = Math.floor(input.agent.contextPolicy.maxContextTokens * 0.7)
+    if (estimateTokens(state.messages) > foldBudget) {
+      const folded = foldHistory(state.messages, { tokenBudget: foldBudget })
+      if (folded.foldedPairs > 0) {
+        state.messages = folded.messages
+        state.tokenEstimate = folded.tokenEstimate
+        yield { type: 'progress', message: `已折叠 ${folded.foldedPairs} 条历史工具记录以释放上下文`, progress: Math.min(95, 10 + state.turnCount * 10) }
+      }
+    }
+
     const compacted = compactAgentMessages(state.messages, input.agent.contextPolicy.maxContextTokens)
     state.messages = compacted.messages
     state.tokenEstimate = compacted.tokenEstimate
@@ -565,7 +585,30 @@ export async function* runAgentContextLoop(input: RunAgentContextLoopInput): Asy
 
     yield { type: 'progress', message: `Agent loop turn ${state.turnCount + 1}`, progress: Math.min(95, 10 + state.turnCount * 10) }
 
-    const step = await input.model.step(state)
+    let step: AgentLoopStepResult
+    try {
+      step = await input.model.step(state)
+    } catch (error) {
+      // Token/上下文超限：每 run 至多做一次反应式压缩后重试原请求。
+      if (!isContextOverflowError(error) || reactiveCompacted) {
+        throw error
+      }
+
+      reactiveCompacted = true
+      const reactive = compactAgentMessages(state.messages, Math.max(1, Math.floor(input.agent.contextPolicy.maxContextTokens / 2)))
+      state.messages = reactive.messages
+      state.tokenEstimate = reactive.tokenEstimate
+      state.compactionSummary = reactive.compactionSummary ?? state.compactionSummary
+      state.omittedMessages += reactive.omittedMessages
+      yield { type: 'progress', message: '上下文超限，已压缩后重试模型调用…', progress: Math.min(95, 10 + state.turnCount * 10) }
+
+      try {
+        step = await input.model.step(state)
+      } catch (retryError) {
+        // 压缩后仍失败：以稳定 errorClass 终态，避免静默重试循环。
+        throw new CompactionFailedError(retryError)
+      }
+    }
     state.turnCount += 1
 
     // Accumulate token usage when the model exposes it.
@@ -601,7 +644,21 @@ export async function* runAgentContextLoop(input: RunAgentContextLoopInput): Asy
       }
     }
 
+    const messagesBeforeTools = state.messages.length
     yield* executeAgentToolCalls(input, state, step.calls, allowedToolIds, actor)
+
+    // 工具失败循环保护：按执行顺序回放本轮工具终态。
+    for (const message of state.messages.slice(messagesBeforeTools)) {
+      if (message.role !== 'tool') {
+        continue
+      }
+
+      if (message.status === 'failed') {
+        failureGuard.recordFailure(message.toolId)
+      } else if (message.status === 'completed') {
+        failureGuard.recordSuccess(message.toolId)
+      }
+    }
 
     state.transition = 'tool_results'
   }
@@ -661,9 +718,25 @@ export async function* resumeAgentContextLoopWithApproval(input: ResumeAgentCont
     role: 'tool',
     toolId: call.toolId,
     invocationId: result.record.invocationId,
+    toolCallId: call.id,
     status: result.record.status,
     content: toolResultContent(result)
   })
+
+  const remainingCalls = state.pendingToolCalls.map((pending) => ({ ...pending }))
+  state.pendingToolCalls = []
+
+  if (remainingCalls.length > 0) {
+    const allowedToolIds = new Set(state.allowedTools.map((tool) => tool.id))
+    yield* executeAgentToolCalls(
+      input,
+      state,
+      remainingCalls,
+      allowedToolIds,
+      input.actor ?? { type: 'agent', id: input.agent.id }
+    )
+  }
+
   state.transition = 'tool_results'
 
   return yield* runAgentContextLoop({

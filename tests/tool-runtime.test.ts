@@ -192,6 +192,69 @@ describe('M4 ToolRuntime', () => {
     })
   })
 
+  it('reuses approved tool permissions for later matching calls in the same runtime session', async () => {
+    let calls = 0
+    const canvasWritePermission: ToolPermission = { kind: 'canvas.write', reason: 'Mutates the canvas graph.' }
+    const runtime = createToolRuntime({
+      idFactory: (() => {
+        let next = 0
+        return () => `invoke-approved-${(next += 1)}`
+      })(),
+      clock: () => 1_782_800_000_175,
+      permissionPolicy: () => ({
+        decision: 'ask',
+        decisionReason: 'Creating nodes requires confirmation.',
+        requiredPermissions: [canvasWritePermission]
+      }),
+      tools: [
+        defineTool({
+          descriptor: {
+            id: 'test.askWrite',
+            name: 'Ask Write',
+            description: 'Writes after confirmation.',
+            category: 'canvas',
+            owner: { kind: 'builtin', id: 'core' },
+            inputSchemaRef: 'test.askWrite.input',
+            outputSchemaRef: 'test.askWrite.output',
+            permissions: [canvasWritePermission],
+            concurrency: 'serial-write',
+            enabled: true
+          },
+          inputSchema: z.object({ value: z.string() }),
+          outputSchema: z.object({ ok: z.boolean(), value: z.string() }),
+          renderToolUseMessage: () => 'Ask write',
+          call(input) {
+            calls += 1
+            return { ok: true, value: input.value }
+          }
+        })
+      ]
+    })
+
+    const approved = await runtime.invoke({
+      toolId: 'test.askWrite',
+      input: { value: 'first approved call' },
+      actor,
+      traceId: 'trace-approved-first',
+      approvedInvocation: {
+        toolId: 'test.askWrite',
+        input: { value: 'first approved call' },
+        approvedBy: { type: 'user', id: 'user-local' }
+      }
+    })
+    const reused = await runtime.invoke({
+      toolId: 'test.askWrite',
+      input: { value: 'second call' },
+      actor,
+      traceId: 'trace-approved-second'
+    })
+
+    expect(approved.record.status).toBe('completed')
+    expect(reused.record.status).toBe('completed')
+    expect(reused.output).toEqual({ ok: true, value: 'second call' })
+    expect(calls).toBe(2)
+  })
+
   it('runs read-only tools in parallel and write tools serially', async () => {
     const starts: string[] = []
     const readOne = deferred()

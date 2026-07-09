@@ -21,6 +21,7 @@ export interface ComicCanvasApi {
   getAgentRun(input: IpcRequestMap['agent.getRun']): Promise<IpcResponseMap['agent.getRun']>
   approveAgentTool(input: IpcRequestMap['agent.approveTool']): Promise<IpcResponseMap['agent.approveTool']>
   spawnSubAgent(input: IpcRequestMap['agent.spawn']): Promise<IpcResponseMap['agent.spawn']>
+  getChatHistory(input: IpcRequestMap['chat.history']): Promise<IpcResponseMap['chat.history']>
   listSkills(input?: IpcRequestMap['skill.list']): Promise<IpcResponseMap['skill.list']>
   getSkillMetadata(input: IpcRequestMap['skill.getMetadata']): Promise<IpcResponseMap['skill.getMetadata']>
   reloadSkills(input?: IpcRequestMap['skill.reload']): Promise<IpcResponseMap['skill.reload']>
@@ -117,6 +118,7 @@ function invokeMain<TChannel extends 'agent.run'>(channel: TChannel, request: Ip
 function invokeMain<TChannel extends 'agent.getRun'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.approveTool'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.spawn'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'chat.history'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.getMetadata'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.reload'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -297,6 +299,14 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/agents.md
    */
   spawnSubAgent: (input) => invokeMain('agent.spawn', input),
+  /**
+   * Loads persisted chat turns for a workflow session restore.
+   * @param input - Workflow scope.
+   * @returns Ordered chat turns with persisted blocks.
+   * @throws Error when the IPC bridge rejects.
+   * @see docs/api-contracts/agents.md
+   */
+  getChatHistory: (input) => invokeMain('chat.history', input),
   listSkills: (input) => invokeMain('skill.list', input ?? {}),
   getSkillMetadata: (input) => invokeMain('skill.getMetadata', input),
   reloadSkills: (input) => invokeMain('skill.reload', input ?? {}),

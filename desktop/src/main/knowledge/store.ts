@@ -102,16 +102,23 @@ export function createKnowledgeStore(options: {
         query.limit
       )
 
-      return ranked.map((entry) => {
+      return ranked.map((entry): KnowledgeChunk => {
         const source = chunks.find((chunk) => chunk.id === entry.id)
-        return source ?? {
+        if (source) {
+          return {
+            ...source,
+            ...(entry.score !== undefined ? { score: entry.score } : {})
+          }
+        }
+
+        return {
           id: entry.id,
           documentId: 'unknown',
           ordinal: 0,
           text: entry.text,
-          score: entry.score,
           citation: entry.citation,
-          metadata: {}
+          metadata: {},
+          ...(entry.score !== undefined ? { score: entry.score } : {})
         }
       })
     },

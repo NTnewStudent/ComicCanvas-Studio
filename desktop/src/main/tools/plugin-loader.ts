@@ -8,7 +8,7 @@ import { join } from 'node:path'
 
 import { z } from 'zod'
 
-import type { PluginDiagnostic, PluginManifest, ToolDescriptor, ToolPermission } from '../../../../shared/tools'
+import type { PluginDiagnostic, PluginManifest, ToolDescriptor } from '../../../../shared/tools'
 import { defineTool, type ToolDefinition, type ToolRuntime } from './runtime'
 
 const permissionSchema = z.object({
@@ -60,10 +60,10 @@ export function validatePluginManifest(raw: unknown): PluginManifest | null {
   if (!parsed.success) {
     return null
   }
-  return parsed.data as PluginManifest
+  return parsed.data
 }
 
-function createPluginToolDefinition(tool: ToolDescriptor, pluginId: string): ToolDefinition<Record<string, unknown>, Record<string, unknown>> {
+function createPluginToolDefinition(tool: ToolDescriptor, pluginId: string): ToolDefinition<unknown, unknown> {
   const descriptor: ToolDescriptor = {
     ...tool,
     owner: { kind: 'plugin', id: pluginId },
@@ -72,8 +72,8 @@ function createPluginToolDefinition(tool: ToolDescriptor, pluginId: string): Too
 
   return defineTool({
     descriptor,
-    inputSchema: z.record(z.unknown()),
-    outputSchema: z.record(z.unknown()),
+    inputSchema: z.record(z.string(), z.unknown()),
+    outputSchema: z.record(z.string(), z.unknown()),
     renderToolUseMessage: () => `Invoke plugin tool ${descriptor.id}`,
     call(input) {
       return {

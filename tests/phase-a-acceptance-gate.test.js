@@ -9,10 +9,11 @@ describe('Phase A acceptance gate', () => {
         for (const content of [backlog, gap, report]) {
             expect(content).toContain('phase-a-assets-workflows-smoke.test.ts');
             expect(content).toContain('HDR-PHASEA-001');
-            expect(content).toContain('Phase A is not accepted');
-            expect(content).toContain('human review pass or explicit product deferral');
         }
+        expect(backlog).toContain('在人工评审通过或产品明确延后决定之前不算验收通过');
+        expect(gap).toContain('在人工复核通过或产品方明确延后决定之前，Phase A 不算通过验收');
+        expect(report).toContain('Phase A 未被验收');
         expect(tasks).toContain('- [x] 58. Mark Phase A accepted only after human review pass or explicit product');
-        expect(report).toContain('Task 58 decision: Phase A is not accepted');
+        expect(report).toContain('Task 58 决定：Phase A 未被验收');
     });
 });

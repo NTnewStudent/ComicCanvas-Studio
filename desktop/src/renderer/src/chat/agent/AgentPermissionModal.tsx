@@ -28,7 +28,7 @@ export function AgentPermissionModal({ request, busy = false, onApprove, onDismi
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl border border-border-primary bg-bg-panel p-4 shadow-pop">
         <h3 className="m-0 text-[14px] font-semibold text-text-base">需要批准工具调用</h3>
         <p className="mt-2 text-[13px] text-text-secondary">

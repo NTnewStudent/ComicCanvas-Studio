@@ -181,7 +181,15 @@
 | 状态 | 已完成 |
 | 阻塞原因 | — |
 
-> M5 milestone-execution-plan **47/47 `[x]`**（2026-07-05）。下一战术项：**Phase D 整批人工验收**（`docs/progress/batch-human-acceptance-runbook-2026-07-05.md`）。
+> M5 milestone-execution-plan **47/47 `[x]`**（2026-07-05）。
+> 2026-07-08（用户显式指定项目，指针外完成）：Agent 对话 UI + Harness 工程完善
+> （方案 A）Task 1–8 全部完成——`shared/chat-blocks.ts` 契约 + 块组件库 +
+> chatStore 双入口切换 + `chat.history` 会话恢复 + compaction 分层压缩 +
+> recovery 故障恢复；全量 vitest 160 文件/619 测试通过，assets-workflows
+> Task 60 勾选 `[x]`（计划：`docs/superpowers/plans/2026-07-08-agent-chat-ui-harness.md`）。
+> 下一战术项：**Phase D 整批人工验收**
+> （`docs/progress/batch-human-acceptance-runbook-2026-07-05.md`，含新对话 UI
+> 的 HDR-050/051 复验）。
 
 **文档漂移待同步（Evaluate 时交叉核对）：**
 
@@ -265,6 +273,20 @@
 | 网关绑定协议 | 未开始 | 需要适配器清单、能力校验、参数/结果映射。 |
 | 多网关定制 | 进行中 | 基础网关注册表已存在；工作流/节点/动作绑定及 schema 驱动的参数仍缺失。 |
 | 输出绑定 | 未开始 | 需要将规范化的 media/text/json 输出绑定到节点输出端口与资产。 |
+
+---
+
+## Agent 对话 UI + Harness 工程完善（REQ-099 ~ REQ-100）
+
+> 新增：2026-07-08
+> 权威 spec：`docs/superpowers/specs/2026-07-08-agent-chat-ui-harness-design.md`
+> 实施计划：`docs/superpowers/plans/2026-07-08-agent-chat-ui-harness.md`（Task 1–8 全部 `[x]`）
+> 参考对照：cc-haha 桌面端消息块体系与 Agent 框架（仅设计参考，不引源码）。
+
+| ID | 需求 | 状态 |
+| :--- | :--- | :--- |
+| REQ-099 | Agent 对话重构（方案 A，契约先行）：`shared/chat-blocks.ts` 消息块契约 + 纯 reducer（主进程/渲染层同源组装）；块组件库（Markdown+代码高亮、思考折叠、工具块、内联权限、错误/用量）；统一 chatStore 双入口切换（ChatPanel/CanvasChatBox 薄壳化）；`chat_messages.blocks_json` 持久化 + `chat.history` IPC + 会话恢复；harness 分层压缩（L1 头尾裁剪/L2 历史折叠/L3 AutoCompact 降级硬截断）与故障恢复（网关退避重试、上下文超限反应式压缩、工具失败循环保护，errorClass：`gateway_retry_exhausted`/`compaction_failed`/`tool_failure_loop`）。 | ✅（工程面：typecheck 通过，全量 vitest 160 文件/619 测试通过；专项测试 chat-blocks 10、chat-blocks-ui 9、chat-store 11、chat-history 3、agent-compaction 8、agent-recovery 6；HDR-050/051 桌面人工复验 Pending） |
+| REQ-100 | 对话界面排版布局优化：`.cc-markdown` 聊天 Markdown 排版与代码高亮主题（wf-neo token 配色，覆盖标题/列表/表格/引用/行内码/代码块）；`/chat` 页改为居中限宽（max-w-3xl）全高列布局，消息区 flex-1 填充 + 空态占位；消息气泡角色化（用户右对齐 85% 宽、assistant 94% 宽、不对称圆角）；画布浮窗消息区高度提升为 46vh。 | ✅（工程面：typecheck 通过，chat-blocks-ui/chat-ui/canvas-chatbox 28 测试通过；桌面人工评审随 HDR-050/051 一并 Pending） |
 
 ---
 

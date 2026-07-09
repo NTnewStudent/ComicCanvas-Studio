@@ -4,6 +4,8 @@ import { resolve, join } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
+const preferSourceExtensions = ['.ts', '.tsx', '.mts', '.mjs', '.js', '.jsx', '.json']
+
 /** Vite plugin: copy src/main/db/migrations/*.sql → out/main/migrations/ */
 function copyMigrationsPlugin() {
   return {
@@ -21,6 +23,9 @@ function copyMigrationsPlugin() {
 
 export default defineConfig({
   main: {
+    resolve: {
+      extensions: preferSourceExtensions
+    },
     plugins: [externalizeDepsPlugin(), copyMigrationsPlugin()],
     build: {
       rollupOptions: {
@@ -29,6 +34,9 @@ export default defineConfig({
     }
   },
   preload: {
+    resolve: {
+      extensions: preferSourceExtensions
+    },
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
@@ -38,6 +46,9 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
+    resolve: {
+      extensions: preferSourceExtensions
+    },
     plugins: [react()],
     server: {
       port: Number(process.env.PORT ?? 5175)

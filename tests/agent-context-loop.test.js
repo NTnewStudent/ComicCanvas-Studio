@@ -139,9 +139,15 @@ describe('Agent context loop policy', () => {
             events.push(next.value);
             next = await loop.next();
         }
-        expect(events.map((event) => event.type)).toEqual(['progress', 'tool', 'progress', 'plan']);
+        expect(events.map((event) => event.type)).toEqual(['progress', 'toolStarted', 'tool', 'progress', 'response']);
         expect(seenToolMessages).toEqual(['{"nodeCount":0}']);
-        expect(next.value).toEqual({ plan: finalPlan, turnsUsed: 2, droppedTools: ['canvas.createNode'], compactionSummary: null, omittedMessages: 0 });
+        expect(next.value).toMatchObject({
+            response: { type: 'canvasPlan', plan: finalPlan },
+            turnsUsed: 2,
+            droppedTools: ['canvas.createNode'],
+            compactionSummary: null,
+            omittedMessages: 0
+        });
     });
     it('records denied model-requested tools without invoking ToolRuntime', async () => {
         let invoked = false;
@@ -216,7 +222,7 @@ describe('Agent context loop policy', () => {
         catch (error) {
             caught = error;
         }
-        expect(events.map((event) => event.type)).toEqual(['progress', 'tool']);
+        expect(events.map((event) => event.type)).toEqual(['progress', 'toolStarted', 'tool', 'permissionRequired']);
         expect(caught).toBeInstanceOf(AgentLoopTerminalError);
         expect(caught).toMatchObject({
             errorClass: 'agent_tool_approval_required',

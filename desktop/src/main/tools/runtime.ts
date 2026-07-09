@@ -138,6 +138,15 @@ function hasMatchingApproval(input: ToolInvocationInput): boolean {
     && stableJson(input.approvedInvocation.input) === stableJson(input.input)
 }
 
+function permissionGrantKey(input: ToolInvocationInput, permission: ToolPermissionResult): string {
+  const permissionKinds = [...new Set(permission.requiredPermissions.map((entry) => entry.kind))].sort()
+  return stableJson({
+    actor: input.actor,
+    toolId: input.toolId,
+    permissionKinds
+  }) ?? ''
+}
+
 function cloneDescriptor(descriptor: ToolDescriptor): ToolDescriptor {
   const owner: ToolDescriptor['owner'] =
     descriptor.owner.kind === 'builtin'
@@ -182,6 +191,7 @@ function isAsyncGenerator<TOutput>(value: ToolCallResult<TOutput>): value is Asy
  */
 export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime {
   const toolsById = new Map<string, ToolDefinition<unknown, unknown>>()
+  const permissionGrants = new Set<string>()
   const idFactory = options.idFactory ?? (() => `tool-invocation-${randomUUID()}`)
   const clock = options.clock ?? Date.now
   let writeChain: Promise<void> = Promise.resolve()
@@ -229,10 +239,13 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
     const permission = tool.checkPermissions
       ? await tool.checkPermissions(parsed.data, ctx)
       : (options.permissionPolicy?.(tool, parsed.data, ctx) ?? defaultPermissionDecision(tool))
+    const grantKey = permissionGrantKey(input, permission)
+    const hasReusableApproval = permission.decision === 'ask' && permissionGrants.has(grantKey)
 
     if (permission.decision === 'ask' && hasMatchingApproval(input)) {
       // A prior approval resumes the exact same tool call; execution still stays inside ToolRuntime.
-    } else if (permission.decision !== 'allow') {
+      permissionGrants.add(grantKey)
+    } else if (permission.decision !== 'allow' && !hasReusableApproval) {
       return {
         record: createRecord(input, invocationId, createdAt, 'denied'),
         error: toolError('tool_permission_denied', permission.decisionReason, false, undefined, {

@@ -8,7 +8,7 @@
       "env": {
         "QINGTIAN_SESSION": "1",
         "QINGTIAN_QUEUE_ROOT": "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/messages",
-        "QINGTIAN_RUNTIME_STAMP": "b9e12af59ba9"
+        "QINGTIAN_RUNTIME_STAMP": "c1e79a1949a3"
       }
     },
     "qtwx-mcp-2": {
@@ -19,7 +19,7 @@
       "env": {
         "QINGTIAN_SESSION": "2",
         "QINGTIAN_QUEUE_ROOT": "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/messages",
-        "QINGTIAN_RUNTIME_STAMP": "b9e12af59ba9"
+        "QINGTIAN_RUNTIME_STAMP": "c1e79a1949a3"
       }
     },
     "qtwx-mcp-3": {
@@ -30,7 +30,7 @@
       "env": {
         "QINGTIAN_SESSION": "3",
         "QINGTIAN_QUEUE_ROOT": "/Users/ywy/Library/Application Support/Cursor/User/workspaceStorage/4b15df21519bdb06573cf0d1ca9071fb/QingTian.qingtian-v2/runtime/messages",
-        "QINGTIAN_RUNTIME_STAMP": "b9e12af59ba9"
+        "QINGTIAN_RUNTIME_STAMP": "c1e79a1949a3"
       }
     }
   }

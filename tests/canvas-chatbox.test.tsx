@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import CanvasChatBox from '../desktop/src/renderer/src/canvas/components/CanvasChatBox'
+import { AgentPermissionModal } from '../desktop/src/renderer/src/chat/agent/AgentPermissionModal'
 import type { AgentDefinition } from '../shared/agents'
 
 type ProgressHandler = (event: { jobId: string; message?: string; progress: number }) => void
@@ -47,6 +48,30 @@ afterEach(() => {
 })
 
 describe('CanvasChatBox', () => {
+  it('keeps the permission modal clickable inside the on-canvas pointer-events shell', () => {
+    const approve = vi.fn()
+
+    render(
+      <div className="pointer-events-none">
+        <AgentPermissionModal
+          request={{
+            runId: 'run-permission',
+            callId: 'call-web-search',
+            toolId: 'web.search',
+            reason: 'Search requires approval.'
+          }}
+          onApprove={approve}
+          onDismiss={vi.fn()}
+        />
+      </div>
+    )
+
+    const approveButton = screen.getByRole('button', { name: '批准并继续' })
+    const modalOverlay = approveButton.closest('.fixed')
+
+    expect(modalOverlay).toHaveClass('pointer-events-auto')
+  })
+
   it('is enabled on-canvas, supports @agent routing, and sends through canvas chat IPC', async () => {
     const progress = { handler: null as ProgressHandler | null }
     const sendCanvasChat = vi.fn().mockResolvedValue({ runId: 'run-agent-1', jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
@@ -179,6 +204,74 @@ describe('CanvasChatBox', () => {
     expect(screen.queryByText('计划已就绪：plan-1')).not.toBeInTheDocument()
   })
 
+  it('recovers a fast Agent answer when responseReady arrives before the floating chat ticket settles', async () => {
+    const responseReadyHandlers: Array<(event: {
+      runId: string
+      messageId: string
+      response: {
+        type: 'answer'
+        summary: string
+        text: string
+        dropped: string[]
+      }
+    }) => void> = []
+    const sendCanvasChat = vi.fn().mockImplementation(() => {
+      responseReadyHandlers[0]?.({
+        runId: 'run-fast',
+        messageId: 'message-fast',
+        response: {
+          type: 'answer',
+          summary: '用户提出了普通寒暄。',
+          text: '你好，我是 ComicCanvas 的通用 Agent。',
+          dropped: [],
+        },
+      })
+      return Promise.resolve({ runId: 'run-fast', jobId: 'job-fast', messageId: 'message-fast', status: 'pending' })
+    })
+    window.comicCanvas = {
+      listAgents: vi.fn().mockResolvedValue([generalAgent]),
+      sendCanvasChat,
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: 'run-fast',
+        status: 'completed',
+        trace: {
+          messageId: 'message-fast',
+          jobId: 'job-fast',
+          response: {
+            type: 'answer',
+            summary: '用户提出了普通寒暄。',
+            text: '你好，我是 ComicCanvas 的通用 Agent。',
+            dropped: [],
+          },
+        },
+      }),
+      getCanvasPlan: vi.fn(),
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn((handler: (event: {
+        runId: string
+        messageId: string
+        response: {
+          type: 'answer'
+          summary: string
+          text: string
+          dropped: string[]
+        }
+      }) => void) => {
+        responseReadyHandlers.push(handler)
+        return vi.fn()
+      }),
+      onJobProgress: vi.fn().mockReturnValue(vi.fn()),
+    } as unknown as Window['comicCanvas']
+
+    render(<CanvasChatBox open onToggle={vi.fn()} onApplyPlan={vi.fn()} />)
+
+    const textbox = await screen.findByRole('textbox', { name: 'Canvas floating agent message' })
+    fireEvent.change(textbox, { target: { value: '你好' } })
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+
+    expect(await screen.findByText('你好，我是 ComicCanvas 的通用 Agent。')).toBeInTheDocument()
+  })
+
   it('shows a visible assistant error when the floating chat Agent job fails', async () => {
     const failedHandlers: Array<(event: { channel: 'job.failed'; jobId: string; error: { errorClass: string; message: string; retryable: boolean }; emittedAt: number }) => void> = []
     const sendCanvasChat = vi.fn().mockResolvedValue({ runId: 'run-agent-1', jobId: 'job-agent-1', messageId: 'message-1', status: 'pending' })
@@ -213,6 +306,7 @@ describe('CanvasChatBox', () => {
       emittedAt: 1
     })
 
-    expect(await screen.findByText('Agent 执行失败：Agent runtime failed.')).toBeInTheDocument()
+    expect(await screen.findByText('Agent runtime failed.')).toBeInTheDocument()
+    expect(screen.getByText('agent_run_failed')).toBeInTheDocument()
   })
 })

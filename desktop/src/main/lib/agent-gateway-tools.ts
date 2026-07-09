@@ -16,6 +16,8 @@ const EMPTY_PARAMETERS: Record<string, unknown> = {
   additionalProperties: false
 }
 
+const GATEWAY_TOOL_NAME_PREFIX = 'tool_'
+
 /**
  * Resolves whether the Agent loop should use native gateway tools or JSON toolCalls.
  * @param gatewayType - Configured gateway type when known.
@@ -36,7 +38,7 @@ export function toolDescriptorsToGatewayTools(tools: readonly ToolDescriptor[]):
   return tools.map((tool) => ({
     type: 'function',
     function: {
-      name: tool.id,
+      name: gatewayToolNameFromToolId(tool.id),
       description: tool.description,
       parameters: tool.inputParametersJsonSchema ?? EMPTY_PARAMETERS
     }
@@ -51,6 +53,7 @@ export function toolDescriptorsToGatewayTools(tools: readonly ToolDescriptor[]):
  */
 export function loopMessagesToGatewayMessages(messages: readonly AgentLoopMessage[]): GatewayChatMessage[] {
   const out: GatewayChatMessage[] = []
+  const pendingToolCalls: AgentToolCall[] = []
 
   for (const message of messages) {
     if (message.role === 'system' || message.role === 'user') {
@@ -60,6 +63,7 @@ export function loopMessagesToGatewayMessages(messages: readonly AgentLoopMessag
 
     if (message.role === 'assistant') {
       if (message.toolCalls && message.toolCalls.length > 0) {
+        pendingToolCalls.push(...message.toolCalls)
         out.push({
           role: 'assistant',
           content: message.content.length > 0 ? message.content : null,
@@ -67,7 +71,7 @@ export function loopMessagesToGatewayMessages(messages: readonly AgentLoopMessag
             id: call.id,
             type: 'function',
             function: {
-              name: call.toolId,
+              name: gatewayToolNameFromToolId(call.toolId),
               arguments: stableJson(call.input)
             }
           }))
@@ -78,15 +82,23 @@ export function loopMessagesToGatewayMessages(messages: readonly AgentLoopMessag
       continue
     }
 
+    const matchedCall = takePendingToolCall(pendingToolCalls, message.toolId)
     out.push({
       role: 'tool',
-      tool_call_id: message.invocationId,
-      name: message.toolId,
+      tool_call_id: message.toolCallId ?? matchedCall?.id ?? message.invocationId,
+      name: gatewayToolNameFromToolId(message.toolId),
       content: message.content
     })
   }
 
   return out
+}
+
+function takePendingToolCall(pendingToolCalls: AgentToolCall[], toolId: string): AgentToolCall | undefined {
+  const matchingIndex = pendingToolCalls.findIndex((call) => call.toolId === toolId)
+  const index = matchingIndex >= 0 ? matchingIndex : 0
+  const [call] = pendingToolCalls.splice(index, 1)
+  return call
 }
 
 /**
@@ -101,14 +113,17 @@ export function gatewayToolCallsToAgentCalls(
   allowedToolIds: ReadonlySet<string>
 ): AgentToolCall[] {
   const calls: AgentToolCall[] = []
+  const gatewayNameToToolId = buildGatewayToolNameMap(allowedToolIds)
 
   toolCalls.forEach((entry, index) => {
     if (entry.type !== 'function' || typeof entry.function?.name !== 'string') {
       return
     }
 
-    const toolId = entry.function.name
-    if (!allowedToolIds.has(toolId)) {
+    const toolId = gatewayNameToToolId.get(entry.function.name) ?? (
+      allowedToolIds.has(entry.function.name) ? entry.function.name : undefined
+    )
+    if (!toolId) {
       return
     }
 
@@ -135,4 +150,34 @@ export function gatewayToolCallsToAgentCalls(
 
 function stableJson(value: unknown): string {
   return JSON.stringify(value ?? {})
+}
+
+function buildGatewayToolNameMap(allowedToolIds: ReadonlySet<string>): Map<string, string> {
+  const out = new Map<string, string>()
+
+  for (const toolId of allowedToolIds) {
+    out.set(gatewayToolNameFromToolId(toolId), toolId)
+  }
+
+  return out
+}
+
+function gatewayToolNameFromToolId(toolId: string): string {
+  return `${GATEWAY_TOOL_NAME_PREFIX}${Array.from(toolId).map(encodeToolNameChar).join('')}`
+}
+
+function encodeToolNameChar(char: string): string {
+  if (/^[a-zA-Z0-9-]$/.test(char)) {
+    return char
+  }
+
+  if (char === '.') {
+    return '_d_'
+  }
+
+  if (char === '_') {
+    return '_u_'
+  }
+
+  return `_x${char.codePointAt(0)?.toString(16) ?? '0'}_`
 }

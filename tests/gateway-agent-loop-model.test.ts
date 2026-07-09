@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import type { AgentDefinition, AgentResponse } from '../shared/agents'
@@ -132,11 +132,328 @@ describe('Gateway-backed Agent loop planner', () => {
     }
 
     const response = expectAgentResponse(next.value)
-    expect(progress).toContain('未检测到可用的文本模型，尝试本地确定性回复')
+    expect(progress).toContain('识别为寒暄，使用本地确定性回复')
     expect(response.type).toBe('answer')
     if (response.type !== 'answer') throw new Error('expected_answer_response')
     expect(response.text).toContain('你好')
     expect(response.text).toContain('画布')
+  })
+
+  it('answers greetings locally even when the selected agent points at the stub text gateway', async () => {
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke() {
+          throw new Error('stub_gateway_should_not_answer_greetings')
+        }
+      },
+      tools: createToolRuntime(),
+      listTools: () => [queryGraphDescriptor],
+      resolveDefaultModel: () => ({ gatewayId: 'stub-main', modelId: 'stub-text' }),
+      resolveGatewayType: () => 'stub'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-stub-hi',
+      messageId: 'message-stub-hi',
+      message: '你好！',
+      agentId: 'general-purpose',
+      agent: agent({
+        id: 'general-purpose',
+        name: 'General Purpose',
+        instructions: 'Answer ordinary messages.',
+        allowedTools: ['canvas.queryGraph'],
+        gatewayPolicy: { gatewayId: 'stub-main', modelId: 'stub-text', allowedChannels: ['text'] },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+      }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    const progress: string[] = []
+    let next = await stream.next()
+    while (!next.done) {
+      if (next.value.type === 'progress') {
+        progress.push(next.value.message)
+      }
+      next = await stream.next()
+    }
+
+    const response = expectAgentResponse(next.value)
+    expect(progress).toContain('识别为寒暄，使用本地确定性回复')
+    expect(response.type).toBe('answer')
+    if (response.type !== 'answer') throw new Error('expected_answer_response')
+    expect(response.text).toContain('你好')
+    expect(response.text).toContain('画布')
+  })
+
+  it('answers assistant identity questions locally without calling tools or the gateway', async () => {
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke() {
+          throw new Error('gateway_should_not_answer_identity_questions')
+        }
+      },
+      tools: createToolRuntime({
+        permissionPolicy: () => ({
+          decision: 'ask',
+          decisionReason: 'Any tool would require approval.',
+          requiredPermissions: [{ kind: 'network', reason: 'Network access.' }]
+        })
+      }),
+      listTools: () => [queryGraphDescriptor],
+      resolveDefaultModel: () => ({ gatewayId: 'deepseek', modelId: 'deepseek-chat' }),
+      resolveGatewayType: (gatewayId) => gatewayId === 'deepseek' ? 'openai_compat' : 'stub'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-identity-local',
+      messageId: 'message-identity-local',
+      message: '你是谁',
+      agentId: 'general-purpose',
+      agent: agent({
+        id: 'general-purpose',
+        name: 'General Purpose',
+        instructions: 'Answer ordinary messages.',
+        allowedTools: ['canvas.queryGraph'],
+        gatewayPolicy: { gatewayId: 'agent-gateway', modelId: 'agent-model', allowedChannels: ['text'] },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+      }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    const progress: string[] = []
+    let next = await stream.next()
+    while (!next.done) {
+      if (next.value.type === 'progress') {
+        progress.push(next.value.message)
+      }
+      next = await stream.next()
+    }
+
+    const response = expectAgentResponse(next.value)
+    expect(progress).toContain('识别为身份问答，使用本地确定性回复')
+    expect(response.type).toBe('answer')
+    if (response.type !== 'answer') throw new Error('expected_answer_response')
+    expect(response.text).toContain('ComicCanvas')
+    expect(response.text).toContain('通用 Agent')
+    expect(response.text).toContain('画布')
+  })
+
+  it('answers deterministic date questions locally without calling stub or real text gateways', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-08T12:00:00+08:00'))
+
+    try {
+      const planner = createGatewayAgentPlanner({
+        gateways: {
+          invoke() {
+            throw new Error('gateway_should_not_answer_deterministic_date_questions')
+          }
+        },
+        tools: createToolRuntime(),
+        listTools: () => [queryGraphDescriptor],
+        resolveDefaultModel: () => ({ gatewayId: 'deepseek', modelId: 'deepseek-chat' }),
+        resolveGatewayType: (gatewayId) => gatewayId === 'deepseek' ? 'openai_compat' : 'stub'
+      })
+      const stream = planner.proposePlan({
+        runId: 'run-date-local',
+        messageId: 'message-date-local',
+        message: '今天星期几',
+        agentId: 'general-purpose',
+        agent: agent({
+          id: 'general-purpose',
+          name: 'General Purpose',
+          instructions: 'Answer ordinary messages.',
+          allowedTools: ['canvas.queryGraph'],
+          gatewayPolicy: { gatewayId: 'stub-main', modelId: 'stub-text', allowedChannels: ['text'] },
+          permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+        }),
+        trigger: 'canvasChat'
+      })
+
+      if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+        throw new Error('expected_async_gateway_planner')
+      }
+
+      const progress: string[] = []
+      let next = await stream.next()
+      while (!next.done) {
+        if (next.value.type === 'progress') {
+          progress.push(next.value.message)
+        }
+        next = await stream.next()
+      }
+
+      const response = expectAgentResponse(next.value)
+      expect(progress).toContain('识别为本地确定性问题，使用本地回复')
+      expect(response).toMatchObject({
+        type: 'answer',
+        text: '今天是星期三。'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers tomorrow weekday questions locally without calling text gateways', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-08T12:00:00+08:00'))
+
+    try {
+      const planner = createGatewayAgentPlanner({
+        gateways: {
+          invoke() {
+            throw new Error('gateway_should_not_answer_tomorrow_weekday_questions')
+          }
+        },
+        tools: createToolRuntime(),
+        listTools: () => [queryGraphDescriptor],
+        resolveDefaultModel: () => ({ gatewayId: 'deepseek', modelId: 'deepseek-chat' }),
+        resolveGatewayType: (gatewayId) => gatewayId === 'deepseek' ? 'openai_compat' : 'stub'
+      })
+      const stream = planner.proposePlan({
+        runId: 'run-tomorrow-date-local',
+        messageId: 'message-tomorrow-date-local',
+        message: '明天星期几',
+        agentId: 'general-purpose',
+        agent: agent({
+          id: 'general-purpose',
+          name: 'General Purpose',
+          instructions: 'Answer ordinary messages.',
+          allowedTools: ['canvas.queryGraph'],
+          gatewayPolicy: { gatewayId: 'stub-main', modelId: 'stub-text', allowedChannels: ['text'] },
+          permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+        }),
+        trigger: 'canvasChat'
+      })
+
+      if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+        throw new Error('expected_async_gateway_planner')
+      }
+
+      const progress: string[] = []
+      let next = await stream.next()
+      while (!next.done) {
+        if (next.value.type === 'progress') {
+          progress.push(next.value.message)
+        }
+        next = await stream.next()
+      }
+
+      const response = expectAgentResponse(next.value)
+      expect(progress).toContain('识别为本地确定性问题，使用本地回复')
+      expect(response).toMatchObject({
+        type: 'answer',
+        text: '明天是星期四。'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('routes ordinary general chat to the real default text model instead of an agent-pinned stub gateway', async () => {
+    const calls: Array<{ gatewayId: string; request: GatewayRequest }> = []
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke(gatewayId, request) {
+          calls.push({ gatewayId, request })
+          if (gatewayId === 'stub-main') {
+            throw new Error('stub_gateway_should_not_handle_general_chat')
+          }
+
+          return Promise.resolve(textResult('今天是星期三。'))
+        }
+      },
+      tools: createToolRuntime(),
+      listTools: () => [queryGraphDescriptor],
+      resolveDefaultModel: () => ({ gatewayId: 'deepseek', modelId: 'deepseek-chat' }),
+      resolveGatewayType: (gatewayId) => gatewayId === 'deepseek' ? 'openai_compat' : 'stub'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-real-default-date',
+      messageId: 'message-real-default-date',
+      message: '帮我解释一下蒙太奇是什么',
+      agentId: 'general-purpose',
+      agent: agent({
+        id: 'general-purpose',
+        name: 'General Purpose',
+        instructions: 'Answer ordinary messages.',
+        allowedTools: ['canvas.queryGraph'],
+        gatewayPolicy: { gatewayId: 'stub-main', modelId: 'stub-text', allowedChannels: ['text'] },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+      }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    let next = await stream.next()
+    while (!next.done) {
+      next = await stream.next()
+    }
+
+    const response = expectAgentResponse(next.value)
+    expect(calls.map((call) => call.gatewayId)).toEqual(['deepseek'])
+    expect(calls[0]?.request.modelKey).toBe('deepseek-chat')
+    expect(response).toMatchObject({ type: 'answer', text: '今天是星期三。' })
+  })
+
+  it('does not fall back to stub text when a real general-chat model call fails', async () => {
+    const calls: string[] = []
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke(gatewayId) {
+          calls.push(gatewayId)
+          if (gatewayId === 'stub-main') {
+            throw new Error('stub_gateway_should_not_be_used_as_text_fallback')
+          }
+
+          throw new Error('real_gateway_unavailable')
+        }
+      },
+      tools: createToolRuntime(),
+      listTools: () => [queryGraphDescriptor],
+      fallbackGatewayId: 'stub-main',
+      fallbackModelId: 'stub-text',
+      resolveDefaultModel: () => ({ gatewayId: 'deepseek', modelId: 'deepseek-chat' }),
+      resolveGatewayType: (gatewayId) => gatewayId === 'deepseek' ? 'openai_compat' : 'stub'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-real-fail-no-stub',
+      messageId: 'message-real-fail-no-stub',
+      message: '帮我解释一下蒙太奇是什么',
+      agentId: 'general-purpose',
+      agent: agent({
+        id: 'general-purpose',
+        name: 'General Purpose',
+        instructions: 'Answer ordinary messages.',
+        allowedTools: ['canvas.queryGraph'],
+        gatewayPolicy: { allowedChannels: ['text'] },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+      }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    await expect(async () => {
+      let next = await stream.next()
+      while (!next.done) {
+        next = await stream.next()
+      }
+    }).rejects.toThrow('real_gateway_unavailable')
+    // 瞬时失败重试 2 次（共 3 次主网关调用）；stub 永不用作文本 fallback。
+    expect(calls).toEqual(['deepseek', 'deepseek', 'deepseek'])
+    expect(calls).not.toContain('stub-main')
   })
 
   it('turns model toolCalls and tool observations into a sanitized CanvasPlan', async () => {
@@ -307,6 +624,7 @@ describe('Gateway-backed Agent loop planner', () => {
   it('uses native gateway tools for openai_compat gateways', async () => {
     const requests: GatewayRequest[] = []
     const runtime = createToolRuntime({
+      idFactory: () => 'invoke-query-runtime',
       tools: [
         defineTool({
           descriptor: { ...queryGraphDescriptor, inputParametersJsonSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -330,7 +648,7 @@ describe('Gateway-backed Agent loop planner', () => {
               toolCalls: [{
                 id: 'call-query',
                 type: 'function',
-                function: { name: 'canvas.queryGraph', arguments: '{}' }
+                function: { name: 'tool_canvas_d_queryGraph', arguments: '{}' }
               }]
             })
           }
@@ -360,8 +678,13 @@ describe('Gateway-backed Agent loop planner', () => {
       next = await stream.next()
     }
 
-    expect(requests[0]?.tools?.map((tool) => tool.function.name)).toEqual(['canvas.queryGraph'])
+    expect(requests[0]?.tools?.map((tool) => tool.function.name)).toEqual(['tool_canvas_d_queryGraph'])
     expect(requests[0]?.messages?.some((message) => message.role === 'system')).toBe(true)
+    expect(requests[1]?.messages?.find((message) => message.role === 'tool')).toMatchObject({
+      role: 'tool',
+      tool_call_id: 'call-query',
+      name: 'tool_canvas_d_queryGraph'
+    })
     expect(expectAgentResponse(next.value).type).toBe('canvasPlan')
   })
 })

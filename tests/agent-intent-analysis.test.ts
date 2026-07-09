@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest'
 import { analyzeAgentIntent } from '../desktop/src/main/agent/intent-analysis'
 
 describe('Agent intent analysis', () => {
+  it('classifies casual greeting variants as answerable small talk', () => {
+    for (const message of ['你好啊', '嗨呀', '哈喽哈']) {
+      expect(analyzeAgentIntent(message)).toMatchObject({
+        kind: 'smallTalk',
+        executionMode: 'direct',
+        complexity: 'low',
+        recommendedAgentId: 'general-purpose',
+      })
+    }
+  })
+
   it('classifies greetings as answerable small talk', () => {
     expect(analyzeAgentIntent('hi')).toMatchObject({
       kind: 'smallTalk',
@@ -12,6 +23,19 @@ describe('Agent intent analysis', () => {
       requirements: ['Answer the greeting conversationally.'],
       missing: []
     })
+  })
+
+  it('classifies assistant identity questions as answerable small talk', () => {
+    for (const message of ['你是谁', '介绍一下自己', '你能做什么']) {
+      expect(analyzeAgentIntent(message)).toMatchObject({
+        kind: 'smallTalk',
+        executionMode: 'direct',
+        complexity: 'low',
+        recommendedAgentId: 'general-purpose',
+        requirements: ['Answer the assistant identity question conversationally.'],
+        missing: []
+      })
+    }
   })
 
   it('classifies empty input as clarify instead of answerable small talk', () => {

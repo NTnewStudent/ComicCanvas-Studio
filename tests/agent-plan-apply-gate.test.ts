@@ -7,6 +7,7 @@ import { AGENT_PLAN_AUTO_APPLY_ENABLED, isAgentPlanAutoApplyEnabled } from '../s
 describe('Task 60 Agent plan apply gate', () => {
   it('implements renderer automation behind the shared gate flag', () => {
     const readiness = readFileSync('docs/progress/task-60-agent-plan-apply-readiness.md', 'utf8')
+    const chatStoreSource = readFileSync('desktop/src/renderer/src/chat/store/chat.store.ts', 'utf8')
     const chatPanelSource = readFileSync('desktop/src/renderer/src/chat/ChatPanel.tsx', 'utf8')
     const chatBoxSource = readFileSync('desktop/src/renderer/src/canvas/components/CanvasChatBox.tsx', 'utf8')
 
@@ -14,8 +15,10 @@ describe('Task 60 Agent plan apply gate', () => {
     expect(isAgentPlanAutoApplyEnabled()).toBe(true)
     expect(readiness).toContain('Task 60 已在 `shared/agent-plan-apply.ts` 背后实现')
     expect(readiness).toContain('createCanvasPlanExecutionController')
-    expect(chatPanelSource).toContain('applyAgentPlanOnReady')
-    expect(chatBoxSource).toContain('applyAgentPlanOnReady')
+    // Task 60 自动 apply 判定统一收敛到共享 chat store，两个聊天入口都消费它。
+    expect(chatStoreSource).toContain('applyAgentPlanOnReady')
+    expect(chatPanelSource).toContain('createChatStore')
+    expect(chatBoxSource).toContain('createChatStore')
   })
 
   it('records Task 60 reuse points and scope constraints', () => {

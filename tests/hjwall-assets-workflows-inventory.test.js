@@ -39,6 +39,6 @@ describe('hjwall assets/workflows migration inventory', () => {
         expect(tasks).toContain('- [x] 1. Create the full hjwall assets/workflows capability inventory.');
         expect(tasks).toContain('- [x] 2. Freeze migration order and Agent boundary.');
         expect(tasks).toContain('- [x] 3a. Audit current ToolRuntime and canvas tool coverage.');
-        expect(backlog).toContain('Machine-readable `INV-AW-*` capability inventory');
+        expect(backlog).toContain('机器可读的 `INV-AW-*` 能力清单');
     });
 });

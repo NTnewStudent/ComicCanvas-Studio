@@ -21,24 +21,28 @@ const requiredSections = [
     '## Permissions',
     '## Tests'
 ];
+const requiredSectionsByDoc = {
+    'tools-plugins.md': ['## Owner', '## Scope', '## 请求/响应契约', '## 错误', '## 权限', '## 测试']
+};
 describe('foundation API contract docs', () => {
     it('provides the full M0 contract set with required sections', () => {
         for (const docName of requiredContractDocs) {
             const filePath = join('docs', 'api-contracts', docName);
             expect(existsSync(filePath), `${docName} should exist`).toBe(true);
             const content = readFileSync(filePath, 'utf8');
-            for (const section of requiredSections) {
+            const sections = requiredSectionsByDoc[docName] ?? requiredSections;
+            for (const section of sections) {
                 expect(content, `${docName} should include ${section}`).toContain(section);
             }
         }
     });
     it('documents Phase A asset category, upload progress, and reference boundaries', () => {
         const content = readFileSync(join('docs', 'api-contracts', 'assets-files.md'), 'utf8');
-        expect(content).toContain('The built-in starter image categories SHALL be role, scene, prop, and creature.');
-        expect(content).toContain('Asset category assignment SHALL preserve the underlying asset record');
+        expect(content).toContain('内置的起始图片分类 SHALL 为角色、场景、道具与生物。');
+        expect(content).toContain('资产分类的指定 SHALL 保留底层资产记录');
         expect(content).toContain('blockingReferences: AssetReference[]');
-        expect(content).toContain('Asset create/update/trash/tombstone changes SHALL be emitted through `asset.changed` IPC events.');
-        expect(content).toContain('Renderer upload progress SHALL be modeled as local multi-file import state');
-        expect(content).toContain('No `asset.uploadProgress` IPC channel is introduced');
+        expect(content).toContain('资产的创建/更新/回收/墓碑化变更 SHALL 通过 `asset.changed` IPC 事件发出。');
+        expect(content).toContain('渲染层的上传进度 SHALL 建模为本地多文件导入状态');
+        expect(content).toContain('不引入 `asset.uploadProgress` IPC 通道');
     });
 });

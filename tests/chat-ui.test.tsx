@@ -5,13 +5,14 @@ import '@testing-library/jest-dom/vitest'
 import { readFileSync } from 'node:fs'
 
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatPanel, type ChatPanelApi } from '../desktop/src/renderer/src/chat/ChatPanel'
 import { PlanCard } from '../desktop/src/renderer/src/chat/PlanCard'
 import type { AgentDefinition } from '../shared/agents'
 import type { CanvasPlan } from '../shared/plan'
+import type { ToolPermission } from '../shared/tools'
 
 const samplePlan: CanvasPlan = {
   kind: 'plan',
@@ -198,7 +199,7 @@ describe('M4 Chat UI', () => {
     fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
 
     await waitFor(() => expect(onApplyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: true }))
-    expect(await screen.findByText('计划已自动应用：plan-1')).toBeInTheDocument()
+    expect(await screen.findByText('已应用到画布')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '应用计划' })).not.toBeInTheDocument()
   })
 
@@ -238,7 +239,7 @@ describe('M4 Chat UI', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '生成短视频' } })
     fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
 
-    await screen.findByText('计划已就绪：plan-1')
+    await screen.findByText('生成宇宙飞船首帧并转成短视频。')
     unmount()
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
@@ -291,6 +292,59 @@ describe('M4 Chat UI', () => {
     expect(screen.queryByText('需要澄清。')).not.toBeInTheDocument()
   })
 
+  it('recovers an ordinary Agent answer when responseReady arrives before the chat ticket settles', async () => {
+    const responseReadyHandlers: Array<(event: {
+      messageId: string
+      runId: string
+      response: { type: 'answer'; summary: string; text: string; dropped: string[] }
+    }) => void> = []
+    const api = createApi({
+      sendCanvasChat: vi.fn().mockImplementation(() => {
+        responseReadyHandlers[0]?.({
+          messageId: 'message-fast',
+          runId: 'run-fast',
+          response: {
+            type: 'answer',
+            summary: '用户提出了普通寒暄。',
+            text: '你好，我是 ComicCanvas 的通用 Agent。',
+            dropped: []
+          }
+        })
+        return Promise.resolve({ runId: 'run-fast', jobId: 'job-fast', messageId: 'message-fast', status: 'pending' })
+      }),
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: 'run-fast',
+        status: 'completed',
+        trace: {
+          messageId: 'message-fast',
+          jobId: 'job-fast',
+          response: {
+            type: 'answer',
+            summary: '用户提出了普通寒暄。',
+            text: '你好，我是 ComicCanvas 的通用 Agent。',
+            dropped: []
+          }
+        }
+      }),
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn((handler: (event: {
+        messageId: string
+        runId: string
+        response: { type: 'answer'; summary: string; text: string; dropped: string[] }
+      }) => void) => {
+        responseReadyHandlers.push(handler)
+        return vi.fn()
+      })
+    })
+
+    render(<ChatPanel api={api} onApplyPlan={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '你好' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    expect(await screen.findByText('你好，我是 ComicCanvas 的通用 Agent。')).toBeInTheDocument()
+  })
+
   it('shows a visible assistant error when the pending Agent job fails', async () => {
     const failedHandlers: Array<(event: { channel: 'job.failed'; jobId: string; error: { errorClass: string; message: string; retryable: boolean }; emittedAt: number }) => void> = []
     const api = createApi({
@@ -318,7 +372,177 @@ describe('M4 Chat UI', () => {
       emittedAt: 1
     })
 
-    expect(await screen.findByText('Agent 执行失败：Agent runtime failed.')).toBeInTheDocument()
+    expect(await screen.findByText('Agent runtime failed.')).toBeInTheDocument()
+    expect(screen.getByText('agent_run_failed')).toBeInTheDocument()
+  })
+
+  it('keeps the approval dialog open when an Agent job fails because a tool needs approval', async () => {
+    const permissionHandlers: Array<(event: {
+      runId: string
+      messageId: string
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions: ToolPermission[]
+    }) => void> = []
+    const failedHandlers: Array<(event: {
+      channel: 'job.failed'
+      jobId: string
+      error: {
+        errorClass: string
+        message: string
+        retryable: boolean
+        details?: Record<string, unknown>
+      }
+      emittedAt: number
+    }) => void> = []
+    const approveAgentTool = vi.fn().mockResolvedValue({ runId: 'run-agent-1', jobId: 'job-agent-2', status: 'pending' })
+    const api = createApi({
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentPermissionRequired: vi.fn((handler: (event: {
+        runId: string
+        messageId: string
+        callId: string
+        toolId: string
+        reason: string
+        requiredPermissions: ToolPermission[]
+      }) => void) => {
+        permissionHandlers.push(handler)
+        return vi.fn()
+      }),
+      onJobFailed: vi.fn((handler: (event: {
+        channel: 'job.failed'
+        jobId: string
+        error: {
+          errorClass: string
+          message: string
+          retryable: boolean
+          details?: Record<string, unknown>
+        }
+        emittedAt: number
+      }) => void) => {
+        failedHandlers.push(handler)
+        return vi.fn()
+      }),
+      approveAgentTool
+    })
+
+    render(<ChatPanel api={api} onApplyPlan={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '你知道java么' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    await waitFor(() => expect(api.sendCanvasChat).toHaveBeenCalled())
+    const permissionHandler = permissionHandlers[0]
+    const failedHandler = failedHandlers[0]
+    if (!permissionHandler || !failedHandler) throw new Error('expected_permission_and_failed_subscriptions')
+
+    act(() => {
+      permissionHandler({
+        runId: 'run-agent-1',
+        messageId: 'message-1',
+        callId: 'call-web-search',
+        toolId: 'web.search',
+        reason: 'Search requires user approval.',
+        requiredPermissions: [{ kind: 'network', reason: 'Searches the web.' }]
+      })
+    })
+
+    expect(await screen.findByText('需要批准工具调用')).toBeInTheDocument()
+    expect(screen.getByText('Search requires user approval.')).toBeInTheDocument()
+
+    act(() => {
+      failedHandler({
+        channel: 'job.failed',
+        jobId: 'job-agent-1',
+        error: {
+          errorClass: 'agent_tool_approval_required',
+          message: 'Tool requires user approval before execution.',
+          retryable: false
+        },
+        emittedAt: 1
+      })
+    })
+
+    expect(screen.getByText('需要批准工具调用')).toBeInTheDocument()
+    expect(screen.queryByText('Tool requires user approval before execution.')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '批准' }))
+
+    await waitFor(() => expect(approveAgentTool).toHaveBeenCalledWith({
+      runId: 'run-agent-1',
+      callId: 'call-web-search',
+      approvedBy: 'chat-user'
+    }))
+  })
+
+  it('recovers the approved Agent response from the run snapshot when resume events were missed', async () => {
+    const permissionHandlers: Array<(event: {
+      runId: string
+      messageId: string
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions: ToolPermission[]
+    }) => void> = []
+    const getAgentRun = vi.fn()
+      .mockResolvedValueOnce({ runId: 'run-agent-1', status: 'pending', trace: {} })
+      .mockResolvedValue({
+        runId: 'run-agent-1',
+        status: 'completed',
+        trace: {
+          messageId: 'message-1',
+          jobId: 'job-agent-2',
+          response: {
+            type: 'answer',
+            summary: '联网查询后回答 Java。',
+            text: 'Java 是一门面向对象的通用编程语言。',
+            dropped: []
+          }
+        }
+      })
+    const api = createApi({
+      getAgentRun,
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentPermissionRequired: vi.fn((handler: (event: {
+        runId: string
+        messageId: string
+        callId: string
+        toolId: string
+        reason: string
+        requiredPermissions: ToolPermission[]
+      }) => void) => {
+        permissionHandlers.push(handler)
+        return vi.fn()
+      }),
+      approveAgentTool: vi.fn().mockResolvedValue({ runId: 'run-agent-1', jobId: 'job-agent-2', status: 'pending' })
+    })
+
+    render(<ChatPanel api={api} onApplyPlan={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '你知道java么' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    await waitFor(() => expect(api.sendCanvasChat).toHaveBeenCalled())
+    const permissionHandler = permissionHandlers[0]
+    if (!permissionHandler) throw new Error('expected_permission_subscription')
+
+    act(() => {
+      permissionHandler({
+        runId: 'run-agent-1',
+        messageId: 'message-1',
+        callId: 'call-web-search',
+        toolId: 'web.search',
+        reason: 'Search requires user approval.',
+        requiredPermissions: [{ kind: 'network', reason: 'Searches the web.' }]
+      })
+    })
+
+    fireEvent.click(await screen.findByRole('button', { name: '批准' }))
+
+    expect(await screen.findByText('Java 是一门面向对象的通用编程语言。')).toBeInTheDocument()
   })
 
   it('uses the Tailwind cn helper and references the pc-client chat implementation baseline', () => {

@@ -154,6 +154,61 @@ Rules:
 - `canvasPlan` 专用于显式的画布图/节点/工作流任务，并通过 canvas plan 路径交付。
 - 非 `canvasPlan` 的终态响应 SHALL 发出 `agent.responseReady`，且 SHALL NOT 为 `canvas.chatGetPlan` 存储 CanvasPlan。
 
+### 聊天消息块契约（`shared/chat-blocks.ts`）
+
+渲染层与主进程共享的消息块唯一真源：
+
+```ts
+type ChatBlock =
+  | { kind: 'text'; markdown: string; streaming: boolean }
+  | { kind: 'thinking'; lines: string[] }
+  | { kind: 'toolCall'; callId: string; toolId: string;
+      status: 'running' | 'completed' | 'failed' | 'denied';
+      inputSummary?: string; resultSummary?: string; isSubAgent: boolean }
+  | { kind: 'plan'; planId: string }
+  | { kind: 'permission'; callId: string; toolId: string; reason: string; resolved: boolean }
+  | { kind: 'error'; errorClass: string; message: string; retryable: boolean }
+  | { kind: 'usage'; summary: string }
+
+interface ChatTurn {
+  id: string
+  role: 'user' | 'assistant'
+  blocks: ChatBlock[]
+  runId?: string
+  messageId?: string
+  status: 'pending' | 'streaming' | 'completed' | 'failed'
+  createdAt: number
+}
+```
+
+Rules:
+
+- 块组装 SHALL 只通过共享纯 reducer `applyAgentEvent(turn, event)` 完成；渲染层实时组装与主进程终态持久化 SHALL 使用同一实现。
+- 不新增流式块 IPC 通道：渲染层继续消费现有 `agent.delta` / `agent.toolStarted` / `agent.toolCompleted` / `agent.permissionRequired` / `agent.responseReady` / `canvas.planReady` / `job.progress` 事件。
+- assistant 终态回合 SHALL 序列化为 `chat_messages.blocks_json`；恢复时损坏或缺失的块 JSON SHALL 按 content/planJson 降级合成，不得让历史恢复失败。
+
+### `chat.history`
+
+Request:
+
+```ts
+interface ChatHistoryRequest {
+  workflowId: string
+}
+```
+
+Response:
+
+```ts
+type ChatHistoryResponse = ChatTurn[]
+```
+
+Rules:
+
+- 按 `createdAt` 升序返回该 workflow 的会话回合；user 回合由 content 合成单 text 块。
+- 响应 SHALL NOT 包含资产字节、绝对路径或密钥。
+- 「清空对话」是纯渲染层行为，SHALL NOT 删除持久化历史。
+
 ### `agent.approveTool`
 
 Request:
@@ -252,6 +307,9 @@ Rules:
 | `agent_depth_exceeded` | Spawn 深度超过配置的最大值。 |
 | `agent_max_turns_exceeded` | Agent 循环在产出 plan 之前达到配置的轮次上限。 |
 | `agent_run_failed` | Agent 循环失败，附带安全的错误元数据。 |
+| `gateway_retry_exhausted` | 网关瞬时失败重试与 fallback 均耗尽。 |
+| `compaction_failed` | 反应式上下文压缩后仍无法完成模型调用。 |
+| `tool_failure_loop` | 同一工具连续失败达到上限，run 被终止以防死循环。 |
 
 ## Permissions
 

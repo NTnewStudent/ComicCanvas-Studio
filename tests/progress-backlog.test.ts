@@ -12,7 +12,11 @@ function parseRuepePointerField(backlog: string, field: 'spec' | 'task' | 'çŠ¶æ€
   if (!row) {
     throw new Error(`Missing RUEPE pointer field: ${field}`)
   }
-  return row[1].trim().replace(/^`|`$/g, '').replace(/`/g, '')
+  const value = row[1]
+  if (!value) {
+    throw new Error(`Missing RUEPE pointer value: ${field}`)
+  }
+  return value.trim().replace(/^`|`$/g, '').replace(/`/g, '')
 }
 
 describe('M0 progress reconciliation', () => {

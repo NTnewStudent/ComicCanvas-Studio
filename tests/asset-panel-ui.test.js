@@ -283,10 +283,11 @@ describe('M5 AssetPanel folder UI', () => {
         renderAssetPanel(api);
         const landscapeImage = await screen.findByRole('img', { name: 'Asset Landscape 1600x900' });
         expect(landscapeImage.closest('article')).toHaveClass('aspect-square');
+        expect(landscapeImage.closest('article')).toHaveClass('bg-bg-card', 'border-border-secondary', 'shadow-card');
         expect(landscapeImage).toHaveClass('object-contain');
         fireEvent.click(screen.getByRole('img', { name: 'Asset Portrait 900x1600' }));
         const dialog = screen.getByRole('dialog', { name: 'Asset Portrait 900x1600' });
-        expect(dialog.firstElementChild).toHaveClass('max-w-3xl');
+        expect(dialog).toHaveClass('max-w-3xl', 'bg-bg-panel', 'shadow-pop');
         expect(within(dialog).getByRole('img', { name: 'Asset Portrait 900x1600' })).toHaveClass('object-contain');
     });
     it('renders loading, error, and empty states for the asset page shell', async () => {

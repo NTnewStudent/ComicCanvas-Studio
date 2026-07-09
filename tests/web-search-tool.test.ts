@@ -127,4 +127,58 @@ describe('web.search tool', () => {
       retryable: true
     })
   })
+
+  it('times out stalled search requests with a retryable tool error', async () => {
+    vi.useFakeTimers()
+    let signal: AbortSignal | undefined
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>()
+      .mockImplementation((_input, init) => {
+        signal = init?.signal ?? undefined
+
+        if (!signal) {
+          return Promise.resolve(textResponse(''))
+        }
+
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'))
+          }, { once: true })
+        })
+      })
+    const runtime = createToolRuntime({
+      tools: createWebSearchTools({
+        fetch: fetchMock as unknown as typeof fetch,
+        timeoutMs: 50
+      })
+    })
+
+    try {
+      const pending = runtime.invoke({
+        toolId: 'web.search',
+        input: { query: 'OpenAI latest news' },
+        actor,
+        traceId: 'trace-web-search-timeout',
+        approvedInvocation: {
+          toolId: 'web.search',
+          input: { query: 'OpenAI latest news' },
+          approvedBy: { type: 'user', id: 'user-local' }
+        }
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(fetchMock).toHaveBeenCalled()
+      expect(signal).toBeDefined()
+      await vi.advanceTimersByTimeAsync(50)
+
+      const result = await pending
+      expect(result.error).toMatchObject({
+        errorClass: 'tool_runtime_failed',
+        code: 'web_search_timeout',
+        retryable: true
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
