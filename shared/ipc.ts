@@ -33,7 +33,7 @@ import type {
 import type { GatewayConfigInput, GatewayConfigView, GatewayFetchModelsRequest, GatewayFetchModelsResponse } from './gateway'
 import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRecoveryReport, JobTerminalEvent, JobTicket } from './jobs'
 import type { CanvasPlan, PlanRunStep } from './plan'
-import type { AgentDefinition, AgentNonCanvasResponse, AgentRunRequest, AgentRunTicket, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
+import type { AgentDefinition, AgentNonCanvasResponse, AgentRunRequest, AgentRunTicket, AgentRunViewResponse, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from './agents'
 import type { ChatTurn } from './chat-blocks'
 import type { SkillDefinition, SkillInvocationRecord, SkillInvokeRequest, SkillListRequest } from './skills'
 import type { ContextBuildInput, ContextPack, KnowledgeDocument, KnowledgeIngestRequest, KnowledgeQuery, KnowledgeChunk } from './knowledge'
@@ -486,7 +486,7 @@ export interface IpcResponseMap {
   'agent.save': AgentDefinition
   'agent.delete': { agentId: string; deleted: true }
   'agent.run': AgentRunTicket
-  'agent.getRun': { runId: string; status: string; trace?: Record<string, unknown> }
+  'agent.getRun': AgentRunViewResponse
   'agent.approveTool': AgentRunTicket | { errorClass: string; message: string; retryable: false }
   'agent.spawn': SpawnSubAgentResult
   'chat.history': ChatTurn[]

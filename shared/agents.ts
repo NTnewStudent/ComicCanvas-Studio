@@ -5,6 +5,7 @@
 
 import type { ToolPermissionKind } from './tools'
 import type { CanvasPlan } from './plan'
+import type { AgentRunProjection, AgentRunSnapshot, PermissionGrantScope } from './agent-run-events'
 
 export type AgentSource = 'builtin' | 'user'
 
@@ -95,6 +96,15 @@ export interface AgentToolApprovalInput {
   runId: string
   callId: string
   approvedBy: string
+  scope?: PermissionGrantScope
+}
+
+export interface AgentRunViewResponse {
+  runId: string
+  status: AgentRunStatus
+  trace?: Record<string, unknown>
+  snapshot?: AgentRunSnapshot
+  projection?: AgentRunProjection
 }
 
 export interface SubAgentSpec {

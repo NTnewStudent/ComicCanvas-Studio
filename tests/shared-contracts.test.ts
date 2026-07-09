@@ -9,6 +9,7 @@ const requiredSharedContracts = [
   'gateway.ts',
   'tools.ts',
   'agents.ts',
+  'agent-run-events.ts',
   'skills.ts',
   'knowledge.ts'
 ]

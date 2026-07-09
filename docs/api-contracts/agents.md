@@ -105,6 +105,48 @@ type AgentResponse =
   | { type: 'canvasPlan'; plan: CanvasPlan }
 ```
 
+### Agent Run Spine
+
+`AgentRunEvent` 是本地 Agent 运行的持久化事实源。现有 live IPC 事件仍作为投递通道；重放与 `agent.getRun` SHALL 从持久化的 `agent_runs`、`agent_run_events`、`agent_artifacts`、`agent_permission_grants` 与 `child_agent_tasks` 重建。
+
+```ts
+type AgentRunEventType =
+  | 'run.created'
+  | 'run.started'
+  | 'intent.analyzed'
+  | 'context.built'
+  | 'progress'
+  | 'model.delta'
+  | 'tool.started'
+  | 'tool.completed'
+  | 'permission.requested'
+  | 'permission.resolved'
+  | 'artifact.created'
+  | 'plan.ready'
+  | 'response.ready'
+  | 'run.completed'
+  | 'run.failed'
+
+interface LocalPermissionGrant {
+  id: string
+  toolId: string
+  permissionKinds: ToolPermissionKind[]
+  workflowId: string
+  scope: 'once' | 'run' | 'session'
+  runId?: string
+  expiresAt?: number
+  approvedByLabel: string
+  createdAt: number
+}
+```
+
+Rules:
+
+- `AgentRunEvent` rows SHALL be append-only and strictly ordered by `(run_id, sequence)`.
+- `RunProjector` SHALL be pure and deterministic for live events and persisted replay.
+- `agent.getRun` MAY include `snapshot` and `projection` fields. Older consumers SHALL continue using `runId`, `status`, and `trace`.
+- 本地专业版不包含 organization/team/cloud policy server、team memory、cloud sync、multi-user workspace 或 centralized admin policy。
+
 Events:
 
 ```ts
