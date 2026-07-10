@@ -6,10 +6,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import type { AgentResponse } from '../shared/agents'
+import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
+import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
+import { createAgentArtifactRepository } from '../desktop/src/main/db/repositories/agent-artifact.repo'
+import { createAgentPermissionGrantRepository } from '../desktop/src/main/db/repositories/agent-permission-grant.repo'
+import { createAgentRunEventRepository } from '../desktop/src/main/db/repositories/agent-run-event.repo'
 import { createAgentRunRepository } from '../desktop/src/main/db/repositories/agent-run.repo'
+import { createChildAgentTaskRepository } from '../desktop/src/main/db/repositories/child-agent-task.repo'
 import { createJobRepository } from '../desktop/src/main/db/repositories/job.repo'
 import { createJobEventBus } from '../desktop/src/main/jobs/events'
 import { createJobQueue } from '../desktop/src/main/jobs/queue'
@@ -735,6 +741,156 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         kind: 'plan',
         summary: 'Approved tool call completed.',
         nodes: [{ ref: 'prompt-approved', type: 'text', title: 'Approved prompt', data: { content: 'done' } }]
+      })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('persists successful visible transitions and replayable answer artifacts', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-orchestrator-spine-'))
+    const dbPath = join(tempDir, 'orchestrator-spine.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const jobs = createJobRepository(db)
+      const agentRuns = createAgentRunRepository(db)
+      let spineId = 0
+      const runSpine = createAgentRunSpine({
+        runs: agentRuns,
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        idFactory: (prefix) => `${prefix}-spine-${++spineId}`,
+        clock: (() => {
+          let now = 1_782_700_010_000
+          return () => now++
+        })()
+      })
+      const events = createJobEventBus()
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-spine-1',
+        clock: () => 1_782_700_010_000
+      })
+      const runtime = createOrchestratorRuntime({
+        queue,
+        events,
+        agentRuns,
+        runSpine,
+        listTools: () => [queryGraphTool],
+        idFactory: (prefix) => `${prefix}-spine-1`,
+        planIdFactory: () => 'plan-spine-1',
+        planner: {
+          async *proposePlan() {
+            yield await Promise.resolve({ type: 'progress' as const, message: 'Model thinking', progress: 60 })
+            return { type: 'answer', summary: 'Greeting', text: '你好，我在。', dropped: [] }
+          }
+        }
+      })
+      const worker = createJobWorker({
+        jobs,
+        events,
+        leaseOwner: 'agent-spine-worker',
+        clock: () => 1_782_700_010_050,
+        handlers: { 'agent.run': runtime.createJobHandler() }
+      })
+
+      const ticket = runtime.agentRun({ agentId: 'general-purpose', message: '你好' })
+      expect(await worker.runNext()).toBe('job-spine-1')
+
+      const aggregate = runSpine.getSnapshot(ticket.runId)
+      const eventTypes = aggregate?.events.map((event) => event.type) ?? []
+
+      expect(eventTypes.slice(0, 4)).toEqual([
+        'run.created',
+        'intent.analyzed',
+        'run.started',
+        'context.built'
+      ])
+      expect(eventTypes.filter((type) => type === 'progress')).toHaveLength(4)
+      expect(eventTypes.slice(-3)).toEqual([
+        'response.ready',
+        'artifact.created',
+        'run.completed'
+      ])
+      expect(aggregate?.run.status).toBe('completed')
+      expect(aggregate?.artifacts).toEqual([
+        expect.objectContaining({ kind: 'answer', title: 'Answer', summary: 'Greeting' })
+      ])
+      expect(aggregate ? projectAgentRunSnapshot(aggregate).chatTurn.blocks : []).toContainEqual({
+        kind: 'text',
+        markdown: '你好，我在。',
+        streaming: false
+      })
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('persists one visible terminal failure when orchestration throws', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-orchestrator-spine-failure-'))
+    const dbPath = join(tempDir, 'orchestrator-spine-failure.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const jobs = createJobRepository(db)
+      const agentRuns = createAgentRunRepository(db)
+      let spineId = 0
+      const runSpine = createAgentRunSpine({
+        runs: agentRuns,
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        idFactory: (prefix) => `${prefix}-failure-${++spineId}`,
+        clock: () => 1_782_700_011_000
+      })
+      const events = createJobEventBus()
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-spine-failure',
+        clock: () => 1_782_700_011_000
+      })
+      const runtime = createOrchestratorRuntime({
+        queue,
+        events,
+        agentRuns,
+        runSpine,
+        idFactory: (prefix) => `${prefix}-spine-failure`,
+        planner: {
+          proposePlan() {
+            throw new Error('Gateway unavailable.')
+          }
+        }
+      })
+      const worker = createJobWorker({
+        jobs,
+        events,
+        leaseOwner: 'agent-spine-failure-worker',
+        clock: () => 1_782_700_011_010,
+        handlers: { 'agent.run': runtime.createJobHandler() }
+      })
+
+      const ticket = runtime.agentRun({ agentId: 'general-purpose', message: '请回答' })
+      expect(await worker.runNext()).toBe('job-spine-failure')
+
+      const aggregate = runSpine.getSnapshot(ticket.runId)
+      expect(aggregate?.run).toMatchObject({
+        status: 'failed',
+        errorClass: 'Gateway unavailable.',
+        lastCheckpoint: 'run.failed'
+      })
+      expect(aggregate?.events.filter((event) => event.type === 'run.failed')).toHaveLength(1)
+      expect(aggregate ? projectAgentRunSnapshot(aggregate).inspector.error : undefined).toEqual({
+        errorClass: 'Gateway unavailable.',
+        message: 'Gateway unavailable.',
+        retryable: false
       })
     } finally {
       db.close()

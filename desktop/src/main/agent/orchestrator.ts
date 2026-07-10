@@ -25,6 +25,7 @@ import { buildSkillContext } from '../knowledge/skill-context'
 import type { SkillRegistry } from '../skills/registry'
 import { applyAgentEvent, createAssistantTurn } from '../../../../shared/chat-blocks'
 import type { ChatTurn } from '../../../../shared/chat-blocks'
+import type { AgentRunSpine } from './run-spine'
 
 const DEFAULT_CHAT_AGENT_ID = 'general-purpose'
 const CANVAS_ORCHESTRATOR_AGENT_ID = 'canvas-orchestrator'
@@ -143,6 +144,7 @@ export interface OrchestratorRuntimeOptions {
   registry?: AgentRegistry
   listTools?: () => ToolDescriptor[]
   agentRuns?: AgentRunRepository
+  runSpine?: AgentRunSpine
   chatMessages?: ChatMessageRepository
   planEvents?: CanvasPlanEventBus
   getCanvasGraph?: (workflowId?: string) => CanvasGraphSnapshot
@@ -271,6 +273,16 @@ function normalizeAgentResponse(value: AgentResponse | CanvasPlan): AgentRespons
   }
 
   return responseFromCanvasPlan(value)
+}
+
+function artifactTitleForResponse(response: AgentResponse): string {
+  if (response.type === 'answer') return 'Answer'
+  if (response.type === 'clarification') return 'Clarification'
+  return 'Canvas Plan'
+}
+
+function artifactSummaryForResponse(response: AgentResponse): string {
+  return response.type === 'canvasPlan' ? response.plan.summary : response.summary
 }
 
 function runFailureTrace(runId: string, messageId: string, previous: StoredRun | undefined, error: unknown): StoredRun {
@@ -997,10 +1009,12 @@ async function consumeRunStream(
     plansByMessage: Map<string, CanvasPlan>
     chatMessages?: ChatMessageRepository
     planEvents?: CanvasPlanEventBus
+    runSpine?: AgentRunSpine
     runsById: Map<string, StoredRun>
     setRun: (run: StoredRun) => void
     agentId: string
     trigger: AgentTriggerKind
+    clock: () => number
   }
 ): Promise<OrchestratorRunResult> {
   let turnCount = 0
@@ -1018,6 +1032,10 @@ async function consumeRunStream(
         persistedTurn = createAssistantTurn({ id: 'pending', createdAt: Date.now() })
       }
       persistedTurn = applyAgentEvent(persistedTurn, { type: 'progress', message: next.value.message })
+      options.runSpine?.appendEvent(next.value.runId, 'progress', {
+        message: next.value.message,
+        progress: next.value.progress
+      })
       options.events.emitProgress({
         channel: 'job.progress',
         jobId: options.jobId,
@@ -1032,6 +1050,11 @@ async function consumeRunStream(
       }
       persistedTurn = applyAgentEvent(persistedTurn, {
         type: 'toolStarted',
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        inputSummary: next.value.inputSummary
+      })
+      options.runSpine?.appendEvent(next.value.runId, 'tool.started', {
         callId: next.value.callId,
         toolId: next.value.toolId,
         inputSummary: next.value.inputSummary
@@ -1053,6 +1076,13 @@ async function consumeRunStream(
           summary: next.value.summary
         })
       }
+      options.runSpine?.appendEvent(next.value.runId, 'tool.completed', {
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        invocationId: next.value.invocationId,
+        status: next.value.status,
+        summary: next.value.summary
+      })
       options.planEvents?.emitToolCompleted({
         runId: next.value.runId,
         messageId: next.value.messageId,
@@ -1071,6 +1101,12 @@ async function consumeRunStream(
           reason: next.value.reason
         })
       }
+      options.runSpine?.appendEvent(next.value.runId, 'permission.requested', {
+        callId: next.value.callId,
+        toolId: next.value.toolId,
+        reason: next.value.reason,
+        requiredPermissions: next.value.requiredPermissions
+      })
       options.planEvents?.emitPermissionRequired({
         runId: next.value.runId,
         messageId: next.value.messageId,
@@ -1101,6 +1137,19 @@ async function consumeRunStream(
       createdAt: Date.now()
     })
     options.planEvents?.emitPlanReady({ messageId: next.value.messageId, planId: next.value.planId })
+    options.runSpine?.appendEvent(next.value.runId, 'plan.ready', {
+      messageId: next.value.messageId,
+      planId: next.value.planId
+    })
+    options.runSpine?.saveArtifact({
+      id: `artifact-${next.value.runId}-canvasPlan`,
+      runId: next.value.runId,
+      kind: 'canvasPlan',
+      title: artifactTitleForResponse(next.value.response),
+      summary: artifactSummaryForResponse(next.value.response),
+      payload: next.value.plan,
+      createdAt: options.clock()
+    })
   } else {
     const response = next.value.response
     if (response.type === 'canvasPlan') {
@@ -1124,6 +1173,19 @@ async function consumeRunStream(
       messageId: next.value.messageId,
       response
     })
+    options.runSpine?.appendEvent(next.value.runId, 'response.ready', {
+      messageId: next.value.messageId,
+      response
+    })
+    options.runSpine?.saveArtifact({
+      id: `artifact-${next.value.runId}-${response.type}`,
+      runId: next.value.runId,
+      kind: response.type,
+      title: artifactTitleForResponse(response),
+      summary: artifactSummaryForResponse(response),
+      payload: response,
+      createdAt: options.clock()
+    })
   }
 
   const previousRun = options.runsById.get(next.value.runId)
@@ -1142,6 +1204,15 @@ async function consumeRunStream(
     turnCount,
     ...(usageSummary ? { usageSummary } : {})
   })
+  options.runSpine?.updateRun({
+    runId: next.value.runId,
+    status: 'completed',
+    pausedState: null,
+    errorClass: null,
+    lastCheckpoint: 'run.completed',
+    usage: usageSummary ? { summary: usageSummary } : {}
+  })
+  options.runSpine?.appendEvent(next.value.runId, 'run.completed', { status: 'completed' })
 
   return next.value
 }
@@ -1172,7 +1243,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       id: run.runId,
       agentId: run.agentId ?? existing?.agentId ?? DEFAULT_CHAT_AGENT_ID,
       status: run.status,
-      trace: runTrace(run),
+      trace: { ...(existing?.trace ?? {}), ...runTrace(run) },
       createdAt: existing?.createdAt ?? clock(),
       updatedAt: clock(),
       ...(run.jobId ? { jobId: run.jobId } : {}),
@@ -1180,6 +1251,83 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     }
 
     options.agentRuns.upsert(record)
+  }
+
+  function createSpineRun(input: {
+    runId: string
+    messageId: string
+    jobId: string
+    agentId: string
+    trigger: AgentTriggerKind
+    intentAnalysis: AgentIntentAnalysis
+  }): void {
+    if (!options.runSpine) {
+      return
+    }
+
+    const workflowId = options.workflowId ?? 'default'
+    options.runSpine.createRun({
+      runId: input.runId,
+      threadId: workflowId,
+      workflowId,
+      messageId: input.messageId,
+      jobId: input.jobId,
+      agentId: input.agentId,
+      trigger: input.trigger,
+      policyProfileId: 'local-default'
+    })
+    options.runSpine.appendEvent(input.runId, 'intent.analyzed', { ...input.intentAnalysis })
+  }
+
+  function persistRunFailure(
+    runId: string,
+    messageId: string,
+    error: unknown
+  ): StoredRun {
+    const failedRun = runFailureTrace(runId, messageId, runsById.get(runId), error)
+    setRun(failedRun)
+
+    const snapshot = options.runSpine?.getSnapshot(runId)
+    if (!options.runSpine || !snapshot) {
+      return failedRun
+    }
+
+    options.runSpine.updateRun({
+      runId,
+      status: failedRun.status,
+      ...(failedRun.pausedState ? { pausedState: { ...failedRun.pausedState } } : {}),
+      ...(failedRun.errorClass ? { errorClass: failedRun.errorClass } : {}),
+      lastCheckpoint: failedRun.status === 'approval_required' ? 'permission.requested' : 'run.failed'
+    })
+
+    if (failedRun.status === 'approval_required' && failedRun.pendingApproval) {
+      const alreadyRecorded = snapshot.events.some((event) => {
+        const eventPayload: unknown = event.payload
+        if (event.type !== 'permission.requested' || !isRecord(eventPayload)) return false
+        return eventPayload.callId === failedRun.pendingApproval?.callId
+      })
+      if (!alreadyRecorded) {
+        options.runSpine.appendEvent(runId, 'permission.requested', {
+          callId: failedRun.pendingApproval.callId,
+          toolId: failedRun.pendingApproval.toolId,
+          reason: failedRun.pendingApproval.reason,
+          requiredPermissions: failedRun.pendingApproval.requiredPermissions
+        })
+      }
+      return failedRun
+    }
+
+    const alreadyTerminal = snapshot.events.some((event) => event.type === 'run.failed' || event.type === 'run.completed')
+    if (!alreadyTerminal) {
+      options.runSpine.appendEvent(runId, 'run.failed', {
+        errorClass: failedRun.errorClass ?? 'agent_run_failed',
+        message: error instanceof Error ? error.message : 'Agent run failed.',
+        retryable: false,
+        checkpoint: 'run.failed'
+      })
+    }
+
+    return failedRun
   }
 
   return {
@@ -1200,6 +1348,14 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         requestedBy: { type: 'user', id: input.requestedBy }
       })
 
+      createSpineRun({
+        runId,
+        messageId,
+        jobId: ticket.jobId,
+        agentId: input.agentId ?? DEFAULT_CHAT_AGENT_ID,
+        trigger: input.trigger ?? 'canvasChat',
+        intentAnalysis
+      })
       setRun({ runId, messageId, status: 'pending', agentId: input.agentId ?? DEFAULT_CHAT_AGENT_ID, jobId: ticket.jobId, trigger: input.trigger ?? 'canvasChat', intentAnalysis })
       options.chatMessages?.create({
         id: messageId,
@@ -1232,6 +1388,14 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         requestedBy: { type: 'user', id: 'agent.run' }
       })
 
+      createSpineRun({
+        runId,
+        messageId,
+        jobId: ticket.jobId,
+        agentId: input.agentId,
+        trigger,
+        intentAnalysis
+      })
       setRun({ runId, messageId, status: 'pending', agentId: input.agentId, jobId: ticket.jobId, trigger, intentAnalysis })
       options.chatMessages?.create({
         id: messageId,
@@ -1332,6 +1496,18 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
 
           const agent = run.effectiveAgent ?? resolvedAgent
           setRun({ ...run, status: 'running', jobId: job.id, effectiveAgent: agent })
+          options.runSpine?.updateRun({
+            runId: approval.runId,
+            status: 'running',
+            jobId: job.id,
+            pausedState: null,
+            errorClass: null,
+            lastCheckpoint: 'run.started'
+          })
+          options.runSpine?.appendEvent(approval.runId, 'run.started', {
+            status: 'running',
+            jobId: job.id
+          })
 
           try {
             const stream = runApprovalOrchestrator({
@@ -1353,10 +1529,12 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               plansByMessage,
               ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
               ...(options.planEvents ? { planEvents: options.planEvents } : {}),
+              ...(options.runSpine ? { runSpine: options.runSpine } : {}),
               runsById,
               setRun,
               agentId: approval.agentId,
-              trigger: approval.trigger
+              trigger: approval.trigger,
+              clock
             })
 
             return {
@@ -1366,7 +1544,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               ...(result.response.type !== 'canvasPlan' ? { response: result.response } : {})
             }
           } catch (error) {
-            setRun(runFailureTrace(approval.runId, approval.messageId, runsById.get(approval.runId), error))
+            persistRunFailure(approval.runId, approval.messageId, error)
             throw error
           }
         }
@@ -1379,15 +1557,41 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         const intentAnalysis = analyzeAgentIntent(message)
         const resolvedAgent = options.registry ? options.registry.get(agentId) : fallbackOrchestratorAgent(agentId)
         if (!resolvedAgent) {
-          setRun({ runId, messageId, status: 'failed', agentId, trigger, intentAnalysis, errorClass: 'agent_not_found' })
-          throw new Error('agent_not_found')
+          const error = new Error('agent_not_found')
+          persistRunFailure(runId, messageId, error)
+          throw error
         }
         const agent = applyContextPolicyOverride(resolvedAgent, job.payload)
 
         if (!agent || !agent.enabled || !agent.triggerPolicy.allowedTriggers.includes(trigger)) {
-          setRun({ runId, messageId, status: 'failed', agentId, trigger, intentAnalysis, errorClass: 'agent_not_found' })
-          throw new Error('agent_not_found')
+          const error = new Error('agent_not_found')
+          persistRunFailure(runId, messageId, error)
+          throw error
         }
+
+        setRun({
+          ...(runsById.get(runId) ?? { runId, messageId }),
+          runId,
+          messageId,
+          status: 'running',
+          agentId,
+          trigger,
+          intentAnalysis,
+          effectiveAgent: agent,
+          startedAt: clock()
+        })
+        options.runSpine?.updateRun({
+          runId,
+          status: 'running',
+          jobId: job.id,
+          errorClass: null,
+          lastCheckpoint: 'run.started'
+        })
+        options.runSpine?.appendEvent(runId, 'run.started', {
+          status: 'running',
+          jobId: job.id
+        })
+
         // Load recent workflow conversation so follow-up messages keep context.
         const history = options.chatMessages && options.workflowId
           ? options.chatMessages.listByWorkflowId(options.workflowId)
@@ -1434,6 +1638,23 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           tokenBudget: Math.floor(agent.contextPolicy.maxContextTokens * 0.4),
           clock
         })
+        options.runSpine?.updateRun({
+          runId,
+          status: 'running',
+          contextPackId: contextResult.pack.id,
+          trace: {
+            contextTokenEstimate: contextResult.tokenEstimate,
+            contextMessagesIncluded: contextResult.messagesIncluded
+          },
+          lastCheckpoint: 'context.built'
+        })
+        options.runSpine?.appendEvent(runId, 'context.built', {
+          contextPackId: contextResult.pack.id,
+          tokenEstimate: contextResult.tokenEstimate,
+          messagesIncluded: contextResult.messagesIncluded,
+          sourceCount: contextResult.pack.sources.length,
+          redactionCount: contextResult.pack.redactions.length
+        })
         const skillContext = options.skillRegistry
           ? buildSkillContext(agent, options.skillRegistry, Math.floor(agent.contextPolicy.maxContextTokens * 0.2))
           : ''
@@ -1449,11 +1670,12 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         })
 
         // Build a delta callback that fans token deltas to the renderer in real time.
-        const onDelta = options.planEvents
-          ? (delta: string) => { options.planEvents!.emitDelta({ runId, messageId, delta }) }
+        const onDelta = options.planEvents || options.runSpine
+          ? (delta: string) => {
+              options.planEvents?.emitDelta({ runId, messageId, delta })
+              options.runSpine?.appendEvent(runId, 'model.delta', { delta })
+            }
           : undefined
-
-        setRun({ ...(runsById.get(runId) ?? { runId, messageId }), runId, messageId, status: 'running', agentId, trigger, intentAnalysis, effectiveAgent: agent, startedAt: clock() })
 
         try {
           const stream = runOrchestrator({
@@ -1474,10 +1696,12 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
             plansByMessage,
             ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
             ...(options.planEvents ? { planEvents: options.planEvents } : {}),
+            ...(options.runSpine ? { runSpine: options.runSpine } : {}),
             runsById,
             setRun,
             agentId,
-            trigger
+            trigger,
+            clock
           })
 
           return {
@@ -1487,7 +1711,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
             ...(result.response.type !== 'canvasPlan' ? { response: result.response } : {})
           }
         } catch (error) {
-          setRun(runFailureTrace(runId, messageId, runsById.get(runId), error))
+          persistRunFailure(runId, messageId, error)
           throw error
         }
       }
