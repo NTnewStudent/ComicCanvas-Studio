@@ -46,6 +46,8 @@ export interface ChatPanelApi {
   /** @see docs/api-contracts/jobs.md */
   onJobProgress?: (handler: (event: IpcEventMap['job.progress']) => void) => () => void
   /** @see docs/api-contracts/jobs.md */
+  onJobCompleted?: (handler: (event: IpcEventMap['job.completed']) => void) => () => void
+  /** @see docs/api-contracts/jobs.md */
   onJobFailed?: (handler: (event: IpcEventMap['job.failed']) => void) => () => void
 }
 
@@ -128,8 +130,6 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan, workflowId = 
       api: toStoreApi(api),
       applyPlan: (plan, options) => onApplyPlan(plan, options),
     }),
-    // onApplyPlan 由宿主稳定提供；store 生命周期只跟随 api。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [api],
   )
   const turns = useStore(handle.store, (state) => state.turns)

@@ -631,6 +631,55 @@ describe('main process runtime wiring', () => {
     }
   })
 
+  it('returns projected Run Spine state through agent.getRun after chat completes', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-main-runtime-run-spine-'))
+    const dbPath = join(tempDir, 'runtime-run-spine.sqlite')
+    const assetRoot = join(tempDir, 'assets')
+    const { ipcMain, handlers } = createFakeIpcMain()
+    const window = createWindow()
+    let runtime: MainProcessRuntime | null = null
+
+    try {
+      runtime = createMainProcessRuntime({
+        ipcMain,
+        dbPath,
+        assetRoot,
+        getWindows: () => [window],
+        currentUserId: 'user-1',
+        clock: (() => {
+          let now = 1_783_300_200_000
+          return () => now++
+        })(),
+        idFactory: (() => {
+          let index = 0
+          return () => `job-run-spine-${++index}`
+        })(),
+        messageIdFactory: (prefix) => `${prefix}-run-spine`,
+        planIdFactory: () => 'plan-run-spine'
+      })
+
+      const ticket = await handlers.get('canvas.chatSend')?.({}, {
+        message: '你好',
+        agentId: 'general-purpose'
+      }) as { runId: string }
+      await runtime.waitForIdleForTests()
+
+      const run = await handlers.get('agent.getRun')?.({}, { runId: ticket.runId }) as {
+        runId: string
+        status: string
+        projection?: { chatTurn: { blocks: Array<{ kind: string }> } }
+        snapshot?: { events: Array<{ type: string }> }
+      }
+
+      expect(run).toMatchObject({ runId: ticket.runId, status: 'completed' })
+      expect(run.snapshot?.events.map((event) => event.type)).toContain('run.completed')
+      expect(run.projection?.chatTurn.blocks.some((block) => block.kind === 'text')).toBe(true)
+    } finally {
+      runtime?.close()
+      await removeTempDirWithRetry(tempDir)
+    }
+  })
+
   it('is installed by the Electron main entrypoint', () => {
     const mainSource = readFileSync('desktop/src/main/index.ts', 'utf8')
 

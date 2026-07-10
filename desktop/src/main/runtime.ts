@@ -11,16 +11,22 @@ import type { IpcRegistrar } from './ipc/types'
 import { join } from 'node:path'
 import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
 import { createGatewayAgentPlanner } from './agent/gateway-loop-model'
+import { createAgentPermissionService, createToolPermissionGrantStore } from './agent/permission-service'
 import { createAgentRegistry } from './agent/registry'
+import { createAgentRunSpine } from './agent/run-spine'
 import { createIpcCanvasPlanEventBus } from './ipc/canvas-plan-fanout'
 import { createAssetCloudUrlService } from './assets/asset-cloud-url'
 import { createAssetPipeline } from './assets/pipeline'
 import { createWorkflowAssetResolver } from './assets/workflow-asset-resolver'
 import { applyMigrations, openDatabaseAtPath } from './db/migrate'
 import { createAgentRepository } from './db/repositories/agent.repo'
+import { createAgentArtifactRepository } from './db/repositories/agent-artifact.repo'
+import { createAgentPermissionGrantRepository } from './db/repositories/agent-permission-grant.repo'
+import { createAgentRunEventRepository } from './db/repositories/agent-run-event.repo'
 import { createAgentRunRepository } from './db/repositories/agent-run.repo'
 import { createAssetRepository } from './db/repositories/asset.repo'
 import { createChatMessageRepository } from './db/repositories/chat-message.repo'
+import { createChildAgentTaskRepository } from './db/repositories/child-agent-task.repo'
 import { createCanvasSnippetRepository } from './db/repositories/canvas-snippet.repo'
 import { createJobRepository } from './db/repositories/job.repo'
 import { createStorageConfigRepository } from './db/repositories/storage.repo'
@@ -115,6 +121,23 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const assets = createAssetRepository(db)
   const agents = createAgentRepository(db)
   const agentRuns = createAgentRunRepository(db)
+  const agentRunEvents = createAgentRunEventRepository(db)
+  const agentArtifacts = createAgentArtifactRepository(db)
+  const agentPermissionGrants = createAgentPermissionGrantRepository(db)
+  const childAgentTasks = createChildAgentTaskRepository(db)
+  const runSpine = createAgentRunSpine({
+    runs: agentRuns,
+    events: agentRunEvents,
+    artifacts: agentArtifacts,
+    grants: agentPermissionGrants,
+    childTasks: childAgentTasks,
+    clock
+  })
+  const permissionService = createAgentPermissionService({
+    grants: agentPermissionGrants,
+    workflowId: 'default',
+    clock
+  })
   const storageConfigs = createStorageConfigRepository(db)
   const styles = createStyleRepository(db)
   const snippets = createCanvasSnippetRepository(db)
@@ -223,6 +246,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
         workspaceRoot: options.workspaceRoot ?? process.cwd()
       })
     ],
+    permissionGrantStore: createToolPermissionGrantStore(permissionService),
     clock
   })
   const pluginLoader = createPluginLoader({ runtime: toolRuntime })
@@ -289,6 +313,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     listTools: () => toolRuntime.list(),
     getCanvasGraph: (workflowId) => graphStore.getGraph(workflowId),
     agentRuns,
+    runSpine,
     skillRegistry,
     knowledgeStore,
     idFactory: options.messageIdFactory ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`),

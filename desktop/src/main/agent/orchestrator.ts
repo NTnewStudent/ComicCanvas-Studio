@@ -5,7 +5,8 @@
  */
 
 import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
-import type { AgentDefinition, AgentResponse, AgentRunRequest, AgentRunStatus, AgentRunTicket, AgentToolApprovalInput, AgentTriggerKind } from '../../../../shared/agents'
+import { projectAgentRunSnapshot } from '../../../../shared/agent-run-projector'
+import type { AgentDefinition, AgentResponse, AgentRunRequest, AgentRunStatus, AgentRunTicket, AgentRunViewResponse, AgentToolApprovalInput, AgentTriggerKind } from '../../../../shared/agents'
 import type { JobResult } from '../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../shared/plan'
 import type { CanvasGraphSnapshot } from '../../../../shared/graph'
@@ -163,7 +164,7 @@ export interface OrchestratorRuntime {
   chatSend(input: OrchestratorChatInput): OrchestratorChatTicket
   agentRun(input: AgentRunRequest): AgentRunTicket
   approveTool(input: AgentToolApprovalInput): AgentRunTicket | { errorClass: string; message: string; retryable: false }
-  getRun(runId: string): { runId: string; status: AgentRunStatus; trace?: Record<string, unknown> } | null
+  getRun(runId: string): AgentRunViewResponse | null
   getPlan(messageId: string): CanvasPlan | null
   createJobHandler(): (job: PersistedJobRecord) => Promise<JobResult>
 }
@@ -1342,6 +1343,25 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     return failedRun
   }
 
+  function projectedRunFields(
+    runId: string
+  ): Partial<Pick<AgentRunViewResponse, 'snapshot' | 'projection'>> {
+    try {
+      const snapshot = options.runSpine?.getSnapshot(runId)
+      if (!snapshot) {
+        return {}
+      }
+
+      return {
+        snapshot,
+        projection: projectAgentRunSnapshot(snapshot)
+      }
+    } catch {
+      // Legacy or corrupt replay rows must not hide the basic run status response.
+      return {}
+    }
+  }
+
   return {
     chatSend(input) {
       const messageId = idFactory('message')
@@ -1499,10 +1519,20 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           return null
         }
 
-        return { runId: persisted.id, status: persisted.status, trace: persisted.trace }
+        return {
+          runId: persisted.id,
+          status: persisted.status,
+          trace: persisted.trace,
+          ...projectedRunFields(persisted.id)
+        }
       }
 
-      return { runId: run.runId, status: run.status, trace: runTrace(run) }
+      return {
+        runId: run.runId,
+        status: run.status,
+        trace: runTrace(run),
+        ...projectedRunFields(run.runId)
+      }
     },
     getPlan(messageId) {
       const storedPlan = plansByMessage.get(messageId)

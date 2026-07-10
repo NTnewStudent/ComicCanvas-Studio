@@ -128,6 +128,10 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
 export function createToolPermissionGrantStore(service: AgentPermissionService): ToolPermissionGrantStore {
   return {
     remember(input, permission) {
+      if (input.actor.type !== 'agent') {
+        return
+      }
+
       const approval = input.approvedInvocation
       if (!approval) {
         return
@@ -142,6 +146,10 @@ export function createToolPermissionGrantStore(service: AgentPermissionService):
       })
     },
     has(input, permission) {
+      if (input.actor.type !== 'agent') {
+        return false
+      }
+
       return service.hasReusableGrant({
         runId: input.traceId,
         toolId: input.toolId,
