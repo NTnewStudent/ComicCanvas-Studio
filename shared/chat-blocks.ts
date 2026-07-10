@@ -8,7 +8,9 @@
  * @see docs/api-contracts/agents.md
  */
 
+import type { PermissionGrantScope } from './agent-run-events'
 import type { AgentResponse } from './agents'
+import type { ToolPermission } from './tools'
 
 /** 一条 assistant/user 回合内的可渲染消息块。 */
 export type ChatBlock =
@@ -24,7 +26,15 @@ export type ChatBlock =
       isSubAgent: boolean
     }
   | { kind: 'plan'; planId: string }
-  | { kind: 'permission'; callId: string; toolId: string; reason: string; resolved: boolean }
+  | {
+      kind: 'permission'
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions?: ToolPermission[]
+      resolved: boolean
+      scope?: PermissionGrantScope
+    }
   | { kind: 'error'; errorClass: string; message: string; retryable: boolean }
   | { kind: 'usage'; summary: string }
 
@@ -48,8 +58,8 @@ export type AgentChatEvent =
   | { type: 'progress'; message: string }
   | { type: 'toolStarted'; callId: string; toolId: string; inputSummary: string }
   | { type: 'toolCompleted'; callId: string; toolId: string; status: 'completed' | 'failed' | 'denied'; summary: string }
-  | { type: 'permissionRequired'; callId: string; toolId: string; reason: string }
-  | { type: 'permissionResolved'; callId: string }
+  | { type: 'permissionRequired'; callId: string; toolId: string; reason: string; requiredPermissions?: ToolPermission[] }
+  | { type: 'permissionResolved'; callId: string; scope?: PermissionGrantScope }
   | { type: 'responseReady'; response: AgentResponse }
   | { type: 'planReady'; planId: string }
   | { type: 'runFailed'; errorClass: string; message: string; retryable: boolean }
@@ -270,7 +280,16 @@ export function applyAgentEvent(turn: ChatTurn, event: AgentChatEvent): ChatTurn
         ...turn,
         blocks: [
           ...blocks,
-          { kind: 'permission', callId: event.callId, toolId: event.toolId, reason: event.reason, resolved: false },
+          {
+            kind: 'permission',
+            callId: event.callId,
+            toolId: event.toolId,
+            reason: event.reason,
+            ...(event.requiredPermissions
+              ? { requiredPermissions: event.requiredPermissions.map((permission) => ({ ...permission })) }
+              : {}),
+            resolved: false
+          },
         ],
       }
 
@@ -278,7 +297,9 @@ export function applyAgentEvent(turn: ChatTurn, event: AgentChatEvent): ChatTurn
       return {
         ...turn,
         blocks: blocks.map((block) =>
-          block.kind === 'permission' && block.callId === event.callId ? { ...block, resolved: true } : block,
+          block.kind === 'permission' && block.callId === event.callId
+            ? { ...block, resolved: true, ...(event.scope ? { scope: event.scope } : {}) }
+            : block,
         ),
       }
 

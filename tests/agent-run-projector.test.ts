@@ -118,6 +118,7 @@ describe('Agent Run Projector', () => {
       callId: 'call-write',
       toolId: 'canvas.createNode',
       reason: 'Creating nodes requires confirmation.',
+      requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }],
       resolved: false
     })
     expect(awaitingApproval.inspector.permissions).toEqual([

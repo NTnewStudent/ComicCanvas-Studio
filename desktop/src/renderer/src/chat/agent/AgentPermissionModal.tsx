@@ -3,11 +3,14 @@
  * @see docs/api-contracts/agents.md
  */
 
+import type { ToolPermission } from '../../../../../../shared/tools'
+
 export interface AgentPermissionRequest {
   runId: string
   callId: string
   toolId: string
   reason: string
+  requiredPermissions?: ToolPermission[]
 }
 
 export interface AgentPermissionModalProps {

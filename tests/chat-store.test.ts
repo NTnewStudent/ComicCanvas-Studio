@@ -133,7 +133,8 @@ describe('chat store', () => {
 
   it('fetches the plan on planReady, stores it by ID, and auto-applies when autoExecute is on', async () => {
     const applyPlan = vi.fn()
-    const { api, handlers } = createFakeApi()
+    const getCanvasPlan = vi.fn().mockResolvedValue(samplePlan)
+    const { api, handlers } = createFakeApi({ getCanvasPlan })
     const { store } = createChatStore({ api, applyPlan })
 
     store.getState().setAutoExecute(true)
@@ -141,7 +142,7 @@ describe('chat store', () => {
     handlers.planReady?.({ messageId: 'message-1', planId: 'plan-1' })
     await flush()
 
-    expect(api.getCanvasPlan).toHaveBeenCalledWith({ messageId: 'message-1' })
+    expect(getCanvasPlan).toHaveBeenCalledWith({ messageId: 'message-1' })
     expect(store.getState().plansById['plan-1']).toEqual(samplePlan)
     expect(applyPlan).toHaveBeenCalledWith(samplePlan, { autoExecute: true })
     expect(store.getState().appliedPlanIds).toContain('plan-1')
@@ -183,7 +184,8 @@ describe('chat store', () => {
   })
 
   it('tracks permission blocks and resolves them through approvePermission', async () => {
-    const { api, handlers } = createFakeApi()
+    const approveAgentTool = vi.fn().mockResolvedValue({ runId: 'run-1', jobId: 'job-2', status: 'pending' })
+    const { api, handlers } = createFakeApi({ approveAgentTool })
     const { store } = createChatStore({ api })
 
     await store.getState().send({ message: '删掉节点', agentId: 'general-purpose' })
@@ -193,13 +195,71 @@ describe('chat store', () => {
       { kind: 'permission', callId: 'call-9', toolId: 'canvas.deleteNode', reason: '删除需要确认', resolved: false },
     )
 
-    await store.getState().approvePermission('call-9')
+    await store.getState().approvePermission('call-9', 'run')
 
-    expect(api.approveAgentTool).toHaveBeenCalledWith({ runId: 'run-1', callId: 'call-9', approvedBy: 'chat-user' })
+    expect(approveAgentTool).toHaveBeenCalledWith({
+      runId: 'run-1',
+      callId: 'call-9',
+      approvedBy: 'chat-user',
+      scope: 'run'
+    })
     expect(store.getState().turns[1]!.blocks).toContainEqual(
-      { kind: 'permission', callId: 'call-9', toolId: 'canvas.deleteNode', reason: '删除需要确认', resolved: true },
+      {
+        kind: 'permission',
+        callId: 'call-9',
+        toolId: 'canvas.deleteNode',
+        reason: '删除需要确认',
+        resolved: true,
+        scope: 'run'
+      },
     )
     expect(store.getState().busy).toBe(true)
+  })
+
+  it('reconciles a missed terminal response from the persisted run projection', async () => {
+    const { api } = createFakeApi({
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: 'run-1',
+        status: 'completed',
+        trace: {},
+        projection: {
+          chatTurn: {
+            id: 'run-1-assistant',
+            role: 'assistant',
+            runId: 'run-1',
+            messageId: 'message-1',
+            blocks: [{ kind: 'text', markdown: '你好，我在。', streaming: false }],
+            status: 'completed',
+            createdAt: 1
+          },
+          taskTree: [],
+          inspector: {
+            runId: 'run-1',
+            status: 'completed',
+            agentId: 'general-purpose',
+            workflowId: 'default',
+            trigger: 'canvasChat',
+            modelLabel: 'local',
+            latestEventType: 'run.completed',
+            tools: [],
+            permissions: [],
+            artifacts: [],
+            childTasks: []
+          },
+          artifacts: []
+        }
+      })
+    })
+    const { store } = createChatStore({ api })
+
+    await store.getState().send({ message: 'hi', agentId: 'general-purpose' })
+    await flush()
+
+    expect(store.getState().turns[1]?.blocks).toEqual([
+      { kind: 'text', markdown: '你好，我在。', streaming: false }
+    ])
+    expect(store.getState().busy).toBe(false)
+    expect(store.getState().activeRunView?.projection?.inspector.latestEventType).toBe('run.completed')
   })
 
   it('fails the turn with agent_tool_denied when the user denies a permission', async () => {

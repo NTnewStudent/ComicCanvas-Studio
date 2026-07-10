@@ -1111,7 +1111,8 @@ async function consumeRunStream(
           type: 'permissionRequired',
           callId: next.value.callId,
           toolId: next.value.toolId,
-          reason: next.value.reason
+          reason: next.value.reason,
+          requiredPermissions: next.value.requiredPermissions
         })
       }
       options.runSpine?.appendEvent(next.value.runId, 'permission.requested', {

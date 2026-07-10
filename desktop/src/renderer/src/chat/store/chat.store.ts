@@ -10,7 +10,8 @@
 
 import { createStore, type StoreApi } from 'zustand/vanilla'
 
-import type { AgentNonCanvasResponse, AgentResponse } from '../../../../../../shared/agents'
+import type { PermissionGrantScope } from '../../../../../../shared/agent-run-events'
+import type { AgentNonCanvasResponse, AgentResponse, AgentRunViewResponse } from '../../../../../../shared/agents'
 import {
   applyAgentEvent,
   createAssistantTurn,
@@ -19,6 +20,7 @@ import {
   type ChatTurn,
 } from '../../../../../../shared/chat-blocks'
 import type { CanvasPlan } from '../../../../../../shared/plan'
+import type { ToolPermission } from '../../../../../../shared/tools'
 import { formatAgentTraceSummary } from '../agent-trace-summary'
 import { applyAgentPlanOnReady } from '../agent/apply-agent-plan-on-ready'
 import { approvalRequestFromJobFailure, isApprovalRequiredJobFailure } from '../agent/approval-job-failure'
@@ -35,15 +37,15 @@ interface JobFailedError {
 export interface ChatStoreApi {
   sendCanvasChat(input: { message: string; agentId: string }): Promise<{ runId: string; jobId: string; messageId: string; status: 'pending' }>
   getCanvasPlan(input: { messageId: string }): Promise<CanvasPlan>
-  approveAgentTool?(input: { runId: string; callId: string; approvedBy: string }): Promise<{ runId: string; jobId: string; status: 'pending' } | { errorClass: string; message: string; retryable: false }>
-  getAgentRun?(input: { runId: string }): Promise<{ runId: string; status: string; trace?: Record<string, unknown> }>
+  approveAgentTool?(input: { runId: string; callId: string; approvedBy: string; scope?: PermissionGrantScope }): Promise<{ runId: string; jobId: string; status: 'pending' } | { errorClass: string; message: string; retryable: false }>
+  getAgentRun?(input: { runId: string }): Promise<AgentRunViewResponse>
   getChatHistory?(input: { workflowId: string }): Promise<ChatTurn[]>
   onCanvasPlanReady?(handler: (event: { messageId: string; planId: string }) => void): () => void
   onAgentResponseReady?(handler: (event: { runId: string; messageId: string; response: AgentNonCanvasResponse }) => void): () => void
   onAgentDelta?(handler: (event: { runId: string; messageId: string; delta: string }) => void): () => void
   onAgentToolStarted?(handler: (event: { runId: string; messageId: string; callId: string; toolId: string; inputSummary: string }) => void): () => void
   onAgentToolCompleted?(handler: (event: { runId: string; messageId: string; callId: string; toolId: string; invocationId: string; status: 'completed' | 'failed' | 'denied'; summary: string }) => void): () => void
-  onAgentPermissionRequired?(handler: (event: { runId: string; messageId: string; callId: string; toolId: string; reason: string }) => void): () => void
+  onAgentPermissionRequired?(handler: (event: { runId: string; messageId: string; callId: string; toolId: string; reason: string; requiredPermissions?: ToolPermission[] }) => void): () => void
   onJobProgress?(handler: (event: { jobId: string; progress: number; message?: string }) => void): () => void
   onJobCompleted?(handler: (event: { jobId: string; result: { kind: string; runId?: string; planId?: string; response?: AgentResponse } }) => void): () => void
   onJobFailed?(handler: (event: { jobId: string; error: JobFailedError }) => void): () => void
@@ -58,8 +60,10 @@ export interface ChatStoreState {
   /** 已应用到画布的 planId（含自动 apply），用于 PlanCard 去重展示。 */
   appliedPlanIds: string[]
   pending: { messageId: string; runId: string; jobId: string; agentAutoRun: boolean } | null
+  activeRunId: string | null
+  activeRunView: AgentRunViewResponse | null
   send(input: { message: string; agentId: string; agentAutoRun?: boolean | undefined }): Promise<void>
-  approvePermission(callId: string): Promise<void>
+  approvePermission(callId: string, scope?: PermissionGrantScope): Promise<void>
   denyPermission(callId: string): void
   setAutoExecute(value: boolean): void
   markPlanApplied(planId: string): void
@@ -118,7 +122,34 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
 
       try {
         const run = await deps.api.getAgentRun({ runId })
-        if (get().pending?.runId !== runId) {
+        if (get().activeRunId !== runId && get().pending?.runId !== runId) {
+          return
+        }
+
+        set({ activeRunId: runId, activeRunView: run })
+
+        if (run.projection) {
+          const projectedTurn = run.projection.chatTurn
+          const shouldApplyProjection = projectedTurn.blocks.length > 0
+            || run.status === 'completed'
+            || run.status === 'failed'
+            || run.status === 'aborted'
+            || run.status === 'max_turns_exceeded'
+            || run.status === 'approval_required'
+
+          if (shouldApplyProjection) {
+            set((state) => ({
+              turns: state.turns.map((turn) =>
+                turn.role === 'assistant' && (turn.runId === runId || turn.messageId === projectedTurn.messageId)
+                  ? { ...turn, blocks: projectedTurn.blocks, status: projectedTurn.status }
+                  : turn,
+              ),
+            }))
+          }
+
+          if (projectedTurn.status === 'completed' || projectedTurn.status === 'failed') {
+            finishPending()
+          }
           return
         }
 
@@ -158,6 +189,8 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
       plansById: {},
       appliedPlanIds: [],
       pending: null,
+      activeRunId: null,
+      activeRunView: null,
 
       async send(input) {
         if (get().busy || input.message.trim().length === 0) {
@@ -173,6 +206,8 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
           const ticket = await deps.api.sendCanvasChat({ message: input.message, agentId: input.agentId })
           set((state) => ({
             pending: { messageId: ticket.messageId, runId: ticket.runId, jobId: ticket.jobId, agentAutoRun: input.agentAutoRun === true },
+            activeRunId: ticket.runId,
+            activeRunView: null,
             turns: [
               ...state.turns,
               createAssistantTurn({ id: `assistant-${ticket.messageId}`, runId: ticket.runId, messageId: ticket.messageId, createdAt: clock() }),
@@ -197,7 +232,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
         }
       },
 
-      async approvePermission(callId) {
+      async approvePermission(callId, scope = 'session') {
         const pending = get().pending
         if (!pending || !deps.api.approveAgentTool) {
           return
@@ -205,12 +240,12 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
 
         set({ permissionBusy: true })
         try {
-          const result = await deps.api.approveAgentTool({ runId: pending.runId, callId, approvedBy: 'chat-user' })
+          const result = await deps.api.approveAgentTool({ runId: pending.runId, callId, approvedBy: 'chat-user', scope })
           if ('errorClass' in result) {
             throw new Error(result.message)
           }
 
-          applyToPending({ type: 'permissionResolved', callId })
+          applyToPending({ type: 'permissionResolved', callId, scope })
           set({ pending: { ...pending, jobId: result.jobId }, busy: true })
 
           // resume 事件可能在批准与订阅之间丢失，从运行快照兜底恢复终态。
@@ -277,7 +312,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
       },
 
       clearView() {
-        set({ turns: [], busy: false, pending: null, permissionBusy: false })
+        set({ turns: [], busy: false, pending: null, permissionBusy: false, activeRunId: null, activeRunView: null })
       },
     }
   })
@@ -337,7 +372,13 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
   if (deps.api.onAgentPermissionRequired) {
     unsubscribers.push(deps.api.onAgentPermissionRequired((event) => {
       if (matchesPendingMessage(event.messageId)) {
-        applyEvent({ type: 'permissionRequired', callId: event.callId, toolId: event.toolId, reason: event.reason })
+        applyEvent({
+          type: 'permissionRequired',
+          callId: event.callId,
+          toolId: event.toolId,
+          reason: event.reason,
+          ...(event.requiredPermissions ? { requiredPermissions: event.requiredPermissions } : {})
+        })
         store.setState({ busy: true })
       }
     }))
@@ -351,6 +392,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
 
       applyEvent({ type: 'responseReady', response: event.response })
       store.setState({ busy: false, pending: null })
+      void reconcileFromRunSnapshot(event.runId)
     }))
   }
 
@@ -385,6 +427,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
         })
         .finally(() => {
           store.setState({ busy: false, pending: null })
+          if (pending) void reconcileFromRunSnapshot(pending.runId)
         })
     }))
   }
@@ -400,6 +443,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
       if (event.result.kind === 'agentRun' && event.result.response && event.result.response.type !== 'canvasPlan') {
         applyEvent({ type: 'responseReady', response: event.result.response })
         store.setState({ busy: false, pending: null })
+        void reconcileFromRunSnapshot(pending.runId)
         return
       }
 
@@ -418,14 +462,22 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
       if (isApprovalRequiredJobFailure(event.error)) {
         const approval = approvalRequestFromJobFailure(pending.runId, event.error)
         if (approval) {
-          applyEvent({ type: 'permissionRequired', callId: approval.callId, toolId: approval.toolId, reason: approval.reason })
+          applyEvent({
+            type: 'permissionRequired',
+            callId: approval.callId,
+            toolId: approval.toolId,
+            reason: approval.reason,
+            ...(approval.requiredPermissions ? { requiredPermissions: approval.requiredPermissions } : {})
+          })
         }
         store.setState({ busy: true })
+        void reconcileFromRunSnapshot(pending.runId)
         return
       }
 
       applyEvent({ type: 'runFailed', errorClass: event.error.errorClass, message: event.error.message, retryable: event.error.retryable })
       store.setState({ busy: false, pending: null })
+      void reconcileFromRunSnapshot(pending.runId)
     }))
   }
 

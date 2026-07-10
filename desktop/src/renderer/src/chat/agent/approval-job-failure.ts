@@ -4,12 +4,24 @@
  */
 
 import type { IpcEventMap } from '../../../../../../shared/ipc'
+import type { ToolPermission } from '../../../../../../shared/tools'
 import type { AgentPermissionRequest } from './AgentPermissionModal'
 
 type JobFailedError = IpcEventMap['job.failed']['error']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function toolPermissions(value: unknown): ToolPermission[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const permissions = value.filter((entry): entry is ToolPermission => {
+    return isRecord(entry) && typeof entry.kind === 'string' && typeof entry.reason === 'string'
+  })
+  return permissions.length > 0 ? permissions : undefined
 }
 
 /**
@@ -45,12 +57,15 @@ export function approvalRequestFromJobFailure(runId: string | null, error: JobFa
     return null
   }
 
+  const requiredPermissions = toolPermissions(pendingApproval.requiredPermissions)
+
   return {
     runId,
     callId: pendingApproval.callId,
     toolId: pendingApproval.toolId,
     reason: typeof pendingApproval.reason === 'string'
       ? pendingApproval.reason
-      : error.message
+      : error.message,
+    ...(requiredPermissions ? { requiredPermissions } : {})
   }
 }

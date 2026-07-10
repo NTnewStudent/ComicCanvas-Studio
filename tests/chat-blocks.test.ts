@@ -94,12 +94,26 @@ describe('shared chat-blocks reducer', () => {
 
   it('tracks permission blocks and resolves them', () => {
     const turn = reduceAll(baseTurn(), [
-      { type: 'permissionRequired', callId: 'call-3', toolId: 'canvas.deleteNode', reason: '删除节点需要确认' },
-      { type: 'permissionResolved', callId: 'call-3' },
+      {
+        type: 'permissionRequired',
+        callId: 'call-3',
+        toolId: 'canvas.deleteNode',
+        reason: '删除节点需要确认',
+        requiredPermissions: [{ kind: 'destructive', reason: '删除画布数据' }]
+      },
+      { type: 'permissionResolved', callId: 'call-3', scope: 'once' },
     ])
 
     expect(turn.blocks).toEqual([
-      { kind: 'permission', callId: 'call-3', toolId: 'canvas.deleteNode', reason: '删除节点需要确认', resolved: true },
+      {
+        kind: 'permission',
+        callId: 'call-3',
+        toolId: 'canvas.deleteNode',
+        reason: '删除节点需要确认',
+        requiredPermissions: [{ kind: 'destructive', reason: '删除画布数据' }],
+        resolved: true,
+        scope: 'once'
+      },
     ])
   })
 

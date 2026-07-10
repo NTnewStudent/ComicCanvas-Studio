@@ -11,6 +11,7 @@ import type {
   RunInspectorModel
 } from './agent-run-events'
 import { applyAgentEvent, createAssistantTurn, type AgentChatEvent, type ChatTurn } from './chat-blocks'
+import type { ToolPermission } from './tools'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -18,6 +19,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+}
+
+function toolPermissions(value: unknown): ToolPermission[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const permissions = value.filter((entry): entry is ToolPermission => {
+    return isRecord(entry) && typeof entry.kind === 'string' && typeof entry.reason === 'string'
+  })
+  return permissions.length > 0 ? permissions : undefined
 }
 
 function isAgentResponse(value: unknown): value is AgentResponse {
@@ -91,20 +103,28 @@ function toChatEvent(event: AgentRunEventRecord): AgentChatEvent | null {
           }
         : null
     case 'permission.requested':
-      return typeof data.callId === 'string'
+      if (typeof data.callId === 'string'
         && typeof data.toolId === 'string'
-        && typeof data.reason === 'string'
-        ? {
-            type: 'permissionRequired',
-            callId: data.callId,
-            toolId: data.toolId,
-            reason: data.reason
-          }
-        : null
+        && typeof data.reason === 'string') {
+        const requiredPermissions = toolPermissions(data.requiredPermissions)
+        return {
+          type: 'permissionRequired',
+          callId: data.callId,
+          toolId: data.toolId,
+          reason: data.reason,
+          ...(requiredPermissions ? { requiredPermissions } : {})
+        }
+      }
+      return null
     case 'permission.resolved':
-      return typeof data.callId === 'string'
-        ? { type: 'permissionResolved', callId: data.callId }
-        : null
+      if (typeof data.callId !== 'string') return null
+      return {
+        type: 'permissionResolved',
+        callId: data.callId,
+        ...(data.scope === 'once' || data.scope === 'run' || data.scope === 'session'
+          ? { scope: data.scope }
+          : {})
+      }
     case 'response.ready':
       return isAgentResponse(data.response)
         ? { type: 'responseReady', response: data.response }
