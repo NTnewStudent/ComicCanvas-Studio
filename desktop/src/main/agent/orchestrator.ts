@@ -4,6 +4,7 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
+import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
 import type { AgentDefinition, AgentResponse, AgentRunRequest, AgentRunStatus, AgentRunTicket, AgentToolApprovalInput, AgentTriggerKind } from '../../../../shared/agents'
 import type { JobResult } from '../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../shared/plan'
@@ -83,6 +84,7 @@ export interface OrchestratorApprovalPlannerInput extends OrchestratorPlannerInp
   loop: AgentContextLoopState
   approval: AgentToolApprovalRequest
   approvedBy: string
+  approvalScope: PermissionGrantScope
 }
 
 export type OrchestratorEvent =
@@ -175,6 +177,7 @@ interface ApprovalResumePayload {
   trigger: AgentTriggerKind
   approval: AgentToolApprovalRequest
   approvedBy: string
+  approvalScope: PermissionGrantScope
 }
 
 interface StoredRun {
@@ -592,6 +595,11 @@ function approvalPayload(value: Record<string, unknown>): ApprovalResumePayload 
   }
 
   const approval = value.approval as AgentToolApprovalRequest
+  const approvalScope: PermissionGrantScope = value.approvalScope === 'once'
+    || value.approvalScope === 'run'
+    || value.approvalScope === 'session'
+    ? value.approvalScope
+    : 'session'
 
   return {
     kind: 'approval',
@@ -601,7 +609,8 @@ function approvalPayload(value: Record<string, unknown>): ApprovalResumePayload 
     agentId: value.agentId,
     trigger: value.trigger as AgentTriggerKind,
     approval,
-    approvedBy: value.approvedBy
+    approvedBy: value.approvedBy,
+    approvalScope
   }
 }
 
@@ -695,6 +704,7 @@ async function* approvalPlannerEvents(options: OrchestratorRunOptions & {
   loop: AgentContextLoopState
   approval: AgentToolApprovalRequest
   approvedBy: string
+  approvalScope: PermissionGrantScope
 }): AsyncGenerator<OrchestratorEvent, AgentResponse> {
   if (!options.planner.resumeApprovedTool) {
     throw new Error('agent_approval_resume_unavailable')
@@ -709,7 +719,8 @@ async function* approvalPlannerEvents(options: OrchestratorRunOptions & {
     trigger: options.trigger,
     loop: options.loop,
     approval: options.approval,
-    approvedBy: options.approvedBy
+    approvedBy: options.approvedBy,
+    approvalScope: options.approvalScope
   })
 
   if (isAsyncIterable(proposed)) {
@@ -968,6 +979,7 @@ export async function* runApprovalOrchestrator(options: OrchestratorRunOptions &
   loop: AgentContextLoopState
   approval: AgentToolApprovalRequest
   approvedBy: string
+  approvalScope: PermissionGrantScope
 }): AsyncGenerator<OrchestratorEvent, OrchestratorRunResult> {
   yield { type: 'progress', runId: options.runId, message: 'Resuming approved tool call', progress: 5 }
   const stream = approvalPlannerEvents(options)
@@ -1421,6 +1433,11 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         return approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
       }
 
+      const requestedScope = input.scope ?? 'session'
+      const approvalScope: PermissionGrantScope = approval.requiredPermissions.some((permission) => {
+        return permission.kind === 'destructive'
+      }) ? 'once' : requestedScope
+
       const ticket = options.queue.enqueue({
         type: 'agent.run',
         targetId: run.messageId,
@@ -1432,9 +1449,34 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           agentId: run.agentId,
           trigger: run.trigger,
           approval,
-          approvedBy: input.approvedBy
+          approvedBy: input.approvedBy,
+          approvalScope
         },
         requestedBy: { type: 'user', id: input.approvedBy }
+      })
+
+      const permissionKinds = [...new Set(approval.requiredPermissions.map((permission) => permission.kind))].sort()
+      options.runSpine?.savePermissionGrant({
+        id: `grant-${run.runId}-${input.callId}-${approvalScope}`,
+        runId: run.runId,
+        workflowId: options.workflowId ?? 'default',
+        toolId: approval.toolId,
+        permissionKinds,
+        scope: approvalScope,
+        approvedByLabel: input.approvedBy,
+        createdAt: clock()
+      })
+      options.runSpine?.appendEvent(run.runId, 'permission.resolved', {
+        callId: input.callId,
+        approvedByLabel: input.approvedBy,
+        scope: approvalScope
+      })
+      options.runSpine?.updateRun({
+        runId: run.runId,
+        status: 'pending',
+        jobId: ticket.jobId,
+        errorClass: null,
+        lastCheckpoint: 'permission.resolved'
       })
 
       const nextRun: StoredRun = {
@@ -1520,6 +1562,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               loop: run.pausedState,
               approval: approval.approval,
               approvedBy: approval.approvedBy,
+              approvalScope: approval.approvalScope,
               planner: options.planner,
               planIdFactory
             })

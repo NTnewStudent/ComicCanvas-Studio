@@ -29,6 +29,7 @@ export interface PermissionGrantLookup {
   toolId: string
   permissionKinds: ToolPermissionKind[]
   now: number
+  sessionStartedAt?: number
 }
 
 /** Persistence and active-grant lookup operations. */
@@ -63,6 +64,12 @@ function isGrantInScope(grant: LocalPermissionGrant, input: PermissionGrantLooku
 
 function includesPermissions(grant: LocalPermissionGrant, input: PermissionGrantLookup): boolean {
   return input.permissionKinds.every((kind) => grant.permissionKinds.includes(kind))
+}
+
+function belongsToCurrentSession(grant: LocalPermissionGrant, input: PermissionGrantLookup): boolean {
+  return grant.scope !== 'session'
+    || input.sessionStartedAt === undefined
+    || grant.createdAt >= input.sessionStartedAt
 }
 
 /**
@@ -127,7 +134,11 @@ export function createAgentPermissionGrantRepository(db: BetterSqliteDatabase): 
         now: input.now
       }) as AgentPermissionGrantRow[]).map(rowToRecord)
 
-      return candidates.find((grant) => isGrantInScope(grant, input) && includesPermissions(grant, input)) ?? null
+      return candidates.find((grant) => {
+        return isGrantInScope(grant, input)
+          && includesPermissions(grant, input)
+          && belongsToCurrentSession(grant, input)
+      }) ?? null
     },
     listByRunId(runId) {
       return (selectByRun.all(runId) as AgentPermissionGrantRow[]).map(rowToRecord)

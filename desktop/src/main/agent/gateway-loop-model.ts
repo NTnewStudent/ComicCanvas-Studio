@@ -791,6 +791,7 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
         initialState: input.loop,
         approval: input.approval,
         approvedBy: { type: 'user', id: input.approvedBy },
+        approvalScope: input.approvalScope,
         model: createGatewayAgentLoopModel(modelOptions),
         tools: options.tools,
         traceId: input.runId,

@@ -3,6 +3,7 @@
  * @see docs/api-contracts/agents.md
  */
 
+import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
 import type { AgentDefinition, AgentResponse, AgentTriggerKind } from '../../../../shared/agents'
 import type { CanvasPlan } from '../../../../shared/plan'
 import type { ToolActor, ToolDescriptor, ToolInvocationRecord, ToolPermission } from '../../../../shared/tools'
@@ -164,6 +165,7 @@ export interface ResumeAgentContextLoopWithApprovalInput extends RunAgentContext
   initialState: AgentContextLoopState
   approval: AgentToolApprovalRequest
   approvedBy: ToolActor
+  approvalScope?: PermissionGrantScope
 }
 
 function toolAllowedById(agent: AgentDefinition, tool: ToolDescriptor): boolean {
@@ -709,7 +711,8 @@ export async function* resumeAgentContextLoopWithApproval(input: ResumeAgentCont
     approvedInvocation: {
       toolId: call.toolId,
       input: call.input,
-      approvedBy: input.approvedBy
+      approvedBy: input.approvedBy,
+      scope: input.approvalScope ?? 'session'
     }
   })
 

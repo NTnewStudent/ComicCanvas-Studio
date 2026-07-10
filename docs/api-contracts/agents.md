@@ -260,6 +260,7 @@ interface AgentToolApprovalInput {
   runId: string
   callId: string
   approvedBy: string
+  scope?: 'once' | 'run' | 'session'
 }
 ```
 
@@ -268,6 +269,13 @@ Response:
 ```ts
 type AgentToolApprovalResponse = AgentRunTicket
 ```
+
+Rules:
+
+- 未提供 `scope` 时，非破坏性权限默认按当前应用 `session` 复用，避免同一工具在每次对话中重复申请。
+- `once` 仅批准当前保留的精确调用；`run` 仅在同一 run 内复用；`session` 可在当前应用会话、同一 workflow 内跨 run 复用。
+- 包含 `destructive` 的权限请求 SHALL 强制降级为 `once`，不得通过 run/session grant 绕过后续确认。
+- session grant SHALL 持久化用于本地审计，但应用重启后 SHALL NOT 继续作为有效授权。
 
 ### `agent.spawn`
 

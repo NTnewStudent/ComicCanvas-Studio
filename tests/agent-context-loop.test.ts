@@ -266,6 +266,7 @@ describe('Agent context loop policy', () => {
   })
 
   it('executes remaining tool calls after an approved call before continuing the model loop', async () => {
+    let rememberedScope: string | undefined
     const runtime = createToolRuntime({
       idFactory: (() => {
         let next = 0
@@ -283,6 +284,14 @@ describe('Agent context loop policy', () => {
             decisionReason: 'Read is allowed.',
             requiredPermissions: []
           },
+      permissionGrantStore: {
+        remember(input) {
+          rememberedScope = input.approvedInvocation?.scope
+        },
+        has() {
+          return false
+        }
+      },
       tools: [
         defineTool({
           descriptor: writeTool,
@@ -348,6 +357,7 @@ describe('Agent context loop policy', () => {
       initialState: caught.pausedState,
       approval: caught.pendingApproval,
       approvedBy: { type: 'user', id: 'user-local' },
+      approvalScope: 'run',
       model: {
         step(state) {
           const toolCallIds = state.messages
@@ -366,6 +376,7 @@ describe('Agent context loop policy', () => {
     }
 
     expect(next.value.response).toEqual({ type: 'canvasPlan', plan: finalPlan })
+    expect(rememberedScope).toBe('run')
   })
 
   it('compacts older loop messages into a deterministic summary when over budget', () => {

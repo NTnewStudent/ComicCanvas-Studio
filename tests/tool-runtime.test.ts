@@ -255,6 +255,125 @@ describe('M4 ToolRuntime', () => {
     expect(calls).toBe(2)
   })
 
+  it('keeps run-scoped approvals inside the approving run trace', async () => {
+    let calls = 0
+    const permission: ToolPermission = { kind: 'canvas.write', reason: 'Mutates the canvas graph.' }
+    const runtime = createToolRuntime({
+      permissionPolicy: () => ({
+        decision: 'ask',
+        decisionReason: 'Creating nodes requires confirmation.',
+        requiredPermissions: [permission]
+      }),
+      tools: [
+        defineTool({
+          descriptor: {
+            id: 'test.runScopedWrite',
+            name: 'Run scoped write',
+            description: 'Writes after run approval.',
+            category: 'canvas',
+            owner: { kind: 'builtin', id: 'core' },
+            inputSchemaRef: 'test.runScopedWrite.input',
+            outputSchemaRef: 'test.runScopedWrite.output',
+            permissions: [permission],
+            concurrency: 'serial-write',
+            enabled: true
+          },
+          inputSchema: z.object({ value: z.string() }),
+          outputSchema: z.object({ ok: z.boolean() }),
+          renderToolUseMessage: () => 'Run scoped write',
+          call() {
+            calls += 1
+            return { ok: true }
+          }
+        })
+      ]
+    })
+
+    const approved = await runtime.invoke({
+      toolId: 'test.runScopedWrite',
+      input: { value: 'approved' },
+      actor,
+      traceId: 'run-1',
+      approvedInvocation: {
+        toolId: 'test.runScopedWrite',
+        input: { value: 'approved' },
+        approvedBy: { type: 'user', id: 'user-local' },
+        scope: 'run'
+      }
+    })
+    const sameRun = await runtime.invoke({
+      toolId: 'test.runScopedWrite',
+      input: { value: 'same run' },
+      actor,
+      traceId: 'run-1'
+    })
+    const otherRun = await runtime.invoke({
+      toolId: 'test.runScopedWrite',
+      input: { value: 'other run' },
+      actor,
+      traceId: 'run-2'
+    })
+
+    expect(approved.record.status).toBe('completed')
+    expect(sameRun.record.status).toBe('completed')
+    expect(otherRun.record.status).toBe('denied')
+    expect(calls).toBe(2)
+  })
+
+  it('uses an injected grant store as the reusable approval source of truth', async () => {
+    let calls = 0
+    let hasChecks = 0
+    const permission: ToolPermission = { kind: 'network', reason: 'Uses network.' }
+    const runtime = createToolRuntime({
+      permissionGrantStore: {
+        remember() {},
+        has() {
+          hasChecks += 1
+          return true
+        }
+      },
+      permissionPolicy: () => ({
+        decision: 'ask',
+        decisionReason: 'Network access requires confirmation.',
+        requiredPermissions: [permission]
+      }),
+      tools: [
+        defineTool({
+          descriptor: {
+            id: 'test.persistedNetwork',
+            name: 'Persisted network',
+            description: 'Uses a persisted approval.',
+            category: 'web',
+            owner: { kind: 'builtin', id: 'core' },
+            inputSchemaRef: 'test.persistedNetwork.input',
+            outputSchemaRef: 'test.persistedNetwork.output',
+            permissions: [permission],
+            concurrency: 'readonly',
+            enabled: true
+          },
+          inputSchema: z.object({ query: z.string() }),
+          outputSchema: z.object({ ok: z.boolean() }),
+          renderToolUseMessage: () => 'Persisted network',
+          call() {
+            calls += 1
+            return { ok: true }
+          }
+        })
+      ]
+    })
+
+    const result = await runtime.invoke({
+      toolId: 'test.persistedNetwork',
+      input: { query: 'latest' },
+      actor,
+      traceId: 'run-persisted'
+    })
+
+    expect(result.record.status).toBe('completed')
+    expect(hasChecks).toBe(1)
+    expect(calls).toBe(1)
+  })
+
   it('runs read-only tools in parallel and write tools serially', async () => {
     const starts: string[] = []
     const readOne = deferred()

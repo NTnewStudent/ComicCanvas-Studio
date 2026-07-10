@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 
 import type { z } from 'zod'
 
+import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
 import type {
   PermissionDecision,
   ToolActor,
@@ -27,6 +28,7 @@ export interface ToolInvocationInput {
     toolId: string
     input: unknown
     approvedBy: ToolActor
+    scope?: PermissionGrantScope
   }
 }
 
@@ -58,8 +60,15 @@ export interface ToolDefinition<TInput, TOutput> {
 export interface ToolRuntimeOptions {
   tools?: ToolDefinition<unknown, unknown>[]
   permissionPolicy?: (tool: ToolDefinition<unknown, unknown>, input: unknown, ctx: ToolExecutionContext) => ToolPermissionResult
+  permissionGrantStore?: ToolPermissionGrantStore
   idFactory?: () => string
   clock?: () => number
+}
+
+/** Reusable approval source consulted by ToolRuntime for ask-gated tools. */
+export interface ToolPermissionGrantStore {
+  remember(input: ToolInvocationInput, permission: ToolPermissionResult): void
+  has(input: ToolInvocationInput, permission: ToolPermissionResult): boolean
 }
 
 export interface ToolRuntime {
@@ -138,13 +147,37 @@ function hasMatchingApproval(input: ToolInvocationInput): boolean {
     && stableJson(input.approvedInvocation.input) === stableJson(input.input)
 }
 
-function permissionGrantKey(input: ToolInvocationInput, permission: ToolPermissionResult): string {
+function permissionGrantKey(
+  input: ToolInvocationInput,
+  permission: ToolPermissionResult,
+  scope: Exclude<PermissionGrantScope, 'once'>
+): string {
   const permissionKinds = [...new Set(permission.requiredPermissions.map((entry) => entry.kind))].sort()
   return stableJson({
     actor: input.actor,
     toolId: input.toolId,
-    permissionKinds
+    permissionKinds,
+    scope,
+    ...(scope === 'run' ? { runId: input.traceId } : {})
   }) ?? ''
+}
+
+function createMemoryPermissionGrantStore(): ToolPermissionGrantStore {
+  const grants = new Set<string>()
+
+  return {
+    remember(input, permission) {
+      const scope = input.approvedInvocation?.scope ?? 'session'
+      if (scope === 'once') {
+        return
+      }
+      grants.add(permissionGrantKey(input, permission, scope))
+    },
+    has(input, permission) {
+      return grants.has(permissionGrantKey(input, permission, 'session'))
+        || grants.has(permissionGrantKey(input, permission, 'run'))
+    }
+  }
 }
 
 function cloneDescriptor(descriptor: ToolDescriptor): ToolDescriptor {
@@ -191,7 +224,7 @@ function isAsyncGenerator<TOutput>(value: ToolCallResult<TOutput>): value is Asy
  */
 export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime {
   const toolsById = new Map<string, ToolDefinition<unknown, unknown>>()
-  const permissionGrants = new Set<string>()
+  const permissionGrantStore = options.permissionGrantStore ?? createMemoryPermissionGrantStore()
   const idFactory = options.idFactory ?? (() => `tool-invocation-${randomUUID()}`)
   const clock = options.clock ?? Date.now
   let writeChain: Promise<void> = Promise.resolve()
@@ -239,12 +272,33 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
     const permission = tool.checkPermissions
       ? await tool.checkPermissions(parsed.data, ctx)
       : (options.permissionPolicy?.(tool, parsed.data, ctx) ?? defaultPermissionDecision(tool))
-    const grantKey = permissionGrantKey(input, permission)
-    const hasReusableApproval = permission.decision === 'ask' && permissionGrants.has(grantKey)
+    let hasReusableApproval = false
+
+    if (permission.decision === 'ask') {
+      try {
+        hasReusableApproval = permissionGrantStore.has(input, permission)
+      } catch {
+        // Permission storage failures fail closed so tools never execute without a verified grant.
+        return {
+          record: createRecord(input, invocationId, createdAt, 'failed'),
+          error: toolError('tool_permission_store_failed', 'Tool permission state could not be verified.'),
+          progress: []
+        }
+      }
+    }
 
     if (permission.decision === 'ask' && hasMatchingApproval(input)) {
       // A prior approval resumes the exact same tool call; execution still stays inside ToolRuntime.
-      permissionGrants.add(grantKey)
+      try {
+        permissionGrantStore.remember(input, permission)
+      } catch {
+        // Approved calls still fail closed if their grant cannot be durably recorded.
+        return {
+          record: createRecord(input, invocationId, createdAt, 'failed'),
+          error: toolError('tool_permission_store_failed', 'Tool permission state could not be recorded.'),
+          progress: []
+        }
+      }
     } else if (permission.decision !== 'allow' && !hasReusableApproval) {
       return {
         record: createRecord(input, invocationId, createdAt, 'denied'),

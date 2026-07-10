@@ -598,6 +598,17 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
     try {
       const jobs = createJobRepository(db)
+      const agentRuns = createAgentRunRepository(db)
+      let spineId = 0
+      const runSpine = createAgentRunSpine({
+        runs: agentRuns,
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        idFactory: (prefix) => `${prefix}-approval-${++spineId}`,
+        clock: () => 1_782_700_002_002
+      })
       const events = createJobEventBus()
       let nextJob = 0
       const queue = createJobQueue({
@@ -662,6 +673,8 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       const runtime = createOrchestratorRuntime({
         queue,
         events,
+        agentRuns,
+        runSpine,
         listTools: () => [writeTool],
         idFactory: (prefix) => `${prefix}-approval-1`,
         planIdFactory: () => 'plan-approval-1',
@@ -720,9 +733,25 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
           }
         }
       })
-      const approvalTicket = runtime.approveTool({ runId: ticket.runId, callId: 'call-create', approvedBy: 'user-local' })
+      expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.requested')).toHaveLength(1)
+      const approvalTicket = runtime.approveTool({
+        runId: ticket.runId,
+        callId: 'call-create',
+        approvedBy: 'user-local',
+        scope: 'session'
+      })
 
       expect(approvalTicket).toEqual({ runId: 'run-approval-1', jobId: 'job-agent-approval-2', status: 'pending' })
+      expect(runSpine.getSnapshot(ticket.runId)?.permissionGrants).toEqual([
+        expect.objectContaining({
+          runId: 'run-approval-1',
+          toolId: 'canvas.createNode',
+          permissionKinds: ['canvas.write'],
+          scope: 'session',
+          approvedByLabel: 'user-local'
+        })
+      ])
+      expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.resolved')).toHaveLength(1)
       expect(runtime.getRun(ticket.runId)).toMatchObject({
         runId: 'run-approval-1',
         status: 'pending'
@@ -742,6 +771,10 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         summary: 'Approved tool call completed.',
         nodes: [{ ref: 'prompt-approved', type: 'text', title: 'Approved prompt', data: { content: 'done' } }]
       })
+      expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'run.completed')).toHaveLength(1)
+      expect(runSpine.getSnapshot(ticket.runId)?.artifacts).toEqual([
+        expect.objectContaining({ kind: 'canvasPlan', summary: 'Approved tool call completed.' })
+      ])
     } finally {
       db.close()
       rmSync(tempDir, { recursive: true, force: true })
