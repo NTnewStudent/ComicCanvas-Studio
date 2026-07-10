@@ -52,9 +52,9 @@ export interface AgentRunUpsertInput {
   contextPackId?: string
   gatewayId?: string
   modelId?: string
-  pausedState?: Record<string, unknown>
-  errorClass?: string
-  lastCheckpoint?: string
+  pausedState?: Record<string, unknown> | null
+  errorClass?: string | null
+  lastCheckpoint?: string | null
 }
 
 interface AgentRunRow {
@@ -204,9 +204,9 @@ export function createAgentRunRepository(db: BetterSqliteDatabase): AgentRunRepo
       const contextPackId = input.contextPackId ?? existing?.contextPackId
       const gatewayId = input.gatewayId ?? existing?.gatewayId
       const modelId = input.modelId ?? existing?.modelId
-      const pausedState = input.pausedState ?? existing?.pausedState
-      const errorClass = input.errorClass ?? existing?.errorClass
-      const lastCheckpoint = input.lastCheckpoint ?? existing?.lastCheckpoint
+      const pausedState = input.pausedState === undefined ? existing?.pausedState : input.pausedState ?? undefined
+      const errorClass = input.errorClass === undefined ? existing?.errorClass : input.errorClass ?? undefined
+      const lastCheckpoint = input.lastCheckpoint === undefined ? existing?.lastCheckpoint : input.lastCheckpoint ?? undefined
 
       if (jobId) record.jobId = jobId
       if (contextPackId) record.contextPackId = contextPackId

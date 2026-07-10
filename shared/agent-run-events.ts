@@ -134,6 +134,7 @@ export interface AgentRunRecordSnapshot {
   usage?: Record<string, unknown>
   trace: Record<string, unknown>
   errorClass?: string
+  lastCheckpoint?: string
   createdAt: number
   updatedAt: number
 }

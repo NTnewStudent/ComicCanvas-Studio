@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createAgentArtifactRepository } from '../desktop/src/main/db/repositories/agent-artifact.repo'
 import { createAgentPermissionGrantRepository } from '../desktop/src/main/db/repositories/agent-permission-grant.repo'
@@ -212,6 +213,134 @@ describe('Agent Run Spine SQLite schema', () => {
       expect(children.listByParentRunId('run-1')).toEqual([
         expect.objectContaining({ id: 'child-1', roleId: 'canvas-planner', artifactIds: ['artifact-1'] })
       ])
+    })
+  })
+
+  it('creates aggregate snapshots with events, artifacts, grants, and child tasks', () => {
+    withTempDb((db) => {
+      let idSequence = 0
+      const spine = createAgentRunSpine({
+        runs: createAgentRunRepository(db),
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        idFactory: (prefix) => `${prefix}-${++idSequence}`,
+        clock: () => 100
+      })
+
+      spine.createRun({
+        runId: 'run-service',
+        threadId: 'thread-1',
+        workflowId: 'default',
+        messageId: 'message-service',
+        jobId: 'job-1',
+        agentId: 'general-purpose',
+        trigger: 'canvasChat',
+        policyProfileId: 'local-default'
+      })
+      spine.appendEvent('run-service', 'progress', { message: 'Thinking', progress: 10 })
+      spine.saveArtifact({
+        id: 'artifact-answer',
+        runId: 'run-service',
+        kind: 'answer',
+        title: 'Answer',
+        summary: 'Greeting',
+        payload: { type: 'answer', summary: 'Greeting', text: '你好', dropped: [] },
+        createdAt: 101
+      })
+      spine.savePermissionGrant({
+        id: 'grant-service',
+        runId: 'run-service',
+        workflowId: 'default',
+        toolId: 'canvas.createNode',
+        permissionKinds: ['canvas.write'],
+        scope: 'run',
+        approvedByLabel: 'user-local',
+        createdAt: 102
+      })
+      spine.upsertChildTask({
+        id: 'child-service',
+        parentRunId: 'run-service',
+        roleId: 'qa-verifier',
+        inputSummary: 'Verify plan',
+        effectiveTools: [],
+        status: 'completed',
+        outputSummary: 'Looks valid',
+        artifactIds: ['artifact-answer'],
+        createdAt: 103,
+        updatedAt: 104
+      })
+
+      const aggregate = spine.getSnapshot('run-service')
+
+      expect(aggregate?.run).toMatchObject({
+        id: 'run-service',
+        status: 'pending',
+        threadId: 'thread-1'
+      })
+      expect(aggregate?.events.map((event) => event.type)).toEqual([
+        'run.created',
+        'progress',
+        'artifact.created'
+      ])
+      expect(aggregate?.artifacts).toHaveLength(1)
+      expect(aggregate?.permissionGrants).toHaveLength(1)
+      expect(aggregate?.childTasks).toHaveLength(1)
+    })
+  })
+
+  it('updates status, paused state, usage, and checkpoint metadata', () => {
+    withTempDb((db) => {
+      const spine = createAgentRunSpine({
+        runs: createAgentRunRepository(db),
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        idFactory: (prefix) => `${prefix}-status`,
+        clock: () => 200
+      })
+
+      spine.createRun({
+        runId: 'run-status',
+        threadId: 'thread-1',
+        workflowId: 'default',
+        messageId: 'message-status',
+        agentId: 'general-purpose',
+        trigger: 'manual',
+        policyProfileId: 'local-default'
+      })
+      spine.updateRun({
+        runId: 'run-status',
+        status: 'approval_required',
+        pausedState: { transition: 'approval_required', pendingToolCalls: [] },
+        usage: { inputTokens: 12, outputTokens: 3 },
+        errorClass: 'agent_tool_approval_required',
+        lastCheckpoint: 'permission.requested'
+      })
+
+      expect(spine.getSnapshot('run-status')?.run).toMatchObject({
+        status: 'approval_required',
+        pausedState: { transition: 'approval_required', pendingToolCalls: [] },
+        usage: { inputTokens: 12, outputTokens: 3 },
+        errorClass: 'agent_tool_approval_required',
+        lastCheckpoint: 'permission.requested'
+      })
+      spine.updateRun({
+        runId: 'run-status',
+        status: 'running',
+        pausedState: null,
+        errorClass: null,
+        lastCheckpoint: null
+      })
+      expect(spine.getSnapshot('run-status')?.run).not.toHaveProperty('pausedState')
+      expect(spine.getSnapshot('run-status')?.run).not.toHaveProperty('errorClass')
+      expect(spine.getSnapshot('run-status')?.run).not.toHaveProperty('lastCheckpoint')
+      expect(() => spine.appendEvent('run-missing', 'progress', {
+        message: 'Should not persist',
+        progress: 1
+      })).toThrow('Agent run not found: run-missing')
     })
   })
 })
