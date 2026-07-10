@@ -97,29 +97,65 @@ describe('chat block components', () => {
     render(
       <TurnView
         turn={assistantTurn([
-          { kind: 'permission', callId: 'call-3', toolId: 'canvas.deleteNode', reason: '删除节点需要确认', resolved: false },
+          {
+            kind: 'permission',
+            callId: 'call-3',
+            toolId: 'web.search',
+            reason: '联网搜索需要确认',
+            requiredPermissions: [{ kind: 'network', reason: '访问互联网' }],
+            resolved: false
+          },
         ])}
         onApprovePermission={onApprove}
         onDenyPermission={onDeny}
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '批准' }))
-    expect(onApprove).toHaveBeenCalledWith('call-3')
+    expect(screen.getByRole('button', { name: '本次会话' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '当前任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '批准并继续' }))
+    expect(onApprove).toHaveBeenCalledWith('call-3', 'run')
     fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
     expect(onDeny).toHaveBeenCalledWith('call-3')
+  })
+
+  it('forces destructive permission requests to approve once', () => {
+    const onApprove = vi.fn()
+
+    render(
+      <TurnView
+        turn={assistantTurn([
+          {
+            kind: 'permission',
+            callId: 'call-destructive',
+            toolId: 'canvas.deleteNode',
+            reason: '删除节点需要确认',
+            requiredPermissions: [{ kind: 'destructive', reason: '删除画布数据' }],
+            resolved: false
+          },
+        ])}
+        onApprovePermission={onApprove}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: '仅本次' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '当前任务' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '本次会话' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '批准并继续' }))
+    expect(onApprove).toHaveBeenCalledWith('call-destructive', 'once')
   })
 
   it('hides permission actions once resolved', () => {
     render(
       <TurnView
         turn={assistantTurn([
-          { kind: 'permission', callId: 'call-4', toolId: 'canvas.deleteNode', reason: '已处理', resolved: true },
+          { kind: 'permission', callId: 'call-4', toolId: 'canvas.deleteNode', reason: '已处理', resolved: true, scope: 'once' },
         ])}
       />,
     )
 
-    expect(screen.queryByRole('button', { name: '批准' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '批准并继续' })).not.toBeInTheDocument()
+    expect(screen.getByText('已批准 · 仅本次')).toBeInTheDocument()
   })
 
   it('renders error blocks with the error class and usage footers', () => {

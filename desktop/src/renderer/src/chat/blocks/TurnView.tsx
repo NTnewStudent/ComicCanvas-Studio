@@ -9,6 +9,7 @@
 
 import type { ReactNode } from 'react'
 
+import type { PermissionGrantScope } from '../../../../../../shared/agent-run-events'
 import type { ChatBlock, ChatTurn } from '../../../../../../shared/chat-blocks'
 import { cn } from '../../lib/cn'
 import { ErrorBlock } from './ErrorBlock'
@@ -22,7 +23,7 @@ export interface TurnViewProps {
   turn: ChatTurn
   /** plan 块渲染插槽：宿主返回 PlanCard 等元素。缺省渲染占位提示。 */
   renderPlan?: ((planId: string) => ReactNode) | undefined
-  onApprovePermission?: ((callId: string) => void) | undefined
+  onApprovePermission?: ((callId: string, scope: PermissionGrantScope) => void) | undefined
   onDenyPermission?: ((callId: string) => void) | undefined
   permissionBusy?: boolean | undefined
 }

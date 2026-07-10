@@ -449,7 +449,7 @@ describe('M4 Chat UI', () => {
       })
     })
 
-    expect(await screen.findByText('需要批准工具调用')).toBeInTheDocument()
+    expect(await screen.findByText('需要授权')).toBeInTheDocument()
     expect(screen.getByText('Search requires user approval.')).toBeInTheDocument()
 
     act(() => {
@@ -465,15 +465,16 @@ describe('M4 Chat UI', () => {
       })
     })
 
-    expect(screen.getByText('需要批准工具调用')).toBeInTheDocument()
+    expect(screen.getByText('需要授权')).toBeInTheDocument()
     expect(screen.queryByText('Tool requires user approval before execution.')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '批准' }))
+    fireEvent.click(screen.getByRole('button', { name: '批准并继续' }))
 
     await waitFor(() => expect(approveAgentTool).toHaveBeenCalledWith({
       runId: 'run-agent-1',
       callId: 'call-web-search',
-      approvedBy: 'chat-user'
+      approvedBy: 'chat-user',
+      scope: 'session'
     }))
   })
 
@@ -540,7 +541,7 @@ describe('M4 Chat UI', () => {
       })
     })
 
-    fireEvent.click(await screen.findByRole('button', { name: '批准' }))
+    fireEvent.click(await screen.findByRole('button', { name: '批准并继续' }))
 
     expect(await screen.findByText('Java 是一门面向对象的通用编程语言。')).toBeInTheDocument()
   })

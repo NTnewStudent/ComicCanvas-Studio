@@ -373,7 +373,7 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, workf
                   turn={turn}
                   renderPlan={renderPlan}
                   permissionBusy={permissionBusy}
-                  onApprovePermission={(callId) => { void handle?.store.getState().approvePermission(callId) }}
+                  onApprovePermission={(callId, scope) => { void handle?.store.getState().approvePermission(callId, scope) }}
                   onDenyPermission={(callId) => handle?.store.getState().denyPermission(callId)}
                 />
               ))}

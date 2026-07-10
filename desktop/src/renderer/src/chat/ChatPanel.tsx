@@ -365,7 +365,7 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan, workflowId = 
               turn={turn}
               renderPlan={renderPlan}
               permissionBusy={permissionBusy}
-              onApprovePermission={(callId) => { void handle.store.getState().approvePermission(callId) }}
+              onApprovePermission={(callId, scope) => { void handle.store.getState().approvePermission(callId, scope) }}
               onDenyPermission={(callId) => handle.store.getState().denyPermission(callId)}
             />
           ))
