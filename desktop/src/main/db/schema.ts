@@ -21,6 +21,10 @@ export const schemaTables = [
   'tool_audit',
   'agents',
   'agent_runs',
+  'agent_run_events',
+  'agent_artifacts',
+  'agent_permission_grants',
+  'child_agent_tasks',
   'skills',
   'skill_invocations',
   'style_presets',
@@ -253,11 +257,67 @@ export const agents = sqliteTable('agents', {
 
 export const agentRuns = sqliteTable('agent_runs', {
   id: text('id').primaryKey(),
+  threadId: text('thread_id').notNull().default('default-thread'),
+  workflowId: text('workflow_id').notNull().default('default'),
+  messageId: text('message_id').notNull().default(''),
+  trigger: text('trigger').notNull().default('manual'),
   agentId: text('agent_id').notNull(),
   jobId: text('job_id'),
   status: text('status').notNull(),
+  policyProfileId: text('policy_profile_id').notNull().default('local-default'),
   contextPackId: text('context_pack_id'),
+  gatewayId: text('gateway_id'),
+  modelId: text('model_id'),
   traceJson: text('trace_json').notNull(),
+  pausedStateJson: text('paused_state_json'),
+  usageJson: text('usage_json').notNull().default('{}'),
+  errorClass: text('error_class'),
+  lastCheckpoint: text('last_checkpoint'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull()
+})
+
+export const agentRunEvents = sqliteTable('agent_run_events', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull(),
+  sequence: integer('sequence').notNull(),
+  type: text('type').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  createdAt: integer('created_at').notNull()
+})
+
+export const agentArtifacts = sqliteTable('agent_artifacts', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull(),
+  kind: text('kind').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  createdAt: integer('created_at').notNull()
+})
+
+export const agentPermissionGrants = sqliteTable('agent_permission_grants', {
+  id: text('id').primaryKey(),
+  runId: text('run_id'),
+  workflowId: text('workflow_id').notNull(),
+  toolId: text('tool_id').notNull(),
+  permissionJson: text('permission_json').notNull(),
+  scope: text('scope').notNull(),
+  expiresAt: integer('expires_at'),
+  approvedByLabel: text('approved_by_label').notNull(),
+  createdAt: integer('created_at').notNull(),
+  revokedAt: integer('revoked_at')
+})
+
+export const childAgentTasks = sqliteTable('child_agent_tasks', {
+  id: text('id').primaryKey(),
+  parentRunId: text('parent_run_id').notNull(),
+  roleId: text('role_id').notNull(),
+  inputSummary: text('input_summary').notNull(),
+  effectiveToolsJson: text('effective_tools_json').notNull(),
+  status: text('status').notNull(),
+  outputSummary: text('output_summary'),
+  artifactIdsJson: text('artifact_ids_json').notNull(),
   errorClass: text('error_class'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull()

@@ -71,6 +71,10 @@ const migrations = [
   {
     id: '0014_chat_message_blocks',
     fileName: '0014_chat_message_blocks.sql'
+  },
+  {
+    id: '0015_agent_run_spine',
+    fileName: '0015_agent_run_spine.sql'
   }
 ] as const
 
