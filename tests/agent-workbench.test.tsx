@@ -2,12 +2,15 @@
 
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { AgentArtifactViewModel, AgentRunSnapshot } from '../shared/agent-run-events'
+import { projectAgentArtifacts, projectAgentRunSnapshot } from '../shared/agent-run-projector'
 import type { AgentRunViewResponse } from '../shared/agents'
 import { PermissionBlock } from '../desktop/src/renderer/src/chat/blocks/PermissionBlock'
 import { AgentWorkbench } from '../desktop/src/renderer/src/chat/workbench/AgentWorkbench'
+import { ArtifactPanel } from '../desktop/src/renderer/src/chat/workbench/ArtifactPanel'
 import { RunInspector } from '../desktop/src/renderer/src/chat/workbench/RunInspector'
 
 const runView: AgentRunViewResponse = {
@@ -121,6 +124,152 @@ const runView: AgentRunViewResponse = {
     },
     artifacts: []
   }
+}
+
+const artifactSnapshot: AgentRunSnapshot = {
+  ...runView.snapshot!,
+  artifacts: [
+    {
+      id: 'artifact-answer-view',
+      runId: 'run-1',
+      kind: 'answer',
+      title: '回答',
+      summary: '普通回答',
+      payload: {
+        type: 'answer',
+        summary: '普通回答',
+        text: '这是可读的最终回答。',
+        dropped: []
+      },
+      createdAt: 21
+    },
+    {
+      id: 'artifact-clarification-view',
+      runId: 'run-1',
+      kind: 'clarification',
+      title: '澄清',
+      summary: '需要补充信息',
+      payload: {
+        type: 'clarification',
+        summary: '需要补充信息',
+        question: '希望画面采用横屏还是竖屏？',
+        missing: ['orientation'],
+        dropped: []
+      },
+      createdAt: 22
+    },
+    {
+      id: 'artifact-plan-view',
+      runId: 'run-1',
+      kind: 'canvasPlan',
+      title: 'CanvasPlan',
+      summary: '生成分镜工作流',
+      payload: {
+        kind: 'plan',
+        summary: '生成分镜工作流',
+        nodes: [
+          { ref: 'text-1', type: 'text', title: '分镜提示词', data: {} },
+          { ref: 'image-1', type: 'image', title: '关键帧', data: {} }
+        ],
+        edges: [
+          { source: 'text-1', target: 'image-1', edgeType: 'promptOrder' }
+        ],
+        runSteps: [
+          { ref: 'image-1', action: 'imageRun' }
+        ],
+        question: null,
+        dropped: []
+      },
+      createdAt: 23
+    },
+    {
+      id: 'artifact-patch-view',
+      runId: 'run-1',
+      kind: 'canvasPatchDraft',
+      title: '画布变更草稿',
+      summary: '新增关键帧并连接提示词',
+      payload: {
+        summary: '新增关键帧并连接提示词',
+        nodeChanges: [
+          { action: 'add', ref: 'image-1', type: 'image', title: '关键帧' }
+        ],
+        edgeChanges: [
+          { action: 'add', source: 'text-1', target: 'image-1', edgeType: 'promptOrder' }
+        ],
+        warnings: ['应用前仍需确认']
+      },
+      createdAt: 24
+    },
+    {
+      id: 'artifact-search-view',
+      runId: 'run-1',
+      kind: 'searchSummary',
+      title: '检索摘要',
+      summary: '找到一个可引用来源',
+      payload: {
+        query: 'ComicCanvas local agent',
+        summary: '找到一个可引用来源',
+        sources: [
+          {
+            title: 'OpenAI 官方文档',
+            url: 'https://platform.openai.com/docs',
+            citation: '[1]',
+            snippet: 'Agent 工具调用与结构化输出说明。'
+          }
+        ],
+        citations: ['[1]']
+      },
+      createdAt: 25
+    },
+    {
+      id: 'artifact-memory-view',
+      runId: 'run-1',
+      kind: 'memorySuggestion',
+      title: '记忆建议',
+      summary: '建议记住角色画风',
+      payload: {
+        scope: 'workflow',
+        content: '主角始终使用黑白线稿风格。',
+        rationale: '后续分镜需要保持视觉一致。'
+      },
+      createdAt: 26
+    },
+    {
+      id: 'artifact-diagnostics-view',
+      runId: 'run-1',
+      kind: 'diagnosticReport',
+      title: '诊断报告',
+      summary: '发现一个网关告警',
+      payload: {
+        severity: 'warning',
+        diagnostics: [
+          {
+            code: 'gateway_latency',
+            severity: 'warning',
+            message: '模型网关响应偏慢。',
+            path: 'gateway.gpt-5',
+            details: { latencyMs: 3200 }
+          }
+        ]
+      },
+      createdAt: 27
+    },
+    {
+      id: 'artifact-malformed-view',
+      runId: 'run-1',
+      kind: 'answer',
+      title: '损坏回答',
+      summary: 'payload 字段类型错误',
+      payload: { type: 'answer', text: 42 },
+      createdAt: 28
+    }
+  ]
+}
+
+const artifactRunView: AgentRunViewResponse = {
+  ...runView,
+  snapshot: artifactSnapshot,
+  projection: projectAgentRunSnapshot(artifactSnapshot)
 }
 
 afterEach(() => {
@@ -261,5 +410,232 @@ describe('Agent Workbench', () => {
 
     expect(screen.getByText('已拒绝')).toBeInTheDocument()
     expect(screen.getByText('denied')).toBeInTheDocument()
+  })
+
+  it('renders accessible typed artifact tabs with detailed read-only views and malformed fallback', () => {
+    render(<RunInspector runView={artifactRunView} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+
+    expect(screen.getByRole('tablist', { name: 'Agent 产物' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '回答' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tabpanel', { name: '回答' })).toHaveTextContent('这是可读的最终回答。')
+
+    fireEvent.click(screen.getByRole('tab', { name: '澄清' }))
+    expect(screen.getByRole('tabpanel', { name: '澄清' })).toHaveTextContent('希望画面采用横屏还是竖屏？')
+    expect(screen.getByRole('tabpanel', { name: '澄清' })).toHaveTextContent('orientation')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'CanvasPlan' }))
+    expect(screen.getByRole('tabpanel', { name: 'CanvasPlan' })).toHaveTextContent('2 个节点')
+    expect(screen.getByRole('tabpanel', { name: 'CanvasPlan' })).toHaveTextContent('1 条连线')
+    expect(screen.getByRole('tabpanel', { name: 'CanvasPlan' })).toHaveTextContent('1 个步骤')
+    expect(screen.getByRole('tabpanel', { name: 'CanvasPlan' })).toHaveTextContent('text-1 → image-1')
+
+    fireEvent.click(screen.getByRole('tab', { name: '画布变更草稿' }))
+    expect(screen.getByRole('tabpanel', { name: '画布变更草稿' })).toHaveTextContent('关键帧')
+    expect(screen.getByRole('tabpanel', { name: '画布变更草稿' })).toHaveTextContent('text-1 → image-1')
+    expect(screen.getByRole('tabpanel', { name: '画布变更草稿' })).toHaveTextContent('应用前仍需确认')
+
+    fireEvent.click(screen.getByRole('tab', { name: '检索摘要' }))
+    expect(screen.getByRole('tabpanel', { name: '检索摘要' })).toHaveTextContent('OpenAI 官方文档')
+    expect(screen.getByRole('tabpanel', { name: '检索摘要' })).toHaveTextContent('[1]')
+    expect(screen.getByRole('tabpanel', { name: '检索摘要' })).toHaveTextContent('https://platform.openai.com/docs')
+
+    fireEvent.click(screen.getByRole('tab', { name: '记忆建议' }))
+    expect(screen.getByRole('tabpanel', { name: '记忆建议' })).toHaveTextContent('待确认建议')
+    expect(screen.getByRole('tabpanel', { name: '记忆建议' })).toHaveTextContent('尚未写入本地记忆')
+    expect(screen.getByRole('tabpanel', { name: '记忆建议' })).toHaveTextContent('主角始终使用黑白线稿风格。')
+
+    fireEvent.click(screen.getByRole('tab', { name: '诊断报告' }))
+    expect(screen.getByRole('tabpanel', { name: '诊断报告' })).toHaveTextContent('gateway_latency')
+    expect(screen.getByRole('tabpanel', { name: '诊断报告' })).toHaveTextContent('模型网关响应偏慢。')
+    expect(screen.getByRole('tabpanel', { name: '诊断报告' })).toHaveTextContent('"latencyMs": 3200')
+
+    fireEvent.click(screen.getByRole('tab', { name: '损坏回答' }))
+    expect(screen.getByRole('tabpanel', { name: '损坏回答' })).toHaveTextContent('无法使用类型化视图')
+    expect(screen.getByRole('tabpanel', { name: '损坏回答' })).toHaveTextContent('"text": 42')
+  })
+
+  it('reconstructs run details and typed artifacts from a snapshot-only response', () => {
+    const snapshotOnlyRunView: AgentRunViewResponse = {
+      runId: 'run-1',
+      status: 'completed',
+      trace: {},
+      snapshot: artifactSnapshot
+    }
+
+    render(<RunInspector runView={snapshotOnlyRunView} />)
+
+    expect(screen.getByText('gpt-5')).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: '运行事件' })).toBeInTheDocument()
+    expect(screen.getByText('canvas.queryGraph')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+
+    expect(screen.getByRole('tablist', { name: 'Agent 产物' })).toBeInTheDocument()
+    expect(screen.getByRole('tabpanel', { name: '回答' })).toHaveTextContent('这是可读的最终回答。')
+  })
+
+  it('uses snapshot artifacts when a typed projection is malformed', () => {
+    const malformedProjection = {
+      ...projectAgentRunSnapshot(artifactSnapshot),
+      artifacts: [
+        {
+          id: 'artifact-plan-view',
+          runId: 'run-1',
+          kind: 'canvasPlan',
+          title: '损坏投影计划',
+          summary: 'projection 缺少计划数组',
+          createdAt: 23,
+          viewType: 'canvasPlan',
+          planKind: 'plan',
+          planSummary: 'projection 缺少 nodes、edges 与 runSteps'
+        }
+      ]
+    } as unknown as NonNullable<AgentRunViewResponse['projection']>
+    const malformedProjectionRunView: AgentRunViewResponse = {
+      ...artifactRunView,
+      projection: malformedProjection
+    }
+
+    render(<RunInspector runView={malformedProjectionRunView} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+
+    expect(screen.queryByRole('tab', { name: '损坏投影计划' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: 'CanvasPlan' }))
+    expect(screen.getByRole('tabpanel', { name: 'CanvasPlan' })).toHaveTextContent('2 个节点')
+    expect(screen.getByRole('tabpanel', { name: 'CanvasPlan' })).toHaveTextContent('text-1 → image-1')
+  })
+
+  it('preserves artifact selection when appending and resets only when its run or item disappears', () => {
+    const firstTwo = projectAgentArtifacts(artifactSnapshot.artifacts.slice(0, 2))
+    const firstThree = projectAgentArtifacts(artifactSnapshot.artifacts.slice(0, 3))
+    const runTwoArtifacts: AgentArtifactViewModel[] = firstThree.map((artifact) => ({
+      ...artifact,
+      runId: 'run-2'
+    }))
+    const { rerender } = render(<ArtifactPanel artifacts={firstTwo} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '澄清' }))
+    expect(screen.getByRole('tab', { name: '澄清' })).toHaveAttribute('aria-selected', 'true')
+
+    rerender(<ArtifactPanel artifacts={firstThree} />)
+    expect(screen.getByRole('tab', { name: '澄清' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tabpanel', { name: '澄清' })).toHaveTextContent('希望画面采用横屏还是竖屏？')
+
+    rerender(<ArtifactPanel artifacts={runTwoArtifacts} />)
+    expect(screen.getByRole('tab', { name: '回答' })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(screen.getByRole('tab', { name: '澄清' }))
+    rerender(<ArtifactPanel artifacts={[runTwoArtifacts[0]!, runTwoArtifacts[2]!]} />)
+    expect(screen.getByRole('tab', { name: '回答' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('keeps artifact tabs in one horizontal row and constrains long citations', () => {
+    const longCitation = `[${'very-long-citation'.repeat(20)}]`
+    const longCitationSnapshot: AgentRunSnapshot = {
+      ...artifactSnapshot,
+      artifacts: [
+        {
+          id: 'artifact-long-citation',
+          runId: 'run-1',
+          kind: 'searchSummary',
+          title: '超长引用',
+          summary: '验证窄屏引用不会撑宽',
+          payload: {
+            query: 'long citation',
+            summary: '验证窄屏引用不会撑宽',
+            sources: [
+              {
+                title: '来源',
+                citation: longCitation
+              }
+            ],
+            citations: [longCitation]
+          },
+          createdAt: 30
+        }
+      ]
+    }
+    const longCitationRunView: AgentRunViewResponse = {
+      ...artifactRunView,
+      snapshot: longCitationSnapshot,
+      projection: projectAgentRunSnapshot(longCitationSnapshot)
+    }
+
+    render(<RunInspector runView={longCitationRunView} />)
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+
+    const tablist = screen.getByRole('tablist', { name: 'Agent 产物' })
+    expect(tablist).toHaveClass('flex-nowrap', 'overflow-x-auto')
+    expect(tablist).not.toHaveClass('grid-rows-2')
+
+    const panel = screen.getByRole('tabpanel', { name: '超长引用' })
+    for (const citation of within(panel).getAllByText(longCitation)) {
+      expect(citation).toHaveClass('max-w-full', 'min-w-0', 'break-all')
+    }
+  })
+
+  it('links outer inspector tabs to labelled panels and supports roving keyboard selection', () => {
+    render(<RunInspector runView={artifactRunView} />)
+
+    const runTab = screen.getByRole('tab', { name: '运行' })
+    const artifactsTab = screen.getByRole('tab', { name: '产物' })
+    const runPanelId = runTab.getAttribute('aria-controls')
+    const artifactsPanelId = artifactsTab.getAttribute('aria-controls')
+
+    expect(runTab.id).not.toBe('')
+    expect(artifactsTab.id).not.toBe('')
+    expect(runTab.id).not.toBe(artifactsTab.id)
+    expect(runPanelId).toBeTruthy()
+    expect(artifactsPanelId).toBeTruthy()
+    expect(runPanelId).not.toBe(artifactsPanelId)
+    expect(runTab).toHaveAttribute('tabindex', '0')
+    expect(artifactsTab).toHaveAttribute('tabindex', '-1')
+
+    const runPanel = runPanelId ? document.getElementById(runPanelId) : null
+    const artifactsPanel = artifactsPanelId ? document.getElementById(artifactsPanelId) : null
+    expect(runPanel).toHaveAttribute('role', 'tabpanel')
+    expect(runPanel).toHaveAttribute('aria-labelledby', runTab.id)
+    expect(artifactsPanel).toHaveAttribute('role', 'tabpanel')
+    expect(artifactsPanel).toHaveAttribute('aria-labelledby', artifactsTab.id)
+
+    runTab.focus()
+    fireEvent.keyDown(runTab, { key: 'ArrowRight' })
+    expect(artifactsTab).toHaveFocus()
+    expect(artifactsTab).toHaveAttribute('aria-selected', 'true')
+    expect(artifactsTab).toHaveAttribute('tabindex', '0')
+    expect(runTab).toHaveAttribute('tabindex', '-1')
+
+    fireEvent.keyDown(artifactsTab, { key: 'Home' })
+    expect(runTab).toHaveFocus()
+    expect(runTab).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(runTab, { key: 'End' })
+    expect(artifactsTab).toHaveFocus()
+    expect(artifactsTab).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.keyDown(artifactsTab, { key: 'ArrowLeft' })
+    expect(runTab).toHaveFocus()
+    expect(runTab).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('keeps every artifact tab linked to an existing labelled panel', () => {
+    render(<RunInspector runView={artifactRunView} />)
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+
+    const artifactTablist = screen.getByRole('tablist', { name: 'Agent 产物' })
+    const artifactTabs = within(artifactTablist).getAllByRole('tab')
+
+    expect(artifactTabs.length).toBeGreaterThan(1)
+    for (const artifactTab of artifactTabs) {
+      const panelId = artifactTab.getAttribute('aria-controls')
+      expect(panelId).toBeTruthy()
+
+      const panel = panelId ? document.getElementById(panelId) : null
+      expect(panel).toHaveAttribute('role', 'tabpanel')
+      expect(panel).toHaveAttribute('aria-labelledby', artifactTab.id)
+    }
   })
 })

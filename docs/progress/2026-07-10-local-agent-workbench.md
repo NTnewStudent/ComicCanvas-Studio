@@ -17,7 +17,7 @@ Excluded:
 
 - Organization roles, enterprise team collaboration, cloud sync, and centralized policy.
 - A complete built-in child Agent team.
-- Typed artifact-specific editors for every artifact kind.
+- Editable artifact editors and artifact mutation actions.
 
 ## Implemented
 
@@ -55,6 +55,22 @@ Excluded:
 - A partial denial ledger failure rolls the transaction back, leaving the original paused Run recoverable and retryable.
 - Approval or denial persistence failure leaves the original permission request pending and visible so the user can retry either action.
 
+### Typed Artifacts
+
+- Added typed, read-only artifact views for answers, clarifications, CanvasPlan, canvas patch drafts, search summaries, memory suggestions, and diagnostics.
+- CanvasPlan artifacts expose nodes, edges, and run steps without applying the plan.
+- Search summaries preserve result sources and citations, while memory suggestions remain explicitly pending and are never written automatically.
+- Malformed or unsupported payloads render a safe fallback instead of throwing; fallback previews redact credential-shaped values and sensitive fields.
+- Persisted snapshot artifacts take precedence over stale projected artifacts, and projection-only artifacts are runtime validated before rendering.
+- Artifact selection survives appended artifacts and resets only when the selected artifact disappears or the Run changes.
+- Run and artifact tabs support keyboard navigation, a single horizontal tab row, and safe wrapping for long citation text.
+
+### Integrated UI Regression
+
+- Added user-level jsdom flows for `hi` and `你好`, persisted answer replay, approval replay and resume, Plan hydration and apply gating, persisted failures, clear-view restoration, workflow validation, and subscription cleanup.
+- Approval tests exercise the asynchronous same-Run sequence from pending permission through resolution to `responseReady`.
+- The harness builds durable snapshots and events and projects them through the production `RunProjector` instead of fabricating unrelated UI state.
+
 ## Electron Verification
 
 Profile:
@@ -89,12 +105,35 @@ Screenshots:
 - `output/playwright/agent-workbench-approval-before-restart.png`
 - `output/playwright/agent-workbench-approval-after-restart-complete.png`
 
+### Typed Artifact And Restart QA - 2026-07-11
+
+Profile:
+
+```text
+/tmp/comiccanvas-phase3-qa-built-20260711
+```
+
+Scenario:
+
+1. Launched the built Electron application and opened the live renderer at `#/chat`.
+2. Sent `hi` and confirmed a visible Chinese answer with no CanvasPlan and no stuck busy state.
+3. Opened the artifact inspector and confirmed the typed `Answer` tab and body.
+4. Used `ArrowLeft` from the artifact tab and confirmed focus and selection returned to the Run tab.
+5. Relaunched Electron with the same profile and confirmed the question, answer, completed Run, and inspector were restored.
+6. Clicked `清空对话`, confirmed the current view cleared, then reloaded and confirmed persisted history returned.
+7. Resized the window to `960x640` and confirmed the inspector had no horizontal overflow.
+8. Confirmed no Playwright page errors after reload or interaction.
+
+Screenshot:
+
+- `output/playwright/agent-workbench-typed-answer-20260711.png`
+
 ## Automated Verification
 
 Passed:
 
 ```text
-165 test files, 679 tests
+166 test files, 697 tests
 bun run typecheck
 ESLint on all files changed by this iteration
 git diff --check
@@ -111,6 +150,8 @@ The focused regression group covers:
 - Chat history, projection replay, legacy assistant recovery, and late-response workflow races.
 - Chat store event reconciliation and StrictMode subscriptions.
 - Full and compact Workbench UI, permission cards, plans, and failure blocks.
+- Typed artifact projection, malformed payload fallback, sensitive preview redaction, and accessible artifact tabs.
+- User-level chat, permission resume, Plan preview, failure, clear-view, restart replay, workflow validation, and subscription cleanup.
 
 Repository-wide gates currently have pre-existing blockers outside this iteration:
 
@@ -122,7 +163,7 @@ Repository-wide gates currently have pre-existing blockers outside this iteratio
 - `ChatPanel` and `CanvasChatBox` share the same implementation but still create separate live store instances. Opening both does not yet guarantee one in-memory source of truth.
 - Restore currently reconciles only the latest persisted Run referenced by chat history; an older unresolved approval can remain hidden after a newer Run completes.
 - `RunInspector` renders the complete event list, including every persisted model delta, without virtualization or event compaction.
-- The artifact tab is a generic persisted list, not a typed editor/view for every declared artifact kind.
-- Restart replay tests cover Run projection and approval recovery, but not every answer/tool/plan/error combination in one browser automation suite.
+- Artifact views are read-only; editing, accepting, rejecting, or mutating artifact content remains future work.
+- Browser automation covers the primary typed-answer restart path; the complete answer/tool/plan/error matrix remains covered across jsdom and service-level suites rather than one end-to-end browser suite.
 
 These gaps remain unchecked in `specs/local-agent-platform/tasks.md` and should be completed before calling the whole local Agent platform finished.

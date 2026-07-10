@@ -234,4 +234,388 @@ describe('Agent Run Projector', () => {
       })
     ])
   })
+
+  it('projects supported artifact payloads into typed read-only view models and degrades malformed JSON', () => {
+    const projection = projectAgentRunSnapshot({
+      ...snapshot,
+      artifacts: [
+        {
+          id: 'artifact-answer',
+          runId: 'run-1',
+          kind: 'answer',
+          title: '回答',
+          summary: '普通回答',
+          payload: {
+            type: 'answer',
+            summary: '普通回答',
+            text: '这是可读的最终回答。',
+            dropped: ['隐藏调试字段']
+          },
+          createdAt: 20
+        },
+        {
+          id: 'artifact-clarification',
+          runId: 'run-1',
+          kind: 'clarification',
+          title: '澄清',
+          summary: '需要补充信息',
+          payload: {
+            type: 'clarification',
+            summary: '需要补充信息',
+            question: '希望画面采用横屏还是竖屏？',
+            missing: ['orientation'],
+            dropped: []
+          },
+          createdAt: 21
+        },
+        {
+          id: 'artifact-plan',
+          runId: 'run-1',
+          kind: 'canvasPlan',
+          title: 'CanvasPlan',
+          summary: '生成分镜工作流',
+          payload: {
+            kind: 'plan',
+            summary: '生成分镜工作流',
+            nodes: [
+              { ref: 'text-1', type: 'text', title: '分镜提示词', data: {} },
+              { ref: 'image-1', type: 'image', title: '关键帧', data: {} }
+            ],
+            edges: [
+              { source: 'text-1', target: 'image-1', edgeType: 'promptOrder' }
+            ],
+            runSteps: [
+              { ref: 'image-1', action: 'imageRun' }
+            ],
+            question: null,
+            dropped: ['移除不支持的脚本字段']
+          },
+          createdAt: 22
+        },
+        {
+          id: 'artifact-patch',
+          runId: 'run-1',
+          kind: 'canvasPatchDraft',
+          title: '画布变更草稿',
+          summary: '新增关键帧并连接提示词',
+          payload: {
+            summary: '新增关键帧并连接提示词',
+            nodeChanges: [
+              { action: 'add', ref: 'image-1', type: 'image', title: '关键帧' }
+            ],
+            edgeChanges: [
+              { action: 'add', source: 'text-1', target: 'image-1', edgeType: 'promptOrder' }
+            ],
+            warnings: ['应用前仍需父级确认']
+          },
+          createdAt: 23
+        },
+        {
+          id: 'artifact-search',
+          runId: 'run-1',
+          kind: 'searchSummary',
+          title: '检索摘要',
+          summary: '找到一个可引用来源',
+          payload: {
+            query: 'ComicCanvas local agent',
+            summary: '找到一个可引用来源',
+            sources: [
+              {
+                title: 'OpenAI 官方文档',
+                url: 'https://platform.openai.com/docs',
+                citation: '[1]',
+                snippet: 'Agent 工具调用与结构化输出说明。'
+              }
+            ],
+            citations: ['[1]']
+          },
+          createdAt: 24
+        },
+        {
+          id: 'artifact-memory',
+          runId: 'run-1',
+          kind: 'memorySuggestion',
+          title: '记忆建议',
+          summary: '建议记住角色画风',
+          payload: {
+            scope: 'workflow',
+            content: '主角始终使用黑白线稿风格。',
+            rationale: '后续分镜需要保持视觉一致。'
+          },
+          createdAt: 25
+        },
+        {
+          id: 'artifact-diagnostics',
+          runId: 'run-1',
+          kind: 'diagnosticReport',
+          title: '诊断报告',
+          summary: '发现一个网关告警',
+          payload: {
+            severity: 'warning',
+            diagnostics: [
+              {
+                code: 'gateway_latency',
+                severity: 'warning',
+                message: '模型网关响应偏慢。',
+                path: 'gateway.gpt-5',
+                details: { latencyMs: 3200 }
+              }
+            ]
+          },
+          createdAt: 26
+        },
+        {
+          id: 'artifact-malformed',
+          runId: 'run-1',
+          kind: 'answer',
+          title: '损坏回答',
+          summary: 'payload 字段类型错误',
+          payload: { type: 'answer', text: 42 },
+          createdAt: 27
+        }
+      ]
+    })
+
+    expect(projection.artifacts).toEqual([
+      expect.objectContaining({
+        id: 'artifact-answer',
+        viewType: 'answer',
+        text: '这是可读的最终回答。',
+        dropped: ['隐藏调试字段']
+      }),
+      expect.objectContaining({
+        id: 'artifact-clarification',
+        viewType: 'clarification',
+        question: '希望画面采用横屏还是竖屏？',
+        missing: ['orientation']
+      }),
+      expect.objectContaining({
+        id: 'artifact-plan',
+        viewType: 'canvasPlan',
+        nodes: [
+          expect.objectContaining({ ref: 'text-1', type: 'text', title: '分镜提示词' }),
+          expect.objectContaining({ ref: 'image-1', type: 'image', title: '关键帧' })
+        ],
+        edges: [
+          expect.objectContaining({ source: 'text-1', target: 'image-1', edgeType: 'promptOrder' })
+        ],
+        runSteps: [
+          expect.objectContaining({ ref: 'image-1', action: 'imageRun' })
+        ]
+      }),
+      expect.objectContaining({
+        id: 'artifact-patch',
+        viewType: 'canvasPatchDraft',
+        nodeChanges: [
+          expect.objectContaining({ action: 'add', ref: 'image-1', type: 'image' })
+        ],
+        edgeChanges: [
+          expect.objectContaining({ action: 'add', source: 'text-1', target: 'image-1' })
+        ]
+      }),
+      expect.objectContaining({
+        id: 'artifact-search',
+        viewType: 'searchSummary',
+        sources: [
+          expect.objectContaining({
+            title: 'OpenAI 官方文档',
+            citation: '[1]',
+            url: 'https://platform.openai.com/docs'
+          })
+        ]
+      }),
+      expect.objectContaining({
+        id: 'artifact-memory',
+        viewType: 'memorySuggestion',
+        scope: 'workflow',
+        confirmationState: 'pending',
+        content: '主角始终使用黑白线稿风格。'
+      }),
+      expect.objectContaining({
+        id: 'artifact-diagnostics',
+        viewType: 'diagnostics',
+        severity: 'warning',
+        diagnostics: [
+          expect.objectContaining({
+            code: 'gateway_latency',
+            severity: 'warning'
+          })
+        ]
+      }),
+      expect.objectContaining({
+        id: 'artifact-malformed',
+        viewType: 'fallback'
+      })
+    ])
+
+    const diagnosticArtifact = projection.artifacts[6]
+    expect(diagnosticArtifact?.viewType).toBe('diagnostics')
+    if (diagnosticArtifact?.viewType === 'diagnostics') {
+      expect(diagnosticArtifact.diagnostics[0]?.detailsPreview).toContain('"latencyMs": 3200')
+    }
+
+    const malformedArtifact = projection.artifacts[7]
+    expect(malformedArtifact?.viewType).toBe('fallback')
+    if (malformedArtifact?.viewType === 'fallback') {
+      expect(malformedArtifact.reason).toContain('answer')
+      expect(malformedArtifact.payloadPreview).toContain('"text": 42')
+    }
+  })
+
+  it('projects real web.search results as sources without dropping citations', () => {
+    const projection = projectAgentRunSnapshot({
+      ...snapshot,
+      artifacts: [
+        {
+          id: 'artifact-search-results',
+          runId: 'run-1',
+          kind: 'searchSummary',
+          title: '检索摘要',
+          summary: '真实工具结果',
+          payload: {
+            query: 'ComicCanvas local agent',
+            searchedAt: '2026-07-11T00:00:00.000Z',
+            results: [
+              {
+                title: 'ComicCanvas 文档',
+                url: 'https://example.com/comiccanvas',
+                snippet: '本地 Agent 平台说明。'
+              }
+            ],
+            citations: ['[tool-1]'],
+            truncated: false
+          },
+          createdAt: 30
+        }
+      ]
+    })
+
+    const artifact = projection.artifacts[0]
+    expect(artifact?.viewType).toBe('searchSummary')
+    if (artifact?.viewType === 'searchSummary') {
+      expect(artifact.sources).toEqual([
+        {
+          title: 'ComicCanvas 文档',
+          url: 'https://example.com/comiccanvas',
+          snippet: '本地 Agent 平台说明。'
+        }
+      ])
+      expect(artifact.citations).toEqual(['[tool-1]'])
+    }
+  })
+
+  it('degrades malformed non-answer payloads into the generic fallback view', () => {
+    const projection = projectAgentRunSnapshot({
+      ...snapshot,
+      artifacts: [
+        {
+          id: 'artifact-search-malformed',
+          runId: 'run-1',
+          kind: 'searchSummary',
+          title: '损坏检索摘要',
+          summary: 'results 不是数组',
+          payload: {
+            query: 'broken search',
+            results: 'not-an-array',
+            citations: ['[1]']
+          },
+          createdAt: 31
+        }
+      ]
+    })
+
+    const artifact = projection.artifacts[0]
+    expect(artifact?.viewType).toBe('fallback')
+    if (artifact?.viewType === 'fallback') {
+      expect(artifact.reason).toContain('searchSummary')
+      expect(artifact.payloadPreview).toContain('"results": "not-an-array"')
+    }
+  })
+
+  it('redacts secret-like keys from malformed artifact payload previews', () => {
+    const projection = projectAgentRunSnapshot({
+      ...snapshot,
+      artifacts: [
+        {
+          id: 'artifact-diagnostic-secret',
+          runId: 'run-1',
+          kind: 'diagnosticReport',
+          title: '损坏诊断',
+          summary: '诊断数据异常',
+          payload: {
+            severity: 'warning',
+            diagnostics: 'not-an-array',
+            accessToken: 'token-value',
+            client_secret: 'secret-value',
+            password: 'password-value',
+            apiKey: 'api-key-value',
+            Authorization: 'Bearer credential',
+            sessionCookie: 'cookie-value',
+            privateKey: 'private-key-value',
+            credential: 'credential-value',
+            nested: {
+              safeField: 'visible-value',
+              explanation: '正常说明文本应保持可见。',
+              headerLine: 'Authorization: Bearer live-secret',
+              queryLine: 'api_key=live-key',
+              noteLine: 'password: live-pass',
+              rawBearer: 'Bearer live-secret-token',
+              rawAlphabetBearer: 'Bearer abcdefghijklmnopqrstuvwxyz',
+              basicHeaderLine: 'Authorization: Basic dXNlcjpwYXNzd29yZA==',
+              quotedBearerLine: 'Authorization: "Bearer abc.def.ghi123456"',
+              authHeaderLine: 'authHeader=Basic dXNlcjpwYXNzd29yZA==',
+              rawProviderKey: 'sk-proj-abcdefghijklmnopqrstuvwxyz123456',
+              sketchNote: 'sketch rendering remains enabled.',
+              bearerNote: 'bearer is used here as ordinary natural language.',
+              bearerProtocolNote: 'Bearer authentication requires a token.'
+            }
+          },
+          createdAt: 32
+        }
+      ]
+    })
+
+    const artifact = projection.artifacts[0]
+    expect(artifact?.viewType).toBe('fallback')
+    if (artifact?.viewType === 'fallback') {
+      expect(artifact.payloadPreview).toContain('"accessToken": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"client_secret": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"password": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"apiKey": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"Authorization": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"sessionCookie": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"privateKey": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"credential": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"safeField": "visible-value"')
+      expect(artifact.payloadPreview).toContain('"explanation": "正常说明文本应保持可见。"')
+      expect(artifact.payloadPreview).toContain('"headerLine": "Authorization: Bearer [redacted]"')
+      expect(artifact.payloadPreview).toContain('"queryLine": "api_key=[redacted]"')
+      expect(artifact.payloadPreview).toContain('"noteLine": "password: [redacted]"')
+      expect(artifact.payloadPreview).toContain('"rawBearer": "Bearer [redacted]"')
+      expect(artifact.payloadPreview).toContain('"rawAlphabetBearer": "Bearer [redacted]"')
+      expect(artifact.payloadPreview).toContain('"basicHeaderLine": "Authorization: Basic [redacted]"')
+      expect(artifact.payloadPreview).toContain('"quotedBearerLine": "Authorization: \\"Bearer [redacted]\\""')
+      expect(artifact.payloadPreview).toContain('"authHeaderLine": "authHeader=Basic [redacted]"')
+      expect(artifact.payloadPreview).toContain('"rawProviderKey": "[redacted]"')
+      expect(artifact.payloadPreview).toContain('"sketchNote": "sketch rendering remains enabled."')
+      expect(artifact.payloadPreview).toContain('"bearerNote": "bearer is used here as ordinary natural language."')
+      expect(artifact.payloadPreview).toContain('"bearerProtocolNote": "Bearer authentication requires a token."')
+      expect(artifact.payloadPreview).not.toContain('token-value')
+      expect(artifact.payloadPreview).not.toContain('secret-value')
+      expect(artifact.payloadPreview).not.toContain('password-value')
+      expect(artifact.payloadPreview).not.toContain('api-key-value')
+      expect(artifact.payloadPreview).not.toContain('Bearer credential')
+      expect(artifact.payloadPreview).not.toContain('cookie-value')
+      expect(artifact.payloadPreview).not.toContain('private-key-value')
+      expect(artifact.payloadPreview).not.toContain('credential-value')
+      expect(artifact.payloadPreview).not.toContain('live-secret')
+      expect(artifact.payloadPreview).not.toContain('live-key')
+      expect(artifact.payloadPreview).not.toContain('live-pass')
+      expect(artifact.payloadPreview).not.toContain('live-secret-token')
+      expect(artifact.payloadPreview).not.toContain('abcdefghijklmnopqrstuvwxyz')
+      expect(artifact.payloadPreview).not.toContain('dXNlcjpwYXNzd29yZA==')
+      expect(artifact.payloadPreview).not.toContain('abc.def.ghi123456')
+      expect(artifact.payloadPreview).not.toContain('sk-proj-abcdefghijklmnopqrstuvwxyz123456')
+    }
+  })
 })
