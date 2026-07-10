@@ -20,6 +20,7 @@ export interface ComicCanvasApi {
   runAgent(input: IpcRequestMap['agent.run']): Promise<IpcResponseMap['agent.run']>
   getAgentRun(input: IpcRequestMap['agent.getRun']): Promise<IpcResponseMap['agent.getRun']>
   approveAgentTool(input: IpcRequestMap['agent.approveTool']): Promise<IpcResponseMap['agent.approveTool']>
+  denyAgentTool(input: IpcRequestMap['agent.denyTool']): Promise<IpcResponseMap['agent.denyTool']>
   spawnSubAgent(input: IpcRequestMap['agent.spawn']): Promise<IpcResponseMap['agent.spawn']>
   getChatHistory(input: IpcRequestMap['chat.history']): Promise<IpcResponseMap['chat.history']>
   listSkills(input?: IpcRequestMap['skill.list']): Promise<IpcResponseMap['skill.list']>
@@ -117,6 +118,7 @@ function invokeMain<TChannel extends 'agent.delete'>(channel: TChannel, request:
 function invokeMain<TChannel extends 'agent.run'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.getRun'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.approveTool'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'agent.denyTool'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.spawn'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'chat.history'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -291,6 +293,14 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/agents.md
    */
   approveAgentTool: (input) => invokeMain('agent.approveTool', input),
+  /**
+   * Denies a paused Agent tool call and persists the terminal run state.
+   * @param input - Pending Agent run call denial.
+   * @returns Aborted Run result or a safe error.
+   * @throws Error when the main process rejects the denial request.
+   * @see docs/api-contracts/agents.md
+   */
+  denyAgentTool: (input) => invokeMain('agent.denyTool', input),
   /**
    * Spawns an isolated sub-agent through the whitelisted Agent IPC contract.
    * @param input - Sub-agent spec and parent depth.

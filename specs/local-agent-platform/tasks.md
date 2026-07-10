@@ -22,14 +22,14 @@
 - [x] 12. Add grant scopes for once, run, and session with workflow/tool/permission-kind boundaries. _(R6, INV-3)_
 - [x] 13. Keep destructive operations ask-first by default and test that non-destructive session grants do not bypass destructive prompts. _(R6, INV-3)_
 - [ ] 14. Add transcript-closure tests for native OpenAI-compatible tool calls across approval resume, multiple tool calls, denied tools, and tool failures. _(R6, INV-2)_
-- [ ] 15. Make approval denial and approval failure project visible terminal or retryable states. _(R6, INV-5)_
+- [x] 15. Make approval denial and approval failure project visible terminal or retryable states. _(R6, INV-5)_
 
 ## Phase 3 - Agent Workbench UI
 
-- [ ] 16. Create shared `AgentWorkbench` shell with conversation stream, artifact tabs, compact run status, and Run Inspector slot. _(R2, R8)_
-- [ ] 17. Convert ChatPanel to use workbench projection outputs instead of duplicating event state. _(R2)_
-- [ ] 18. Convert CanvasChatBox into a compact workbench entry that reuses the same store/projection and opens inspector details when needed. _(R2)_
-- [ ] 19. Add inline permission cards with approve once, approve run, approve session, and deny actions. _(R6)_
+- [x] 16. Create shared `AgentWorkbench` shell with conversation stream, artifact tabs, compact run status, and Run Inspector slot. _(R2, R8)_
+- [x] 17. Convert ChatPanel to use workbench projection outputs instead of duplicating event state. _(R2)_
+- [x] 18. Convert CanvasChatBox into a compact workbench entry that reuses the same store/projection and opens inspector details when needed. _(R2)_
+- [x] 19. Add inline permission cards with approve once, approve run, approve session, and deny actions. _(R6)_
 - [ ] 20. Add artifact tabs for answer, clarification, CanvasPlan, canvas patch draft, search summary, memory suggestion, and diagnostics. _(R2, R4, R7, R8)_
 - [ ] 21. Add jsdom/browser tests for normal chat, permission resume, plan preview, failure blocks, clear-view behavior, and restart replay. _(R2, R6, R8, R9)_
 

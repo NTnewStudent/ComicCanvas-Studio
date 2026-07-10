@@ -38,6 +38,7 @@ export interface ChatStoreApi {
   sendCanvasChat(input: { message: string; agentId: string }): Promise<{ runId: string; jobId: string; messageId: string; status: 'pending' }>
   getCanvasPlan(input: { messageId: string }): Promise<CanvasPlan>
   approveAgentTool?(input: { runId: string; callId: string; approvedBy: string; scope?: PermissionGrantScope }): Promise<{ runId: string; jobId: string; status: 'pending' } | { errorClass: string; message: string; retryable: false }>
+  denyAgentTool?(input: { runId: string; callId: string; deniedBy: string }): Promise<{ runId: string; status: 'aborted'; errorClass: 'agent_tool_denied' } | { errorClass: string; message: string; retryable: boolean }>
   getAgentRun?(input: { runId: string }): Promise<AgentRunViewResponse>
   getChatHistory?(input: { workflowId: string }): Promise<ChatTurn[]>
   onCanvasPlanReady?(handler: (event: { messageId: string; planId: string }) => void): () => void
@@ -64,7 +65,7 @@ export interface ChatStoreState {
   activeRunView: AgentRunViewResponse | null
   send(input: { message: string; agentId: string; agentAutoRun?: boolean | undefined }): Promise<void>
   approvePermission(callId: string, scope?: PermissionGrantScope): Promise<void>
-  denyPermission(callId: string): void
+  denyPermission(callId: string): Promise<void>
   setAutoExecute(value: boolean): void
   markPlanApplied(planId: string): void
   stopWaiting(): void
@@ -77,12 +78,32 @@ export interface ChatStoreDeps {
   /** Task 60 自动 apply 出口；宿主接 applyPlan/PlanRunner。 */
   applyPlan?: (plan: CanvasPlan, options: { autoExecute: boolean }) => void
   clock?: () => number
+  /** React 宿主在 effect 中启动订阅，避免 StrictMode render 阶段产生泄漏。 */
+  deferSubscriptions?: boolean
 }
 
 export interface ChatStoreHandle {
   store: StoreApi<ChatStoreState>
+  /** 注册 IPC 事件订阅；重复调用幂等，dispose 后可再次启动。 */
+  start(): void
   /** 取消全部 IPC 订阅。 */
   dispose(): void
+}
+
+function latestSnapshotSequence(view: AgentRunViewResponse | null): number | null {
+  const events = view?.snapshot?.events
+  if (!events || events.length === 0) {
+    return null
+  }
+
+  return events.reduce((latest, event) => Math.max(latest, event.sequence), 0)
+}
+
+function isTerminalRunStatus(status: AgentRunViewResponse['status']): boolean {
+  return status === 'completed'
+    || status === 'failed'
+    || status === 'aborted'
+    || status === 'max_turns_exceeded'
 }
 
 /**
@@ -93,8 +114,23 @@ export interface ChatStoreHandle {
  */
 export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
   const clock = deps.clock ?? Date.now
+  let conversationOperationId = 0
+  const terminalRunIds = new Set<string>()
+  const reconcileGenerationByRun = new Map<string, number>()
+  const hydratingPlanIds = new Set<string>()
   let reconcileFromRunSnapshot: (runId: string) => Promise<void> = async () => {
     // 在 createStore 初始化前占位；订阅注册时会被真实实现替换。
+  }
+
+  function nextReconcileGeneration(runId: string): number {
+    const generation = (reconcileGenerationByRun.get(runId) ?? 0) + 1
+    reconcileGenerationByRun.set(runId, generation)
+    return generation
+  }
+
+  function markRunTerminal(runId: string): void {
+    terminalRunIds.add(runId)
+    nextReconcileGeneration(runId)
   }
 
   const store = createStore<ChatStoreState>((set, get) => {
@@ -115,37 +151,132 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
       set({ busy: false, pending: null })
     }
 
+    function hydrateProjectedPlans(turn: ChatTurn, operationId: number): void {
+      if (!turn.messageId) {
+        return
+      }
+
+      for (const block of turn.blocks) {
+        if (
+          block.kind !== 'plan'
+          || get().plansById[block.planId]
+          || hydratingPlanIds.has(block.planId)
+        ) {
+          continue
+        }
+
+        hydratingPlanIds.add(block.planId)
+        void deps.api.getCanvasPlan({ messageId: turn.messageId })
+          .then((plan) => {
+            if (operationId !== conversationOperationId) {
+              return
+            }
+            const stillProjected = get().turns.some((candidate) => {
+              return candidate.role === 'assistant'
+                && candidate.messageId === turn.messageId
+                && candidate.blocks.some((candidateBlock) => {
+                  return candidateBlock.kind === 'plan' && candidateBlock.planId === block.planId
+                })
+            })
+            if (!stillProjected) {
+              return
+            }
+            set((state) => ({
+              plansById: {
+                ...state.plansById,
+                [block.planId]: plan
+              }
+            }))
+          })
+          .catch(() => {
+            // Missing historical plans keep their projected placeholder block.
+          })
+          .finally(() => {
+            hydratingPlanIds.delete(block.planId)
+          })
+      }
+    }
+
     async function reconcileFromRunSnapshotImpl(runId: string): Promise<void> {
       if (!deps.api.getAgentRun) {
         return
       }
 
+      const generation = nextReconcileGeneration(runId)
       try {
         const run = await deps.api.getAgentRun({ runId })
         if (get().activeRunId !== runId && get().pending?.runId !== runId) {
           return
         }
+        if (terminalRunIds.has(runId) && !isTerminalRunStatus(run.status)) {
+          return
+        }
 
+        const currentView = get().activeRunView
+        const currentSequence = currentView?.runId === runId
+          ? latestSnapshotSequence(currentView)
+          : null
+        const incomingSequence = latestSnapshotSequence(run)
+        const latestGeneration = reconcileGenerationByRun.get(runId) ?? generation
+        if (
+          generation < latestGeneration
+          && (
+            incomingSequence === null
+            || (currentSequence !== null && incomingSequence <= currentSequence)
+          )
+        ) {
+          return
+        }
+        if (currentView?.runId === runId) {
+          if (currentSequence !== null && (incomingSequence === null || incomingSequence < currentSequence)) {
+            return
+          }
+        }
+
+        if (isTerminalRunStatus(run.status)) {
+          markRunTerminal(runId)
+        }
         set({ activeRunId: runId, activeRunView: run })
+
+        if (
+          !get().pending
+          && (run.status === 'pending' || run.status === 'running' || run.status === 'approval_required')
+          && run.snapshot?.run.jobId
+        ) {
+          set({
+            busy: true,
+            pending: {
+              runId,
+              messageId: run.snapshot.run.messageId,
+              jobId: run.snapshot.run.jobId,
+              agentAutoRun: false
+            }
+          })
+        }
 
         if (run.projection) {
           const projectedTurn = run.projection.chatTurn
-          const shouldApplyProjection = projectedTurn.blocks.length > 0
-            || run.status === 'completed'
-            || run.status === 'failed'
-            || run.status === 'aborted'
-            || run.status === 'max_turns_exceeded'
+          const replaceBlocks = projectedTurn.blocks.length > 0
+            || isTerminalRunStatus(run.status)
             || run.status === 'approval_required'
+          set((state) => {
+            let matched = false
+            const turns = state.turns.map((turn) => {
+              if (turn.role !== 'assistant' || (turn.runId !== runId && turn.messageId !== projectedTurn.messageId)) {
+                return turn
+              }
 
-          if (shouldApplyProjection) {
-            set((state) => ({
-              turns: state.turns.map((turn) =>
-                turn.role === 'assistant' && (turn.runId === runId || turn.messageId === projectedTurn.messageId)
-                  ? { ...turn, blocks: projectedTurn.blocks, status: projectedTurn.status }
-                  : turn,
-              ),
-            }))
-          }
+              matched = true
+              return {
+                ...turn,
+                ...(replaceBlocks ? { blocks: projectedTurn.blocks } : {}),
+                status: projectedTurn.status
+              }
+            })
+
+            return { turns: matched ? turns : [...turns, projectedTurn] }
+          })
+          hydrateProjectedPlans(projectedTurn, conversationOperationId)
 
           if (projectedTurn.status === 'completed' || projectedTurn.status === 'failed') {
             finishPending()
@@ -197,6 +328,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
           return
         }
 
+        const operationId = ++conversationOperationId
         set((state) => ({
           busy: true,
           turns: [...state.turns, userTurnFromContent({ id: `user-${clock()}`, content: input.message, createdAt: clock() })],
@@ -204,6 +336,10 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
 
         try {
           const ticket = await deps.api.sendCanvasChat({ message: input.message, agentId: input.agentId })
+          if (operationId !== conversationOperationId) {
+            return
+          }
+
           set((state) => ({
             pending: { messageId: ticket.messageId, runId: ticket.runId, jobId: ticket.jobId, agentAutoRun: input.agentAutoRun === true },
             activeRunId: ticket.runId,
@@ -213,11 +349,16 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
               createAssistantTurn({ id: `assistant-${ticket.messageId}`, runId: ticket.runId, messageId: ticket.messageId, createdAt: clock() }),
             ],
           }))
+          terminalRunIds.delete(ticket.runId)
           applyToPending({ type: 'progress', message: `Agent 已排队：${ticket.jobId}` })
 
           // 补拉运行快照：排队早于事件订阅时 progress/response 可能已经落库。
           void reconcileFromRunSnapshotImpl(ticket.runId)
         } catch {
+          if (operationId !== conversationOperationId) {
+            return
+          }
+
           // 发送失败必须可见；补一个失败的 assistant 回合。
           set((state) => ({
             busy: false,
@@ -245,24 +386,48 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
             throw new Error(result.message)
           }
 
-          applyToPending({ type: 'permissionResolved', callId, scope })
+          applyToPending({ type: 'permissionResolved', callId, decision: 'approved', scope })
           set({ pending: { ...pending, jobId: result.jobId }, busy: true })
 
           // resume 事件可能在批准与订阅之间丢失，从运行快照兜底恢复终态。
           void reconcileFromRunSnapshotImpl(pending.runId)
         } catch {
-          // 批准失败要在回合里可见，且不能让 run 卡在等待态。
+          // Durable Run 仍在等待授权；保留 pending 让用户可重试批准或改为拒绝。
           applyToPending({ type: 'runFailed', errorClass: 'agent_approval_failed', message: '工具批准失败，请重试。', retryable: true })
-          finishPending()
+          set({ busy: true })
         } finally {
           set({ permissionBusy: false })
         }
       },
 
-      denyPermission(callId) {
-        applyToPending({ type: 'permissionResolved', callId })
-        applyToPending({ type: 'runFailed', errorClass: 'agent_tool_denied', message: '已拒绝工具调用，Agent 已停止。', retryable: false })
-        finishPending()
+      async denyPermission(callId) {
+        const pending = get().pending
+        if (!pending || !deps.api.denyAgentTool) {
+          return
+        }
+
+        set({ permissionBusy: true })
+        try {
+          const result = await deps.api.denyAgentTool({
+            runId: pending.runId,
+            callId,
+            deniedBy: 'chat-user'
+          })
+          if (!('status' in result) || result.errorClass !== 'agent_tool_denied') {
+            throw new Error('message' in result ? result.message : 'Agent denial failed.')
+          }
+
+          applyToPending({ type: 'permissionResolved', callId, decision: 'denied' })
+          applyToPending({ type: 'runFailed', errorClass: 'agent_tool_denied', message: '已拒绝工具调用，Agent 已停止。', retryable: false })
+          markRunTerminal(pending.runId)
+          finishPending()
+          void reconcileFromRunSnapshotImpl(pending.runId)
+        } catch {
+          applyToPending({ type: 'runFailed', errorClass: 'agent_denial_failed', message: '拒绝操作未保存，请重试。', retryable: true })
+          set({ busy: true })
+        } finally {
+          set({ permissionBusy: false })
+        }
       },
 
       setAutoExecute(value) {
@@ -274,6 +439,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
       },
 
       stopWaiting() {
+        conversationOperationId += 1
         set({ busy: false, pending: null, permissionBusy: false })
       },
 
@@ -282,28 +448,34 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
           return
         }
 
+        const operationId = ++conversationOperationId
         try {
           const turns = await deps.api.getChatHistory({ workflowId })
-          set({ turns })
+          if (operationId !== conversationOperationId) {
+            return
+          }
+
+          const latestRunTurn = [...turns].reverse().find((turn) => turn.runId)
+          set({
+            turns,
+            activeRunId: latestRunTurn?.runId ?? null,
+            activeRunView: null,
+            busy: false,
+            pending: null,
+            permissionBusy: false
+          })
+
+          if (latestRunTurn?.runId) {
+            await reconcileFromRunSnapshotImpl(latestRunTurn.runId)
+          }
+          if (operationId !== conversationOperationId) {
+            return
+          }
 
           // 恢复的 plan 块补拉 plan 内容，使 PlanCard 在重启后仍可用。
           for (const turn of turns) {
-            if (turn.role !== 'assistant' || !turn.messageId) {
-              continue
-            }
-
-            for (const block of turn.blocks) {
-              if (block.kind !== 'plan' || get().plansById[block.planId]) {
-                continue
-              }
-
-              void deps.api.getCanvasPlan({ messageId: turn.messageId })
-                .then((plan) => {
-                  set((state) => ({ plansById: { ...state.plansById, [block.planId]: plan } }))
-                })
-                .catch(() => {
-                  // 计划行可能已被清理；保留占位展示即可。
-                })
+            if (turn.role === 'assistant') {
+              hydrateProjectedPlans(turn, operationId)
             }
           }
         } catch {
@@ -312,6 +484,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
       },
 
       clearView() {
+        conversationOperationId += 1
         set({ turns: [], busy: false, pending: null, permissionBusy: false, activeRunId: null, activeRunView: null })
       },
     }
@@ -335,158 +508,203 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
   }
 
   const unsubscribers: Array<() => void> = []
+  let started = false
 
-  if (deps.api.onAgentDelta) {
-    unsubscribers.push(deps.api.onAgentDelta((event) => {
-      if (matchesPendingMessage(event.messageId)) {
-        applyEvent({ type: 'delta', delta: event.delta })
-      }
-    }))
-  }
+  function start(): void {
+    if (started) {
+      return
+    }
 
-  if (deps.api.onJobProgress) {
-    unsubscribers.push(deps.api.onJobProgress((event) => {
-      const pending = store.getState().pending
-      if (pending && event.jobId === pending.jobId && event.message) {
-        applyEvent({ type: 'progress', message: event.message })
-      }
-    }))
-  }
+    started = true
 
-  if (deps.api.onAgentToolStarted) {
-    unsubscribers.push(deps.api.onAgentToolStarted((event) => {
-      if (matchesPendingMessage(event.messageId)) {
-        applyEvent({ type: 'toolStarted', callId: event.callId, toolId: event.toolId, inputSummary: event.inputSummary })
-      }
-    }))
-  }
+    if (deps.api.onAgentDelta) {
+      unsubscribers.push(deps.api.onAgentDelta((event) => {
+        if (matchesPendingMessage(event.messageId)) {
+          applyEvent({ type: 'delta', delta: event.delta })
+        }
+      }))
+    }
 
-  if (deps.api.onAgentToolCompleted) {
-    unsubscribers.push(deps.api.onAgentToolCompleted((event) => {
-      if (matchesPendingMessage(event.messageId)) {
-        applyEvent({ type: 'toolCompleted', callId: event.callId, toolId: event.toolId, status: event.status, summary: event.summary })
-      }
-    }))
-  }
+    if (deps.api.onJobProgress) {
+      unsubscribers.push(deps.api.onJobProgress((event) => {
+        const pending = store.getState().pending
+        if (pending && event.jobId === pending.jobId && event.message) {
+          applyEvent({ type: 'progress', message: event.message })
+        }
+      }))
+    }
 
-  if (deps.api.onAgentPermissionRequired) {
-    unsubscribers.push(deps.api.onAgentPermissionRequired((event) => {
-      if (matchesPendingMessage(event.messageId)) {
-        applyEvent({
-          type: 'permissionRequired',
-          callId: event.callId,
-          toolId: event.toolId,
-          reason: event.reason,
-          ...(event.requiredPermissions ? { requiredPermissions: event.requiredPermissions } : {})
-        })
-        store.setState({ busy: true })
-      }
-    }))
-  }
+    if (deps.api.onAgentToolStarted) {
+      unsubscribers.push(deps.api.onAgentToolStarted((event) => {
+        if (matchesPendingMessage(event.messageId)) {
+          applyEvent({ type: 'toolStarted', callId: event.callId, toolId: event.toolId, inputSummary: event.inputSummary })
+          void reconcileFromRunSnapshot(event.runId)
+        }
+      }))
+    }
 
-  if (deps.api.onAgentResponseReady) {
-    unsubscribers.push(deps.api.onAgentResponseReady((event) => {
-      if (!matchesPendingMessage(event.messageId)) {
-        return
-      }
+    if (deps.api.onAgentToolCompleted) {
+      unsubscribers.push(deps.api.onAgentToolCompleted((event) => {
+        if (matchesPendingMessage(event.messageId)) {
+          applyEvent({ type: 'toolCompleted', callId: event.callId, toolId: event.toolId, status: event.status, summary: event.summary })
+          void reconcileFromRunSnapshot(event.runId)
+        }
+      }))
+    }
 
-      applyEvent({ type: 'responseReady', response: event.response })
-      store.setState({ busy: false, pending: null })
-      void reconcileFromRunSnapshot(event.runId)
-    }))
-  }
-
-  if (deps.api.onCanvasPlanReady) {
-    unsubscribers.push(deps.api.onCanvasPlanReady((event) => {
-      if (!matchesPendingMessage(event.messageId)) {
-        return
-      }
-
-      const pending = store.getState().pending
-      void deps.api.getCanvasPlan({ messageId: event.messageId })
-        .then((plan) => {
-          store.setState((state) => ({ plansById: { ...state.plansById, [event.planId]: plan } }))
-
-          // Task 60：门禁 + 自动执行意愿判定统一走 applyAgentPlanOnReady。
-          const applied = deps.applyPlan
-            ? applyAgentPlanOnReady({
-                plan,
-                uiAutoExecute: store.getState().autoExecute,
-                agentAutoRun: pending?.agentAutoRun,
-                applyPlan: deps.applyPlan,
-              })
-            : false
-          if (applied) {
-            store.getState().markPlanApplied(event.planId)
-          }
-
-          applyEvent({ type: 'planReady', planId: event.planId })
-        })
-        .catch(() => {
-          applyEvent({ type: 'runFailed', errorClass: 'plan_fetch_failed', message: '计划获取失败，请重试。', retryable: true })
-        })
-        .finally(() => {
-          store.setState({ busy: false, pending: null })
-          if (pending) void reconcileFromRunSnapshot(pending.runId)
-        })
-    }))
-  }
-
-  if (deps.api.onJobCompleted) {
-    unsubscribers.push(deps.api.onJobCompleted((event) => {
-      const pending = store.getState().pending
-      if (!pending || event.jobId !== pending.jobId) {
-        return
-      }
-
-      // agent.responseReady / canvas.planReady 丢失时，用 job 终态兜底恢复 busy。
-      if (event.result.kind === 'agentRun' && event.result.response && event.result.response.type !== 'canvasPlan') {
-        applyEvent({ type: 'responseReady', response: event.result.response })
-        store.setState({ busy: false, pending: null })
-        void reconcileFromRunSnapshot(pending.runId)
-        return
-      }
-
-      void reconcileFromRunSnapshot(pending.runId)
-    }))
-  }
-
-  if (deps.api.onJobFailed) {
-    unsubscribers.push(deps.api.onJobFailed((event) => {
-      const pending = store.getState().pending
-      if (!pending || event.jobId !== pending.jobId) {
-        return
-      }
-
-      // 批准等待型「失败」是暂停而非终态：保留/补齐权限块并继续等待用户。
-      if (isApprovalRequiredJobFailure(event.error)) {
-        const approval = approvalRequestFromJobFailure(pending.runId, event.error)
-        if (approval) {
+    if (deps.api.onAgentPermissionRequired) {
+      unsubscribers.push(deps.api.onAgentPermissionRequired((event) => {
+        if (matchesPendingMessage(event.messageId)) {
           applyEvent({
             type: 'permissionRequired',
-            callId: approval.callId,
-            toolId: approval.toolId,
-            reason: approval.reason,
-            ...(approval.requiredPermissions ? { requiredPermissions: approval.requiredPermissions } : {})
+            callId: event.callId,
+            toolId: event.toolId,
+            reason: event.reason,
+            ...(event.requiredPermissions ? { requiredPermissions: event.requiredPermissions } : {})
           })
+          store.setState({ busy: true })
+          void reconcileFromRunSnapshot(event.runId)
         }
-        store.setState({ busy: true })
-        void reconcileFromRunSnapshot(pending.runId)
-        return
-      }
+      }))
+    }
 
-      applyEvent({ type: 'runFailed', errorClass: event.error.errorClass, message: event.error.message, retryable: event.error.retryable })
-      store.setState({ busy: false, pending: null })
-      void reconcileFromRunSnapshot(pending.runId)
-    }))
+    if (deps.api.onAgentResponseReady) {
+      unsubscribers.push(deps.api.onAgentResponseReady((event) => {
+        if (!matchesPendingMessage(event.messageId)) {
+          return
+        }
+
+        applyEvent({ type: 'responseReady', response: event.response })
+        markRunTerminal(event.runId)
+        store.setState({ busy: false, pending: null })
+        void reconcileFromRunSnapshot(event.runId)
+      }))
+    }
+
+    if (deps.api.onCanvasPlanReady) {
+      unsubscribers.push(deps.api.onCanvasPlanReady((event) => {
+        if (!matchesPendingMessage(event.messageId)) {
+          return
+        }
+
+        const pending = store.getState().pending
+        if (!pending) {
+          return
+        }
+        const operationId = conversationOperationId
+        const capturedPending = { ...pending }
+        markRunTerminal(capturedPending.runId)
+        const isCurrentPlanRequest = (): boolean => {
+          const current = store.getState().pending
+          return operationId === conversationOperationId
+            && current?.runId === capturedPending.runId
+            && current.messageId === capturedPending.messageId
+            && current.jobId === capturedPending.jobId
+        }
+        void deps.api.getCanvasPlan({ messageId: event.messageId })
+          .then((plan) => {
+            if (!isCurrentPlanRequest()) {
+              return
+            }
+            store.setState((state) => ({ plansById: { ...state.plansById, [event.planId]: plan } }))
+
+            // Task 60：门禁 + 自动执行意愿判定统一走 applyAgentPlanOnReady。
+            const applied = deps.applyPlan
+              ? applyAgentPlanOnReady({
+                  plan,
+                  uiAutoExecute: store.getState().autoExecute,
+                  agentAutoRun: capturedPending.agentAutoRun,
+                  applyPlan: deps.applyPlan,
+                })
+              : false
+            if (applied) {
+              store.getState().markPlanApplied(event.planId)
+            }
+
+            applyEvent({ type: 'planReady', planId: event.planId })
+          })
+          .catch(() => {
+            if (!isCurrentPlanRequest()) {
+              return
+            }
+            applyEvent({ type: 'runFailed', errorClass: 'plan_fetch_failed', message: '计划获取失败，请重试。', retryable: true })
+          })
+          .finally(() => {
+            if (!isCurrentPlanRequest()) {
+              return
+            }
+            store.setState({ busy: false, pending: null })
+            void reconcileFromRunSnapshot(capturedPending.runId)
+          })
+      }))
+    }
+
+    if (deps.api.onJobCompleted) {
+      unsubscribers.push(deps.api.onJobCompleted((event) => {
+        const pending = store.getState().pending
+        if (!pending || event.jobId !== pending.jobId) {
+          return
+        }
+
+        // agent.responseReady / canvas.planReady 丢失时，用 job 终态兜底恢复 busy。
+        if (event.result.kind === 'agentRun' && event.result.response && event.result.response.type !== 'canvasPlan') {
+          applyEvent({ type: 'responseReady', response: event.result.response })
+          markRunTerminal(pending.runId)
+          store.setState({ busy: false, pending: null })
+          void reconcileFromRunSnapshot(pending.runId)
+          return
+        }
+
+        markRunTerminal(pending.runId)
+        void reconcileFromRunSnapshot(pending.runId)
+      }))
+    }
+
+    if (deps.api.onJobFailed) {
+      unsubscribers.push(deps.api.onJobFailed((event) => {
+        const pending = store.getState().pending
+        if (!pending || event.jobId !== pending.jobId) {
+          return
+        }
+
+        // 批准等待型「失败」是暂停而非终态：保留/补齐权限块并继续等待用户。
+        if (isApprovalRequiredJobFailure(event.error)) {
+          const approval = approvalRequestFromJobFailure(pending.runId, event.error)
+          if (approval) {
+            applyEvent({
+              type: 'permissionRequired',
+              callId: approval.callId,
+              toolId: approval.toolId,
+              reason: approval.reason,
+              ...(approval.requiredPermissions ? { requiredPermissions: approval.requiredPermissions } : {})
+            })
+          }
+          store.setState({ busy: true })
+          void reconcileFromRunSnapshot(pending.runId)
+          return
+        }
+
+        applyEvent({ type: 'runFailed', errorClass: event.error.errorClass, message: event.error.message, retryable: event.error.retryable })
+        markRunTerminal(pending.runId)
+        store.setState({ busy: false, pending: null })
+        void reconcileFromRunSnapshot(pending.runId)
+      }))
+    }
+  }
+
+  if (!deps.deferSubscriptions) {
+    start()
   }
 
   return {
     store,
+    start,
     dispose() {
       for (const unsubscribe of unsubscribers) {
         unsubscribe()
       }
+      unsubscribers.length = 0
+      started = false
     },
   }
 }

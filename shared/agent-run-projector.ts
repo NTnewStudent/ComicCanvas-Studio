@@ -69,6 +69,14 @@ function payload(event: AgentRunEventRecord): Record<string, unknown> {
   return isRecord(event.payload) ? event.payload : {}
 }
 
+function permissionDecision(data: Record<string, unknown>): 'approved' | 'denied' {
+  if (data.decision === 'denied' || typeof data.deniedByLabel === 'string') {
+    return 'denied'
+  }
+
+  return 'approved'
+}
+
 function orderedEvents(snapshot: AgentRunSnapshot): AgentRunEventRecord[] {
   return [...snapshot.events].sort((left, right) => left.sequence - right.sequence)
 }
@@ -121,6 +129,7 @@ function toChatEvent(event: AgentRunEventRecord): AgentChatEvent | null {
       return {
         type: 'permissionResolved',
         callId: data.callId,
+        decision: permissionDecision(data),
         ...(data.scope === 'once' || data.scope === 'run' || data.scope === 'session'
           ? { scope: data.scope }
           : {})
@@ -230,7 +239,10 @@ function projectInspector(snapshot: AgentRunSnapshot): RunInspectorModel {
 
     if (event.type === 'permission.resolved' && typeof data.callId === 'string') {
       const permission = permissions.find((entry) => entry.callId === data.callId)
-      if (permission) permission.resolved = true
+      if (permission) {
+        permission.resolved = true
+        permission.decision = permissionDecision(data)
+      }
     }
 
     if (event.type === 'run.failed'

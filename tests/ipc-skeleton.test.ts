@@ -59,6 +59,7 @@ describe('M1 IPC skeleton', () => {
     expect(Array.from(handlers.keys()).sort()).toEqual([
       'agent.approveTool',
       'agent.delete',
+      'agent.denyTool',
       'agent.getRun',
       'agent.list',
       'agent.run',
@@ -128,6 +129,7 @@ describe('M1 IPC skeleton', () => {
   it('routes agent.run and agent.getRun through the injected runtime', () => {
     const { ipcMain, handlers } = createFakeIpcMain()
     const agentRegistry = createAgentRegistry({ agents: createAgentRepo() })
+    let denialCalls = 0
 
     registerAgentHandlers(ipcMain, {
       registry: agentRegistry,
@@ -139,6 +141,11 @@ describe('M1 IPC skeleton', () => {
         approveTool(input) {
           expect(input).toEqual({ runId: 'run-agent-ipc', callId: 'call-1', approvedBy: 'user-local' })
           return { runId: 'run-agent-ipc', jobId: 'job-agent-approval-ipc', status: 'pending' }
+        },
+        denyTool(input) {
+          denialCalls += 1
+          expect(input).toEqual({ runId: 'run-agent-ipc', callId: 'call-1', deniedBy: 'user-local' })
+          return { runId: 'run-agent-ipc', status: 'aborted', errorClass: 'agent_tool_denied' }
         },
         getRun(runId) {
           expect(runId).toBe('run-agent-ipc')
@@ -191,6 +198,22 @@ describe('M1 IPC skeleton', () => {
       jobId: 'job-agent-approval-ipc',
       status: 'pending'
     })
+    expect(handlers.get('agent.denyTool')?.({}, { runId: ' run-agent-ipc ', callId: ' call-1 ', deniedBy: ' user-local ' })).toEqual({
+      runId: 'run-agent-ipc',
+      status: 'aborted',
+      errorClass: 'agent_tool_denied'
+    })
+    expect(() => handlers.get('agent.denyTool')?.({}, {
+      runId: ' ',
+      callId: 'call-1',
+      deniedBy: 'user-local'
+    })).toThrow()
+    expect(() => handlers.get('agent.denyTool')?.({}, {
+      runId: 'run-agent-ipc',
+      callId: 'x'.repeat(257),
+      deniedBy: 'user-local'
+    })).toThrow()
+    expect(denialCalls).toBe(1)
     expect(handlers.get('agent.getRun')?.({}, { runId: 'run-agent-ipc' })).toEqual({
       runId: 'run-agent-ipc',
       status: 'pending',

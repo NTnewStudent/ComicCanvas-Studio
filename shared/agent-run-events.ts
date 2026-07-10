@@ -43,6 +43,7 @@ export const AGENT_ARTIFACT_KINDS = [
 
 export type AgentArtifactKind = (typeof AGENT_ARTIFACT_KINDS)[number]
 export type PermissionGrantScope = 'once' | 'run' | 'session'
+export type PermissionDecision = 'approved' | 'denied'
 
 export interface AgentRunCreatedPayload {
   threadId: string
@@ -64,7 +65,15 @@ export type AgentRunEventPayload =
   | { callId: string; toolId: string; inputSummary?: string }
   | { callId: string; toolId: string; invocationId?: string; status: 'completed' | 'failed' | 'denied'; summary: string }
   | { callId: string; toolId: string; reason: string; requiredPermissions: ToolPermission[]; inputSummary?: string }
-  | { callId: string; approvedByLabel: string; scope: PermissionGrantScope }
+  | {
+      callId: string
+      decision: PermissionDecision
+      approvedByLabel?: string
+      deniedByLabel?: string
+      scope?: PermissionGrantScope
+      requestedScope?: PermissionGrantScope
+      phase?: 'queued' | 'executing'
+    }
   | { artifactId: string; kind: AgentArtifactKind; title: string; summary: string }
   | { messageId: string; planId: string }
   | { messageId: string; response: AgentResponse }
@@ -166,7 +175,13 @@ export interface RunInspectorModel {
   modelLabel: string
   latestEventType?: AgentRunEventType
   tools: Array<{ callId: string; toolId: string; status: string; summary?: string }>
-  permissions: Array<{ callId: string; toolId: string; reason: string; resolved: boolean }>
+  permissions: Array<{
+    callId: string
+    toolId: string
+    reason: string
+    resolved: boolean
+    decision?: PermissionDecision
+  }>
   artifacts: Array<{ id: string; kind: AgentArtifactKind; title: string; summary: string }>
   childTasks: AgentTaskTreeRow[]
   error?: { errorClass: string; message: string; retryable: boolean }

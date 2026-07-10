@@ -39,7 +39,6 @@ export interface AgentPermissionServiceOptions {
   workflowId: string
   idFactory?: () => string
   clock?: () => number
-  sessionStartedAt?: number
 }
 
 function permissionKinds(permission: ToolPermissionResult): ToolPermissionKind[] {
@@ -63,7 +62,7 @@ function effectiveScope(
 export function createAgentPermissionService(options: AgentPermissionServiceOptions): AgentPermissionService {
   const clock = options.clock ?? Date.now
   const idFactory = options.idFactory ?? (() => `grant-${crypto.randomUUID()}`)
-  const sessionStartedAt = options.sessionStartedAt ?? clock()
+  const currentSessionGrantIds = new Set<string>()
 
   return {
     rememberApproval(input) {
@@ -81,14 +80,14 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
         toolId: input.toolId,
         permissionKinds: kinds,
         now,
-        sessionStartedAt
+        currentSessionGrantIds
       })
 
       if (existing?.scope === scope) {
         return existing
       }
 
-      return options.grants.save({
+      const saved = options.grants.save({
         id: idFactory(),
         runId: input.runId,
         workflowId: options.workflowId,
@@ -98,6 +97,10 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
         approvedByLabel: input.approvedByLabel,
         createdAt: now
       })
+      if (saved.scope === 'session') {
+        currentSessionGrantIds.add(saved.id)
+      }
+      return saved
     },
     hasReusableGrant(input) {
       if (input.permission.decision !== 'ask') {
@@ -110,7 +113,7 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
         toolId: input.toolId,
         permissionKinds: permissionKinds(input.permission),
         now: clock(),
-        sessionStartedAt
+        currentSessionGrantIds
       })
 
       return grant !== null && grant.scope !== 'once'

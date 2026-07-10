@@ -53,6 +53,7 @@ import { registerToolHandlers } from './ipc/tool.handler'
 import { getCurrentStorageConfig, registerStorageHandlers } from './ipc/storage.handler'
 import { createIpcJobEventBus } from './jobs/ipc-fanout'
 import { createJobQueue } from './jobs/queue'
+import { recoverProcessingJobs } from './jobs/recovery'
 import { createJobWorker, type JobWorker } from './jobs/worker'
 import { createGatewayConfigReloader } from './providers/gateway-reloader'
 import { createGatewayRegistry } from './providers/registry'
@@ -131,6 +132,14 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     artifacts: agentArtifacts,
     grants: agentPermissionGrants,
     childTasks: childAgentTasks,
+    transaction: (operation) => db.transaction(operation)(),
+    clock
+  })
+  recoverProcessingJobs({
+    jobs,
+    agentRuns,
+    runSpine,
+    transaction: (operation) => db.transaction(operation)(),
     clock
   })
   const permissionService = createAgentPermissionService({
@@ -201,6 +210,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     }
   }
   let draining: Promise<void> | null = null
+  let drainRequested = false
   let worker: JobWorker | null = null
 
   async function drainJobs(): Promise<void> {
@@ -214,11 +224,20 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   }
 
   function scheduleDrain(): void {
+    drainRequested = true
     if (!draining) {
       draining = Promise.resolve()
-        .then(drainJobs)
+        .then(async () => {
+          do {
+            drainRequested = false
+            await drainJobs()
+          } while (drainRequested)
+        })
         .finally(() => {
           draining = null
+          if (drainRequested) {
+            scheduleDrain()
+          }
         })
     }
   }
@@ -305,6 +324,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const orchestrator = createOrchestratorRuntime({
     queue: autoQueue,
     events: jobEvents,
+    transaction: (operation) => db.transaction(operation)(),
     chatMessages,
     planEvents,
     workflowId: 'default',
@@ -363,6 +383,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
       })
     }
   })
+  scheduleDrain()
 
   registerCanvasHandlers(options.ipcMain, {
     workflows,
@@ -383,6 +404,9 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerJobHandlers(options.ipcMain, {
     jobs,
     queue: autoQueue,
+    agentRuns,
+    runSpine,
+    transaction: (operation) => db.transaction(operation)(),
     clock
   })
   registerAssetHandlers(options.ipcMain, {
@@ -443,7 +467,9 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   return {
     drainJobsForTests,
     async waitForIdleForTests() {
-      await draining
+      while (draining) {
+        await draining
+      }
     },
     close() {
       db.close()

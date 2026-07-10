@@ -4,13 +4,19 @@
  */
 
 import type { JobRecord, JobRecoveryReport, JobTicket } from '../../../../shared/jobs'
+import type { AgentRunSpine } from '../agent/run-spine'
+import type { AgentRunRepository } from '../db/repositories/agent-run.repo'
 import type { JobQueue } from '../jobs/queue'
 import type { JobRepository } from '../db/repositories/job.repo'
+import { recoverProcessingJobs } from '../jobs/recovery'
 import type { IpcRegistrar } from './types'
 
 export interface JobHandlerDependencies {
   jobs?: JobRepository
   queue?: JobQueue
+  agentRuns?: AgentRunRepository
+  runSpine?: AgentRunSpine
+  transaction?: <T>(operation: () => T) => T
   clock?: () => number
 }
 
@@ -72,9 +78,13 @@ export function registerJobHandlers(ipcMain: IpcRegistrar, dependencies: JobHand
   })
   ipcMain.handle('job.recover', (): JobRecoveryReport => {
     if (dependencies.jobs) {
-      const requeued = dependencies.jobs.requeueProcessing(clock())
-
-      return { inspected: requeued.length, requeued, failed: [] }
+      return recoverProcessingJobs({
+        jobs: dependencies.jobs,
+        ...(dependencies.agentRuns ? { agentRuns: dependencies.agentRuns } : {}),
+        ...(dependencies.runSpine ? { runSpine: dependencies.runSpine } : {}),
+        ...(dependencies.transaction ? { transaction: dependencies.transaction } : {}),
+        clock
+      })
     }
 
     // Recovery inspects stale pending/processing jobs and requeues or marks them failed.

@@ -126,6 +126,69 @@ describe('Agent Run Projector', () => {
     ])
   })
 
+  it('projects denied permission decisions into chat and inspector views', () => {
+    const denied = projectAgentRunSnapshot({
+      ...snapshot,
+      run: { ...snapshot.run, status: 'aborted', errorClass: 'agent_tool_denied' },
+      events: [
+        ...snapshot.events.slice(0, 3),
+        {
+          id: 'event-permission-requested',
+          runId: 'run-1',
+          sequence: 4,
+          type: 'permission.requested',
+          payload: {
+            callId: 'call-write',
+            toolId: 'canvas.createNode',
+            reason: 'Creating nodes requires confirmation.',
+            requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
+          },
+          createdAt: 20
+        },
+        {
+          id: 'event-permission-denied',
+          runId: 'run-1',
+          sequence: 5,
+          type: 'permission.resolved',
+          payload: {
+            callId: 'call-write',
+            deniedByLabel: 'user-local',
+            decision: 'denied'
+          },
+          createdAt: 21
+        },
+        {
+          id: 'event-denied',
+          runId: 'run-1',
+          sequence: 6,
+          type: 'run.failed',
+          payload: {
+            errorClass: 'agent_tool_denied',
+            message: 'Tool call was denied by the user.',
+            retryable: false
+          },
+          createdAt: 22
+        }
+      ]
+    })
+
+    expect(denied.chatTurn.blocks).toContainEqual(
+      expect.objectContaining({
+        kind: 'permission',
+        callId: 'call-write',
+        resolved: true,
+        decision: 'denied'
+      })
+    )
+    expect(denied.inspector.permissions).toEqual([
+      expect.objectContaining({
+        callId: 'call-write',
+        resolved: true,
+        decision: 'denied'
+      })
+    ])
+  })
+
   it('projects failure metadata and child task summaries into the inspector', () => {
     const failed = projectAgentRunSnapshot({
       ...snapshot,

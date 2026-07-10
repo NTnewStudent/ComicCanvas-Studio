@@ -18,7 +18,12 @@ export function chatHistoryFromMessages(messages: ChatMessageRecord[]): ChatTurn
 
   for (const message of messages) {
     if (message.role === 'user') {
-      turns.push(userTurnFromContent({ id: message.id, content: message.content, createdAt: message.createdAt }))
+      turns.push(userTurnFromContent({
+        id: message.id,
+        content: message.content,
+        ...(message.agentRunId ? { runId: message.agentRunId } : {}),
+        createdAt: message.createdAt
+      }))
       continue
     }
 

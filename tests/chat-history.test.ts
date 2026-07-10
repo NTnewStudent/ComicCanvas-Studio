@@ -24,6 +24,48 @@ function withTempDb<T>(run: (db: ReturnType<typeof openDatabaseAtPath>) => T): T
 }
 
 describe('chat history persistence', () => {
+  it('idempotently upserts a complete assistant turn', () => {
+    withTempDb((db) => {
+      const repo = createChatMessageRepository(db)
+      const initialBlocks: ChatBlock[] = [
+        { kind: 'permission', callId: 'call-1', toolId: 'web.search', reason: 'Search requires approval.', resolved: false }
+      ]
+      const terminalBlocks: ChatBlock[] = [
+        { kind: 'permission', callId: 'call-1', toolId: 'web.search', reason: 'Search requires approval.', resolved: true, decision: 'approved', scope: 'session' },
+        { kind: 'text', markdown: '搜索完成。', streaming: false }
+      ]
+
+      repo.upsertAssistant({
+        id: 'message-1-assistant',
+        workflowId: 'workflow-1',
+        agentRunId: 'run-1',
+        role: 'assistant',
+        content: '',
+        blocksJson: JSON.stringify(initialBlocks),
+        createdAt: 10
+      })
+      repo.upsertAssistant({
+        id: 'message-1-assistant',
+        workflowId: 'workflow-1',
+        agentRunId: 'run-1',
+        role: 'assistant',
+        content: '搜索完成。',
+        blocksJson: JSON.stringify(terminalBlocks),
+        createdAt: 20
+      })
+
+      expect(repo.listByWorkflowId('workflow-1')).toHaveLength(1)
+      expect(repo.getById('message-1-assistant')).toMatchObject({
+        workflowId: 'workflow-1',
+        agentRunId: 'run-1',
+        role: 'assistant',
+        content: '搜索完成。',
+        blocksJson: JSON.stringify(terminalBlocks),
+        createdAt: 10
+      })
+    })
+  })
+
   it('persists assistant block JSON through updateBlocks and reads it back', () => {
     withTempDb((db) => {
       const repo = createChatMessageRepository(db)
@@ -54,9 +96,25 @@ describe('chat history persistence', () => {
       const turns = chatHistoryFromMessages(repo.listByWorkflowId('workflow-1'))
 
       expect(turns.map((turn) => turn.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
-      expect(turns[0]).toMatchObject({ blocks: [{ kind: 'text', markdown: '生成一个图片节点', streaming: false }] })
+      expect(turns[0]).toMatchObject({ runId: 'run-1', blocks: [{ kind: 'text', markdown: '生成一个图片节点', streaming: false }] })
       expect(turns[1]).toMatchObject({ blocks: [{ kind: 'text', markdown: '已创建。', streaming: false }], status: 'completed' })
       expect(turns[3]!.blocks).toContainEqual({ kind: 'plan', planId: 'message-2-plan' })
+    })
+  })
+
+  it('includes legacy assistant rows whose workflow can be inferred from the Agent run', () => {
+    withTempDb((db) => {
+      const repo = createChatMessageRepository(db)
+
+      repo.create({ id: 'message-1', workflowId: 'workflow-1', agentRunId: 'run-1', role: 'user', content: '你好', createdAt: 1 })
+      repo.create({ id: 'message-1-assistant', agentRunId: 'run-1', role: 'assistant', content: '你好，我在。', createdAt: 2 })
+      repo.create({ id: 'message-2', workflowId: 'workflow-2', agentRunId: 'run-2', role: 'user', content: '另一个会话', createdAt: 3 })
+      repo.create({ id: 'message-2-assistant', agentRunId: 'run-2', role: 'assistant', content: '另一个回答', createdAt: 4 })
+
+      expect(repo.listByWorkflowId('workflow-1').map((message) => message.id)).toEqual([
+        'message-1',
+        'message-1-assistant'
+      ])
     })
   })
 
@@ -75,6 +133,33 @@ describe('chat history persistence', () => {
         role: 'assistant',
         blocks: [{ kind: 'text', markdown: '回退文本', streaming: false }],
       })
+    })
+  })
+
+  it('restores persisted terminal errors as failed assistant turns', () => {
+    withTempDb((db) => {
+      const repo = createChatMessageRepository(db)
+      const blocks: ChatBlock[] = [
+        { kind: 'error', errorClass: 'gateway_unavailable', message: 'Gateway unavailable.', retryable: false }
+      ]
+
+      repo.upsertAssistant({
+        id: 'message-failed-assistant',
+        workflowId: 'workflow-1',
+        agentRunId: 'run-failed',
+        role: 'assistant',
+        content: 'Gateway unavailable.',
+        blocksJson: JSON.stringify(blocks),
+        createdAt: 2
+      })
+
+      expect(chatHistoryFromMessages(repo.listByWorkflowId('workflow-1'))).toEqual([
+        expect.objectContaining({
+          role: 'assistant',
+          status: 'failed',
+          blocks
+        })
+      ])
     })
   })
 })

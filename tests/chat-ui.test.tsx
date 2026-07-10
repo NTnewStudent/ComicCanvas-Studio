@@ -244,6 +244,59 @@ describe('M4 Chat UI', () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps live Agent subscriptions active across React StrictMode effect replay', async () => {
+    const permissionHandlers = new Set<(event: {
+      runId: string
+      messageId: string
+      callId: string
+      toolId: string
+      reason: string
+      requiredPermissions: ToolPermission[]
+    }) => void>()
+    const api = createApi({
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentPermissionRequired: vi.fn((handler: (event: {
+        runId: string
+        messageId: string
+        callId: string
+        toolId: string
+        reason: string
+        requiredPermissions: ToolPermission[]
+      }) => void) => {
+        permissionHandlers.add(handler)
+        return () => permissionHandlers.delete(handler)
+      })
+    })
+
+    render(
+      <React.StrictMode>
+        <ChatPanel api={api} onApplyPlan={vi.fn()} />
+      </React.StrictMode>
+    )
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Canvas agent message' }), { target: { value: '你知道 Java 么' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送画布消息' }))
+
+    await waitFor(() => expect(api.getAgentRun).toHaveBeenCalledWith({ runId: 'run-agent-1' }))
+    expect(permissionHandlers).toHaveLength(1)
+
+    act(() => {
+      for (const handler of permissionHandlers) {
+        handler({
+          runId: 'run-agent-1',
+          messageId: 'message-1',
+          callId: 'call-web-search',
+          toolId: 'web.search',
+          reason: 'Search requires user approval.',
+          requiredPermissions: [{ kind: 'network', reason: 'Searches the web.' }]
+        })
+      }
+    })
+
+    expect(await screen.findByText('Search requires user approval.')).toBeInTheDocument()
+  })
+
   it('shows clarify plans as questions without an apply action', () => {
     const clarifyPlan: CanvasPlan = {
       kind: 'clarify',

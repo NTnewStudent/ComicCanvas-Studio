@@ -101,7 +101,7 @@ describe('shared chat-blocks reducer', () => {
         reason: '删除节点需要确认',
         requiredPermissions: [{ kind: 'destructive', reason: '删除画布数据' }]
       },
-      { type: 'permissionResolved', callId: 'call-3', scope: 'once' },
+      { type: 'permissionResolved', callId: 'call-3', decision: 'approved', scope: 'once' },
     ])
 
     expect(turn.blocks).toEqual([
@@ -112,7 +112,31 @@ describe('shared chat-blocks reducer', () => {
         reason: '删除节点需要确认',
         requiredPermissions: [{ kind: 'destructive', reason: '删除画布数据' }],
         resolved: true,
+        decision: 'approved',
         scope: 'once'
+      },
+    ])
+  })
+
+  it('records denied permission decisions without an approval scope', () => {
+    const turn = reduceAll(baseTurn(), [
+      {
+        type: 'permissionRequired',
+        callId: 'call-4',
+        toolId: 'web.search',
+        reason: '联网搜索需要确认'
+      },
+      { type: 'permissionResolved', callId: 'call-4', decision: 'denied' },
+    ])
+
+    expect(turn.blocks).toEqual([
+      {
+        kind: 'permission',
+        callId: 'call-4',
+        toolId: 'web.search',
+        reason: '联网搜索需要确认',
+        resolved: true,
+        decision: 'denied'
       },
     ])
   })

@@ -144,7 +144,6 @@ describe('Agent permission grants', () => {
         grants,
         workflowId: 'default',
         clock: () => 100,
-        sessionStartedAt: 100,
         idFactory: () => 'grant-session'
       })
       firstSession.rememberApproval({
@@ -158,8 +157,7 @@ describe('Agent permission grants', () => {
       const restartedSession = createAgentPermissionService({
         grants,
         workflowId: 'default',
-        clock: () => 200,
-        sessionStartedAt: 200
+        clock: () => 100
       })
 
       expect(restartedSession.hasReusableGrant({

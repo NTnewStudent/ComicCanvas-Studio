@@ -145,6 +145,9 @@ Rules:
 - `AgentRunEvent` rows SHALL be append-only and strictly ordered by `(run_id, sequence)`.
 - `RunProjector` SHALL be pure and deterministic for live events and persisted replay.
 - `agent.getRun` MAY include `snapshot` and `projection` fields. Older consumers SHALL continue using `runId`, `status`, and `trace`.
+- 每个 Run 的终态 assistant 回合 SHALL 从完整、按序的持久化 Run 快照投影，并以 `${messageId}-assistant` 幂等 upsert；重放、批准续跑、拒绝或失败 SHALL NOT 创建重复 assistant 行。
+- `completed`、`failed`、`aborted` 与 `max_turns_exceeded` 终态 SHALL 持久化共享 `ChatBlock[]`。包含 error 块的历史回合恢复后 SHALL 保持 `status: 'failed'`。
+- 启动恢复 SHALL 只重放尚未跨过副作用边界的初始 Agent Job，或停留在 `permission.resolved` 且仍持有暂停上下文的批准续跑 Job。已开始执行、缺少 Run、或检查点不安全的 Job SHALL fail closed，不得盲目重放。
 - 本地专业版不包含 organization/team/cloud policy server、team memory、cloud sync、multi-user workspace 或 centralized admin policy。
 
 Events:
@@ -182,13 +185,20 @@ interface AgentPermissionRequiredEvent {
   reason: string
   requiredPermissions: ToolPermission[]
 }
+
+interface AgentPermissionResolvedPayload {
+  callId: string
+  decision: 'approved' | 'denied'
+  phase?: 'queued' | 'executing'
+  scope?: 'once' | 'run' | 'session'
+}
 ```
 
 Rules:
 
 - `agent.toolStarted` SHALL 在 ToolRuntime 执行一次 agent 发起的工具调用之前立即发出。
 - `agent.toolCompleted` SHALL 在该调用从 ToolRuntime 返回后发出，包括被拒绝与失败的结果。
-- `agent.permissionRequired` SHALL 在工具返回 `decision: 'ask'` 且主循环暂停等待 `agent.approveTool` 时发出。
+- `agent.permissionRequired` SHALL 在工具返回 `decision: 'ask'` 且主循环暂停等待 `agent.approveTool` 或 `agent.denyTool` 时发出。
 - 工具生命周期事件 SHALL 包含 `runId` 与 `messageId`，以便渲染层时间线能将其与聊天轮次关联。
 
 - `answer` 用于问候语、普通对话、编码/帮助类问题、时间/日期问题，以及不需要修改图的常识性回答。
@@ -208,7 +218,9 @@ type ChatBlock =
       status: 'running' | 'completed' | 'failed' | 'denied';
       inputSummary?: string; resultSummary?: string; isSubAgent: boolean }
   | { kind: 'plan'; planId: string }
-  | { kind: 'permission'; callId: string; toolId: string; reason: string; resolved: boolean }
+  | { kind: 'permission'; callId: string; toolId: string; reason: string;
+      requiredPermissions?: ToolPermission[]; resolved: boolean;
+      decision?: 'approved' | 'denied'; scope?: 'once' | 'run' | 'session' }
   | { kind: 'error'; errorClass: string; message: string; retryable: boolean }
   | { kind: 'usage'; summary: string }
 
@@ -228,6 +240,8 @@ Rules:
 - 块组装 SHALL 只通过共享纯 reducer `applyAgentEvent(turn, event)` 完成；渲染层实时组装与主进程终态持久化 SHALL 使用同一实现。
 - 不新增流式块 IPC 通道：渲染层继续消费现有 `agent.delta` / `agent.toolStarted` / `agent.toolCompleted` / `agent.permissionRequired` / `agent.responseReady` / `canvas.planReady` / `job.progress` 事件。
 - assistant 终态回合 SHALL 序列化为 `chat_messages.blocks_json`；恢复时损坏或缺失的块 JSON SHALL 按 content/planJson 降级合成，不得让历史恢复失败。
+- 权限块 SHALL 通过 `decision` 区分批准与拒绝，不得仅用 `resolved: true` 将拒绝误显示为已批准。
+- 主进程 SHALL 从完整 Run 投影持久化终态块，而不是只持久化最后一个响应事件，以保留批准续跑前的 tool、permission 与 thinking 历史。
 
 ### `chat.history`
 
@@ -248,6 +262,7 @@ type ChatHistoryResponse = ChatTurn[]
 Rules:
 
 - 按 `createdAt` 升序返回该 workflow 的会话回合；user 回合由 content 合成单 text 块。
+- assistant 行 SHALL 优先从 `blocks_json` 恢复；包含 error 块时 SHALL 恢复为 failed 回合，而不是 completed 回合。
 - 响应 SHALL NOT 包含资产字节、绝对路径或密钥。
 - 「清空对话」是纯渲染层行为，SHALL NOT 删除持久化历史。
 
@@ -275,7 +290,49 @@ Rules:
 - 未提供 `scope` 时，非破坏性权限默认按当前应用 `session` 复用，避免同一工具在每次对话中重复申请。
 - `once` 仅批准当前保留的精确调用；`run` 仅在同一 run 内复用；`session` 可在当前应用会话、同一 workflow 内跨 run 复用。
 - 包含 `destructive` 的权限请求 SHALL 强制降级为 `once`，不得通过 run/session grant 绕过后续确认。
-- session grant SHALL 持久化用于本地审计，但应用重启后 SHALL NOT 继续作为有效授权。
+- session grant SHALL 持久化用于本地审计，但只有其 grant ID 被当前 `AgentPermissionService` 实例持有时才可复用；应用重启或服务实例重建后 SHALL NOT 通过时间戳推断其仍然有效。
+- 批准入队与实际执行之间 SHALL 再次按当前 Agent、工具与权限策略校验；策略变化 SHALL 以 `agent_approval_policy_changed` 终止，且不得执行旧批准。
+- 批准请求或持久化失败时，Renderer SHALL 保留原 permission 块与 pending Run，使用户可以重试批准或改为拒绝。
+
+### `agent.denyTool`
+
+Request:
+
+```ts
+interface AgentToolDenialInput {
+  runId: string
+  callId: string
+  deniedBy: string
+}
+```
+
+Response:
+
+```ts
+interface AgentToolDenialResult {
+  runId: string
+  status: 'aborted'
+  errorClass: 'agent_tool_denied'
+}
+```
+
+Persistence failure:
+
+```ts
+interface AgentToolDenialError {
+  errorClass: string
+  message: string
+  retryable: boolean
+}
+```
+
+Rules:
+
+- `runId`、`callId` 与 `deniedBy` SHALL 在 IPC 边界 trim，且每项 SHALL 为 1 至 256 个字符。
+- 拒绝 SHALL NOT 执行工具或创建续跑 Job。
+- 主进程 SHALL 在同一个 SQLite 事务中将等待中的 Run 持久化为 `aborted`，清除暂停上下文与待批准调用，并追加 `permission.resolved` 和 `run.failed` 事实。
+- 应用重启后，被拒绝的 Run SHALL NOT 再恢复为待批准状态，后续批准请求 SHALL 返回 `agent_approval_unavailable`。
+- 若拒绝无法持久化，Renderer SHALL 保留原待批准状态并允许用户重试，不得显示伪终态。
 
 ### `agent.spawn`
 
@@ -333,8 +390,9 @@ Rules:
 - Agent 上下文循环 SHALL 从已解析的 AgentDefinition、触发策略、用户消息与当前 ToolRuntime 描述符初始化。
 - Agent 上下文循环 SHALL 在模型/planner 执行前，按 `allowedTools`、启用状态与权限类型过滤工具。
 - Agent 发起的工具调用 SHALL 只能通过 ToolRuntime 执行；工具观察结果 SHALL 在下一轮模型/planner 之前追加到循环消息中。
-- Agent 发起的工具若返回权限 `ask` 决策，SHALL 以 `agent_tool_approval_required` 暂停循环，保留待处理的工具调用、输入、理由与所需权限，且 SHALL NOT 执行该工具，直到 `agent.approveTool` 使其恢复。
+- Agent 发起的工具若返回权限 `ask` 决策，SHALL 以 `agent_tool_approval_required` 暂停循环，保留待处理的工具调用、输入、理由与所需权限，且 SHALL NOT 执行该工具，直到 `agent.approveTool` 使其恢复或 `agent.denyTool` 使其终止。
 - `agent.approveTool` SHALL 入队一个新的 `agent.run` 任务，仅通过 ToolRuntime 执行那条被保留的待处理工具调用，将其观察结果追加到已暂停的循环中，并继续模型/planner 轮次，直到产出经过净化的 CanvasPlan 或终态错误。
+- `agent.denyTool` SHALL 原子化持久化拒绝终态，且 SHALL NOT 允许该暂停调用在重启后再次批准。
 - Agent 上下文循环 SHALL 针对 agent 上下文 token 预算，确定性地压缩较早的 assistant/tool 消息，同时保留系统提示词、当前用户请求与一个压缩摘要边界。
 - 超出 `maxTurns` 的 Agent 循环 SHALL 以结构化元数据终止，包含 `errorClass`、`turnsUsed`、被丢弃的工具、压缩摘要与被省略的消息数量。
 - 由网关驱动的 Agent 模型 SHALL 返回形如 `toolCalls` 或 `AgentResponse` 的 JSON；非法 JSON SHALL 被转换为带有 dropped 审计元数据的安全 clarification 响应，而不是修改图。
@@ -353,6 +411,7 @@ Rules:
 | `agent_context_failed` | Context Pack 无法安全构建。 |
 | `agent_permission_denied` | 工具、skill 或 spawn 权限被拒绝。 |
 | `agent_tool_approval_required` | 工具执行暂停，直到用户批准该待处理工具调用。 |
+| `agent_tool_denied` | 用户明确拒绝了待处理工具调用，Run 已终止。 |
 | `agent_builtin_readonly` | 内置 agent 定义不可删除。 |
 | `agent_depth_exceeded` | Spawn 深度超过配置的最大值。 |
 | `agent_max_turns_exceeded` | Agent 循环在产出 plan 之前达到配置的轮次上限。 |

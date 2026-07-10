@@ -11,6 +11,8 @@ import type { CanvasGraphSnapshot } from '../shared/graph'
 import type { GatewayRequest } from '../shared/gateway'
 import type { GatewayResult } from '../shared/gateway'
 import type { CanvasPlan } from '../shared/plan'
+import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
+import { createJobRepository } from '../desktop/src/main/db/repositories/job.repo'
 import { createMainProcessRuntime } from '../desktop/src/main/runtime'
 import type { MainProcessRuntime } from '../desktop/src/main/runtime'
 import { createStubProvider } from '../desktop/src/main/providers/stub.provider'
@@ -675,6 +677,75 @@ describe('main process runtime wiring', () => {
       expect(run.snapshot?.events.map((event) => event.type)).toContain('run.completed')
       expect(run.projection?.chatTurn.blocks.some((block) => block.kind === 'text')).toBe(true)
     } finally {
+      runtime?.close()
+      await removeTempDirWithRetry(tempDir)
+    }
+  })
+
+  it('recovers processing jobs and drains persisted pending work on startup', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-main-runtime-startup-recovery-'))
+    const dbPath = join(tempDir, 'runtime-startup-recovery.sqlite')
+    const assetRoot = join(tempDir, 'assets')
+    const seededDb = openDatabaseAtPath(dbPath)
+    let runtime: MainProcessRuntime | null = null
+
+    try {
+      migrateDatabaseAtPath(dbPath)
+      const seededJobs = createJobRepository(seededDb)
+      seededJobs.create({
+        id: 'job-startup-pending',
+        type: 'canvas.polishText',
+        status: 'pending',
+        payload: { content: ' pending text ' },
+        progress: 0,
+        attempts: 0,
+        retryable: false,
+        createdAt: 1_783_305_000_000,
+        updatedAt: 1_783_305_000_000
+      })
+      seededJobs.create({
+        id: 'job-startup-processing',
+        type: 'canvas.polishText',
+        status: 'processing',
+        payload: { content: ' processing text ' },
+        progress: 40,
+        attempts: 1,
+        retryable: true,
+        createdAt: 1_783_305_000_001,
+        updatedAt: 1_783_305_000_001
+      })
+      seededDb.close()
+
+      const { ipcMain, handlers } = createFakeIpcMain()
+      const window = createWindow()
+      runtime = createMainProcessRuntime({
+        ipcMain,
+        dbPath,
+        assetRoot,
+        getWindows: () => [window],
+        currentUserId: 'user-1',
+        clock: (() => {
+          let now = 1_783_305_000_100
+          return () => now++
+        })()
+      })
+
+      await runtime.waitForIdleForTests()
+
+      const pending = await handlers.get('job.get')?.({}, { jobId: 'job-startup-pending' }) as JobRecord
+      const processing = await handlers.get('job.get')?.({}, { jobId: 'job-startup-processing' }) as JobRecord
+      expect(pending).toMatchObject({
+        status: 'completed',
+        result: { kind: 'text', text: 'pending text' }
+      })
+      expect(processing).toMatchObject({
+        status: 'completed',
+        result: { kind: 'text', text: 'processing text' }
+      })
+    } finally {
+      if (seededDb.open) {
+        seededDb.close()
+      }
       runtime?.close()
       await removeTempDirWithRetry(tempDir)
     }

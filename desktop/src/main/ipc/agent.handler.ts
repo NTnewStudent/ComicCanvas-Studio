@@ -3,16 +3,30 @@
  * @see docs/api-contracts/agents.md
  */
 
-import type { AgentDefinition, AgentRunRequest, AgentToolApprovalInput, SpawnSubAgentInput, SpawnSubAgentResult } from '../../../../shared/agents'
+import { z } from 'zod'
+
+import type {
+  AgentDefinition,
+  AgentRunRequest,
+  AgentToolApprovalInput,
+  SpawnSubAgentInput,
+  SpawnSubAgentResult
+} from '../../../../shared/agents'
 import type { OrchestratorRuntime } from '../agent/orchestrator'
 import type { AgentRegistry } from '../agent/registry'
 import type { IpcRegistrar } from './types'
 
 export interface AgentHandlerOptions {
   registry: AgentRegistry
-  runtime?: Pick<OrchestratorRuntime, 'agentRun' | 'approveTool' | 'getRun'>
+  runtime?: Pick<OrchestratorRuntime, 'agentRun' | 'approveTool' | 'denyTool' | 'getRun'>
   spawnSubAgent?: (input: SpawnSubAgentInput) => Promise<SpawnSubAgentResult> | SpawnSubAgentResult
 }
+
+const agentToolDenialInputSchema = z.object({
+  runId: z.string().trim().min(1).max(256),
+  callId: z.string().trim().min(1).max(256),
+  deniedBy: z.string().trim().min(1).max(256)
+}).strict()
 
 function includeDisabled(request: unknown): boolean {
   return typeof request === 'object' && request !== null && 'includeDisabled' in request && request.includeDisabled === true
@@ -49,5 +63,6 @@ export function registerAgentHandlers(ipcMain: IpcRegistrar, options: AgentHandl
   ipcMain.handle('agent.run', (_event, request) => options.runtime?.agentRun(request as AgentRunRequest) ?? runtimeUnavailable())
   ipcMain.handle('agent.getRun', (_event, request) => options.runtime?.getRun(runId(request)) ?? runtimeUnavailable())
   ipcMain.handle('agent.approveTool', (_event, request) => options.runtime?.approveTool(request as AgentToolApprovalInput) ?? runtimeUnavailable())
+  ipcMain.handle('agent.denyTool', (_event, request) => options.runtime?.denyTool(agentToolDenialInputSchema.parse(request)) ?? runtimeUnavailable())
   ipcMain.handle('agent.spawn', (_event, request) => options.spawnSubAgent?.(request as SpawnSubAgentInput) ?? runtimeUnavailable())
 }

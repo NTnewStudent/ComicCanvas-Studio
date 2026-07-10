@@ -225,6 +225,7 @@ describe('Agent Run Spine SQLite schema', () => {
         artifacts: createAgentArtifactRepository(db),
         grants: createAgentPermissionGrantRepository(db),
         childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
         idFactory: (prefix) => `${prefix}-${++idSequence}`,
         clock: () => 100
       })
@@ -298,6 +299,7 @@ describe('Agent Run Spine SQLite schema', () => {
         artifacts: createAgentArtifactRepository(db),
         grants: createAgentPermissionGrantRepository(db),
         childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
         idFactory: (prefix) => `${prefix}-status`,
         clock: () => 200
       })
@@ -341,6 +343,75 @@ describe('Agent Run Spine SQLite schema', () => {
         message: 'Should not persist',
         progress: 1
       })).toThrow('Agent run not found: run-missing')
+    })
+  })
+
+  it('rolls back a denied approval when the terminal event ledger cannot be completed', () => {
+    withTempDb((db) => {
+      const eventIds = [
+        'event-created',
+        'event-permission-requested',
+        'event-terminal-duplicate',
+        'event-terminal-duplicate'
+      ]
+      const spine = createAgentRunSpine({
+        runs: createAgentRunRepository(db),
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        idFactory: (prefix) => {
+          const id = eventIds.shift()
+          if (!id) {
+            throw new Error(`Missing deterministic ${prefix} ID`)
+          }
+          return id
+        },
+        transaction: (operation) => db.transaction(operation)(),
+        clock: () => 300
+      })
+
+      spine.createRun({
+        runId: 'run-denial-rollback',
+        threadId: 'thread-1',
+        workflowId: 'default',
+        messageId: 'message-denial-rollback',
+        agentId: 'general-purpose',
+        trigger: 'canvasChat',
+        policyProfileId: 'local-default'
+      })
+      spine.updateRun({
+        runId: 'run-denial-rollback',
+        status: 'approval_required',
+        pausedState: { transition: 'approval_required', pendingToolCalls: [{ id: 'call-1' }] },
+        trace: { pendingApproval: { callId: 'call-1', toolId: 'canvas.deleteNode' } },
+        errorClass: 'agent_tool_approval_required',
+        lastCheckpoint: 'permission.requested'
+      })
+      spine.appendEvent('run-denial-rollback', 'permission.requested', {
+        callId: 'call-1',
+        toolId: 'canvas.deleteNode',
+        reason: 'Deleting a node requires confirmation.'
+      })
+
+      expect(() => spine.denyTool({
+        runId: 'run-denial-rollback',
+        callId: 'call-1',
+        deniedByLabel: 'user-local',
+        completedAt: 301
+      })).toThrow(/UNIQUE constraint failed: agent_run_events\.id/)
+
+      const snapshot = spine.getSnapshot('run-denial-rollback')
+      expect(snapshot?.run).toMatchObject({
+        status: 'approval_required',
+        pausedState: { transition: 'approval_required' },
+        errorClass: 'agent_tool_approval_required',
+        lastCheckpoint: 'permission.requested'
+      })
+      expect(snapshot?.events.map((event) => event.type)).toEqual([
+        'run.created',
+        'permission.requested'
+      ])
     })
   })
 })

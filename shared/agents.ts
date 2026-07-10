@@ -99,6 +99,26 @@ export interface AgentToolApprovalInput {
   scope?: PermissionGrantScope
 }
 
+export interface AgentToolDenialInput {
+  runId: string
+  callId: string
+  deniedBy: string
+}
+
+export interface AgentToolDenialResult {
+  runId: string
+  status: 'aborted'
+  errorClass: 'agent_tool_denied'
+}
+
+export interface AgentToolDenialError {
+  errorClass: string
+  message: string
+  retryable: boolean
+}
+
+export type AgentToolDenialResponse = AgentToolDenialResult | AgentToolDenialError
+
 export interface AgentRunViewResponse {
   runId: string
   status: AgentRunStatus

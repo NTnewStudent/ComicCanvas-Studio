@@ -50,10 +50,19 @@ export interface UpdateAgentRunInput {
   lastCheckpoint?: string | null
 }
 
+/** Atomic terminal facts written when a user denies one paused tool call. */
+export interface DenyAgentToolRunInput {
+  runId: string
+  callId: string
+  deniedByLabel: string
+  completedAt: number
+}
+
 /** Durable service boundary for Agent lifecycle facts and replay snapshots. */
 export interface AgentRunSpine {
   createRun(input: CreateAgentRunSpineInput): AgentRunRecord
   updateRun(input: UpdateAgentRunInput): AgentRunRecord
+  denyTool(input: DenyAgentToolRunInput): AgentRunRecord
   appendEvent(runId: string, type: AgentRunEventType, payload: AgentRunEventPayload): AgentRunEventRecord
   saveArtifact(record: AgentArtifactRecord): AgentArtifactRecord
   savePermissionGrant(record: LocalPermissionGrant): LocalPermissionGrant
@@ -70,6 +79,7 @@ export interface AgentRunSpineOptions {
   childTasks: ChildAgentTaskRepository
   idFactory?: (prefix: 'event' | 'artifact' | 'grant' | 'child') => string
   clock?: () => number
+  transaction: <T>(operation: () => T) => T
 }
 
 /**
@@ -177,6 +187,35 @@ export function createAgentRunSpine(options: AgentRunSpineOptions): AgentRunSpin
       return record
     },
     updateRun,
+    denyTool(input) {
+      return options.transaction(() => {
+        const deniedRun = updateRun({
+          runId: input.runId,
+          status: 'aborted',
+          pausedState: null,
+          trace: {
+            pendingApproval: null,
+            deniedCallId: input.callId,
+            deniedByLabel: input.deniedByLabel,
+            completedAt: input.completedAt
+          },
+          errorClass: 'agent_tool_denied',
+          lastCheckpoint: 'run.failed'
+        })
+        appendEvent(input.runId, 'permission.resolved', {
+          callId: input.callId,
+          deniedByLabel: input.deniedByLabel,
+          decision: 'denied'
+        })
+        appendEvent(input.runId, 'run.failed', {
+          errorClass: 'agent_tool_denied',
+          message: 'Tool call was denied by the user.',
+          retryable: false,
+          checkpoint: 'run.failed'
+        })
+        return deniedRun
+      })
+    },
     appendEvent,
     saveArtifact(record) {
       requireRun(record.runId)

@@ -49,9 +49,13 @@ export interface JobRepository {
   create(record: JobCreateRecord): void
   getById(id: string): PersistedJobRecord | null
   list(filter?: JobListFilter): PersistedJobRecord[]
+  listUnfinished(): PersistedJobRecord[]
   claimNextPending(input: JobClaimInput): PersistedJobRecord | null
   complete(id: string, result: JobResult, completedAt: number): void
   fail(id: string, error: JobError, failedAt: number): void
+  requeue(id: string, requeuedAt: number): void
+  recoverComplete(id: string, result: JobResult, completedAt: number): void
+  recoverFail(id: string, error: JobError, failedAt: number): void
   requeueProcessing(requeuedAt: number): string[]
 }
 
@@ -79,6 +83,7 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
   const listByStatusAndTargetId = db.prepare('SELECT * FROM jobs WHERE status = ? AND target_id = ? ORDER BY created_at DESC LIMIT ?')
   const listByTypeAndTargetId = db.prepare('SELECT * FROM jobs WHERE type = ? AND target_id = ? ORDER BY created_at DESC LIMIT ?')
   const listByAllFilters = db.prepare('SELECT * FROM jobs WHERE status = ? AND type = ? AND target_id = ? ORDER BY created_at DESC LIMIT ?')
+  const listUnfinished = db.prepare("SELECT * FROM jobs WHERE status IN ('pending', 'processing') ORDER BY created_at ASC")
   const selectNextPending = db.prepare("SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1")
   const claimPending = db.prepare(`
     UPDATE jobs
@@ -106,6 +111,36 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
       lease_owner = NULL,
       updated_at = @failedAt
     WHERE id = @id AND status = 'processing'
+  `)
+  const requeue = db.prepare(`
+    UPDATE jobs
+    SET status = 'pending',
+      progress = 0,
+      lease_owner = NULL,
+      updated_at = @requeuedAt
+    WHERE id = @id AND status = 'processing'
+  `)
+  const recoverFail = db.prepare(`
+    UPDATE jobs
+    SET status = 'failed',
+      error_class = @errorClass,
+      error_message = @errorMessage,
+      retryable = @retryable,
+      lease_owner = NULL,
+      updated_at = @failedAt
+    WHERE id = @id AND status IN ('pending', 'processing')
+  `)
+  const recoverComplete = db.prepare(`
+    UPDATE jobs
+    SET status = 'completed',
+      result_json = @resultJson,
+      progress = 100,
+      error_class = NULL,
+      error_message = NULL,
+      retryable = 0,
+      lease_owner = NULL,
+      updated_at = @completedAt
+    WHERE id = @id AND status IN ('pending', 'processing')
   `)
   const selectProcessing = db.prepare("SELECT id FROM jobs WHERE status = 'processing' ORDER BY created_at ASC")
   const requeueProcessing = db.prepare(`
@@ -197,6 +232,9 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
 
       return rows.map(mapRow)
     },
+    listUnfinished() {
+      return (listUnfinished.all() as JobRow[]).map(mapRow)
+    },
     claimNextPending(input) {
       const row = selectNextPending.get() as JobRow | undefined
 
@@ -218,6 +256,28 @@ export function createJobRepository(db: BetterSqliteDatabase): JobRepository {
     },
     fail(id, error, failedAt) {
       const updateResult = fail.run({
+        id,
+        errorClass: error.errorClass,
+        errorMessage: error.message,
+        retryable: error.retryable ? 1 : 0,
+        failedAt
+      })
+      assertTransition(updateResult.changes, 'job_transition_invalid')
+    },
+    requeue(id, requeuedAt) {
+      const updateResult = requeue.run({ id, requeuedAt })
+      assertTransition(updateResult.changes, 'job_transition_invalid')
+    },
+    recoverComplete(id, result, completedAt) {
+      const updateResult = recoverComplete.run({
+        id,
+        resultJson: encodeJson(result),
+        completedAt
+      })
+      assertTransition(updateResult.changes, 'job_transition_invalid')
+    },
+    recoverFail(id, error, failedAt) {
+      const updateResult = recoverFail.run({
         id,
         errorClass: error.errorClass,
         errorMessage: error.message,

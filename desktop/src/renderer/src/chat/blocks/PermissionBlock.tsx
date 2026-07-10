@@ -3,7 +3,7 @@
  * @see docs/api-contracts/agents.md
  */
 
-import { ShieldAlert, ShieldCheck, X } from 'lucide-react'
+import { ShieldAlert, ShieldCheck, ShieldX, X } from 'lucide-react'
 import { useState } from 'react'
 
 import type { PermissionGrantScope } from '../../../../../../shared/agent-run-events'
@@ -38,15 +38,23 @@ const SCOPE_LABELS: Record<PermissionGrantScope, string> = {
 export function PermissionBlock({ block, busy = false, onApprove, onDeny }: PermissionBlockProps): JSX.Element {
   const destructive = block.requiredPermissions?.some((permission) => permission.kind === 'destructive') ?? false
   const [scope, setScope] = useState<PermissionGrantScope>(destructive ? 'once' : 'session')
-  const resolvedScope = block.scope ?? (destructive ? 'once' : scope)
   const permissionKinds = block.requiredPermissions?.map((permission) => permission.kind).join(' · ')
-  const StatusIcon = block.resolved ? ShieldCheck : ShieldAlert
+  const denied = block.resolved && block.decision === 'denied'
+  const StatusIcon = denied ? ShieldX : block.resolved ? ShieldCheck : ShieldAlert
+  const headerLabel = denied ? '授权已拒绝' : block.resolved ? '授权已处理' : '需要授权'
 
   return (
-    <div className="w-full max-w-[560px] rounded-md border border-semantic-warning/40 bg-semantic-warning/5 px-3 py-2.5 text-[12px]">
+    <div className={`w-full max-w-[560px] rounded-md border px-3 py-2.5 text-[12px] ${
+      denied
+        ? 'border-semantic-negative/40 bg-semantic-negative/5'
+        : 'border-semantic-warning/40 bg-semantic-warning/5'
+    }`}>
       <div className="flex min-w-0 items-center gap-1.5 text-text-base">
-        <StatusIcon className="h-3.5 w-3.5 shrink-0 text-semantic-warning" aria-hidden="true" />
-        <span className="shrink-0 font-semibold">{block.resolved ? '授权已处理' : '需要授权'}</span>
+        <StatusIcon
+          className={`h-3.5 w-3.5 shrink-0 ${denied ? 'text-semantic-negative' : 'text-semantic-warning'}`}
+          aria-hidden="true"
+        />
+        <span className="shrink-0 font-semibold">{headerLabel}</span>
         <span className="min-w-0 truncate font-mono text-brand" title={block.toolId}>{block.toolId}</span>
       </div>
       <p className="m-0 mt-1 text-text-muted">{block.reason}</p>
@@ -54,9 +62,15 @@ export function PermissionBlock({ block, busy = false, onApprove, onDeny }: Perm
         <p className="m-0 mt-1 font-mono text-[10px] uppercase text-text-muted">{permissionKinds}</p>
       )}
       {block.resolved ? (
-        <div className="mt-2 flex items-center gap-1.5 text-semantic-success">
-          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>已批准 · {SCOPE_LABELS[resolvedScope]}</span>
+        <div className={`mt-2 flex items-center gap-1.5 ${denied ? 'text-semantic-negative' : 'text-semantic-success'}`}>
+          {denied
+            ? <ShieldX className="h-3.5 w-3.5" aria-hidden="true" />
+            : <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />}
+          <span>
+            {denied
+              ? '已拒绝此工具调用'
+              : `已批准${block.scope ? ` · ${SCOPE_LABELS[block.scope]}` : ''}`}
+          </span>
         </div>
       ) : (
         <div className="mt-2.5">

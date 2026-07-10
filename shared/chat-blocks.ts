@@ -8,7 +8,7 @@
  * @see docs/api-contracts/agents.md
  */
 
-import type { PermissionGrantScope } from './agent-run-events'
+import type { PermissionDecision, PermissionGrantScope } from './agent-run-events'
 import type { AgentResponse } from './agents'
 import type { ToolPermission } from './tools'
 
@@ -33,6 +33,7 @@ export type ChatBlock =
       reason: string
       requiredPermissions?: ToolPermission[]
       resolved: boolean
+      decision?: PermissionDecision
       scope?: PermissionGrantScope
     }
   | { kind: 'error'; errorClass: string; message: string; retryable: boolean }
@@ -59,7 +60,7 @@ export type AgentChatEvent =
   | { type: 'toolStarted'; callId: string; toolId: string; inputSummary: string }
   | { type: 'toolCompleted'; callId: string; toolId: string; status: 'completed' | 'failed' | 'denied'; summary: string }
   | { type: 'permissionRequired'; callId: string; toolId: string; reason: string; requiredPermissions?: ToolPermission[] }
-  | { type: 'permissionResolved'; callId: string; scope?: PermissionGrantScope }
+  | { type: 'permissionResolved'; callId: string; decision: PermissionDecision; scope?: PermissionGrantScope }
   | { type: 'responseReady'; response: AgentResponse }
   | { type: 'planReady'; planId: string }
   | { type: 'runFailed'; errorClass: string; message: string; retryable: boolean }
@@ -97,6 +98,7 @@ export function createAssistantTurn(input: CreateAssistantTurnInput): ChatTurn {
 export interface UserTurnInput {
   id: string
   content: string
+  runId?: string
   createdAt: number
 }
 
@@ -110,6 +112,7 @@ export function userTurnFromContent(input: UserTurnInput): ChatTurn {
     id: input.id,
     role: 'user',
     blocks: [{ kind: 'text', markdown: input.content, streaming: false }],
+    ...(input.runId ? { runId: input.runId } : {}),
     status: 'completed',
     createdAt: input.createdAt,
   }
@@ -165,7 +168,7 @@ export function assistantTurnFromPersisted(input: PersistedAssistantInput): Chat
     blocks,
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.messageId ? { messageId: input.messageId } : {}),
-    status: 'completed',
+    status: blocks.some((block) => block.kind === 'error') ? 'failed' : 'completed',
     createdAt: input.createdAt,
   }
 }
@@ -298,7 +301,12 @@ export function applyAgentEvent(turn: ChatTurn, event: AgentChatEvent): ChatTurn
         ...turn,
         blocks: blocks.map((block) =>
           block.kind === 'permission' && block.callId === event.callId
-            ? { ...block, resolved: true, ...(event.scope ? { scope: event.scope } : {}) }
+            ? {
+                ...block,
+                resolved: true,
+                decision: event.decision,
+                ...(event.scope ? { scope: event.scope } : {})
+              }
             : block,
         ),
       }

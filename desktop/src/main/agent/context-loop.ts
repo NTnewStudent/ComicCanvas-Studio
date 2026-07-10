@@ -99,7 +99,11 @@ export interface AgentContextLoopResult {
 }
 
 export interface AgentLoopTerminalErrorOptions {
-  errorClass: 'agent_max_turns_exceeded' | 'agent_trigger_denied' | 'agent_tool_approval_required'
+  errorClass:
+    | 'agent_max_turns_exceeded'
+    | 'agent_trigger_denied'
+    | 'agent_tool_approval_required'
+    | 'agent_approval_policy_changed'
   message: string
   turnsUsed: number
   droppedTools: string[]

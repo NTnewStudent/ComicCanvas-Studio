@@ -6,17 +6,35 @@
 
 import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
 import { projectAgentRunSnapshot } from '../../../../shared/agent-run-projector'
-import type { AgentDefinition, AgentResponse, AgentRunRequest, AgentRunStatus, AgentRunTicket, AgentRunViewResponse, AgentToolApprovalInput, AgentTriggerKind } from '../../../../shared/agents'
+import type {
+  AgentDefinition,
+  AgentResponse,
+  AgentRunRequest,
+  AgentRunStatus,
+  AgentRunTicket,
+  AgentRunViewResponse,
+  AgentToolApprovalInput,
+  AgentToolDenialInput,
+  AgentToolDenialResponse,
+  AgentTriggerKind
+} from '../../../../shared/agents'
 import type { JobResult } from '../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../shared/plan'
 import type { CanvasGraphSnapshot } from '../../../../shared/graph'
-import type { ToolDescriptor, ToolPermission } from '../../../../shared/tools'
-import type { AgentRunRepository } from '../db/repositories/agent-run.repo'
+import type { ToolDescriptor, ToolPermission, ToolPermissionKind } from '../../../../shared/tools'
+import type { AgentRunRecord, AgentRunRepository } from '../db/repositories/agent-run.repo'
 import type { PersistedJobRecord } from '../db/repositories/job.repo'
 import type { ChatMessageRepository } from '../db/repositories/chat-message.repo'
 import type { JobEventBus } from '../jobs/events'
 import type { JobQueue } from '../jobs/queue'
-import { AgentLoopTerminalError, createAgentContextLoop, type AgentContextLoopState, type AgentToolApprovalRequest } from './context-loop'
+import {
+  AgentLoopTerminalError,
+  createAgentContextLoop,
+  type AgentContextLoopState,
+  type AgentLoopMessage,
+  type AgentToolApprovalRequest,
+  type AgentToolCall
+} from './context-loop'
 import type { AgentRegistry } from './registry'
 import type { CanvasPlanEventBus } from './plan-events'
 import { sanitizePlan } from './sanitize-plan'
@@ -144,6 +162,7 @@ export interface OrchestratorRuntimeOptions {
   queue: JobQueue
   events: JobEventBus
   planner: OrchestratorPlanner
+  transaction?: <T>(operation: () => T) => T
   registry?: AgentRegistry
   listTools?: () => ToolDescriptor[]
   agentRuns?: AgentRunRepository
@@ -154,6 +173,8 @@ export interface OrchestratorRuntimeOptions {
   getSelectedNodeIds?: () => string[]
   idFactory?: (prefix: 'message' | 'run') => string
   planIdFactory?: () => string
+  /** Ephemeral application-session boundary used to prevent session grants surviving a restart. */
+  appSessionId?: string
   workflowId?: string
   clock?: () => number
   skillRegistry?: SkillRegistry
@@ -164,6 +185,7 @@ export interface OrchestratorRuntime {
   chatSend(input: OrchestratorChatInput): OrchestratorChatTicket
   agentRun(input: AgentRunRequest): AgentRunTicket
   approveTool(input: AgentToolApprovalInput): AgentRunTicket | { errorClass: string; message: string; retryable: false }
+  denyTool(input: AgentToolDenialInput): AgentToolDenialResponse
   getRun(runId: string): AgentRunViewResponse | null
   getPlan(messageId: string): CanvasPlan | null
   createJobHandler(): (job: PersistedJobRecord) => Promise<JobResult>
@@ -179,6 +201,7 @@ interface ApprovalResumePayload {
   approval: AgentToolApprovalRequest
   approvedBy: string
   approvalScope: PermissionGrantScope
+  approvalSessionId?: string
 }
 
 interface StoredRun {
@@ -262,6 +285,235 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function isAgentTriggerKind(value: unknown): value is AgentTriggerKind {
+  return value === 'manual' || value === 'mention' || value === 'canvasChat' || value === 'workflowEvent'
+}
+
+function isToolPermissionKind(value: unknown): value is ToolPermissionKind {
+  return value === 'canvas.read'
+    || value === 'canvas.write'
+    || value === 'file.read'
+    || value === 'file.write'
+    || value === 'network'
+    || value === 'provider.spend'
+    || value === 'destructive'
+    || value === 'diagnostics'
+}
+
+function persistedToolPermission(value: unknown): ToolPermission | null {
+  if (!isRecord(value) || !isToolPermissionKind(value.kind) || typeof value.reason !== 'string') {
+    return null
+  }
+
+  return { kind: value.kind, reason: value.reason }
+}
+
+function persistedToolCall(value: unknown): AgentToolCall | null {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.toolId !== 'string') {
+    return null
+  }
+
+  return {
+    id: value.id,
+    toolId: value.toolId,
+    input: 'input' in value ? value.input : {}
+  }
+}
+
+function persistedToolDescriptor(value: unknown): ToolDescriptor | null {
+  if (
+    !isRecord(value)
+    || typeof value.id !== 'string'
+    || typeof value.name !== 'string'
+    || typeof value.description !== 'string'
+    || !['canvas', 'asset', 'job', 'gateway', 'knowledge', 'file', 'web', 'model', 'custom'].includes(String(value.category))
+    || !isRecord(value.owner)
+    || !(
+      (value.owner.kind === 'builtin' && value.owner.id === 'core')
+      || (value.owner.kind === 'plugin' && typeof value.owner.id === 'string')
+    )
+    || typeof value.inputSchemaRef !== 'string'
+    || typeof value.outputSchemaRef !== 'string'
+    || !Array.isArray(value.permissions)
+    || !['readonly', 'serial-write', 'exclusive'].includes(String(value.concurrency))
+    || typeof value.enabled !== 'boolean'
+  ) {
+    return null
+  }
+
+  const permissions = value.permissions.map(persistedToolPermission)
+  if (permissions.some((permission) => permission === null)) {
+    return null
+  }
+
+  return {
+    id: value.id,
+    name: value.name,
+    description: value.description,
+    category: value.category as ToolDescriptor['category'],
+    owner: value.owner as ToolDescriptor['owner'],
+    inputSchemaRef: value.inputSchemaRef,
+    outputSchemaRef: value.outputSchemaRef,
+    ...(isRecord(value.inputParametersJsonSchema) ? { inputParametersJsonSchema: value.inputParametersJsonSchema } : {}),
+    permissions: permissions as ToolPermission[],
+    concurrency: value.concurrency as ToolDescriptor['concurrency'],
+    enabled: value.enabled
+  }
+}
+
+function persistedLoopMessage(value: unknown): AgentLoopMessage | null {
+  if (!isRecord(value) || typeof value.content !== 'string') {
+    return null
+  }
+
+  if (value.role === 'system' || value.role === 'user') {
+    return { role: value.role, content: value.content }
+  }
+
+  if (value.role === 'assistant') {
+    if (value.toolCalls === undefined) {
+      return { role: 'assistant', content: value.content }
+    }
+    if (!Array.isArray(value.toolCalls)) {
+      return null
+    }
+    const toolCalls = value.toolCalls.map(persistedToolCall)
+    if (toolCalls.some((call) => call === null)) {
+      return null
+    }
+    return { role: 'assistant', content: value.content, toolCalls: toolCalls as AgentToolCall[] }
+  }
+
+  if (
+    value.role !== 'tool'
+    || typeof value.toolId !== 'string'
+    || typeof value.invocationId !== 'string'
+    || !['accepted', 'running', 'completed', 'failed', 'denied'].includes(String(value.status))
+  ) {
+    return null
+  }
+
+  return {
+    role: 'tool',
+    toolId: value.toolId,
+    invocationId: value.invocationId,
+    ...(typeof value.toolCallId === 'string' ? { toolCallId: value.toolCallId } : {}),
+    status: value.status as Extract<AgentLoopMessage, { role: 'tool' }>['status'],
+    content: value.content
+  }
+}
+
+function persistedContextLoopState(value: unknown): AgentContextLoopState | null {
+  if (
+    !isRecord(value)
+    || typeof value.agentId !== 'string'
+    || !isAgentTriggerKind(value.trigger)
+    || typeof value.turnCount !== 'number'
+    || typeof value.maxTurns !== 'number'
+    || !['start', 'tool_results', 'completed', 'approval_required', 'max_turns_exceeded'].includes(String(value.transition))
+    || typeof value.systemPrompt !== 'string'
+    || typeof value.userMessage !== 'string'
+    || !Array.isArray(value.allowedTools)
+    || !Array.isArray(value.droppedTools)
+    || !value.droppedTools.every((entry) => typeof entry === 'string')
+    || !Array.isArray(value.messages)
+    || typeof value.tokenEstimate !== 'number'
+    || !(typeof value.compactionSummary === 'string' || value.compactionSummary === null)
+    || typeof value.omittedMessages !== 'number'
+    || !(value.pendingToolCalls === undefined || Array.isArray(value.pendingToolCalls))
+    || !(value.additionalContext === undefined || typeof value.additionalContext === 'string')
+  ) {
+    return null
+  }
+
+  const allowedTools = value.allowedTools.map(persistedToolDescriptor)
+  const messages = value.messages.map(persistedLoopMessage)
+  const pendingToolCalls = (value.pendingToolCalls ?? []).map(persistedToolCall)
+  if (
+    allowedTools.some((tool) => tool === null)
+    || messages.some((message) => message === null)
+    || pendingToolCalls.some((call) => call === null)
+  ) {
+    return null
+  }
+
+  return {
+    agentId: value.agentId,
+    trigger: value.trigger,
+    turnCount: value.turnCount,
+    maxTurns: value.maxTurns,
+    transition: value.transition as AgentContextLoopState['transition'],
+    systemPrompt: value.systemPrompt,
+    userMessage: value.userMessage,
+    allowedTools: allowedTools as ToolDescriptor[],
+    droppedTools: [...value.droppedTools],
+    messages: messages as AgentLoopMessage[],
+    tokenEstimate: value.tokenEstimate,
+    compactionSummary: value.compactionSummary,
+    omittedMessages: value.omittedMessages,
+    pendingToolCalls: pendingToolCalls as AgentToolCall[],
+    additionalContext: value.additionalContext ?? ''
+  }
+}
+
+function persistedApprovalRequest(value: unknown): AgentToolApprovalRequest | null {
+  if (
+    !isRecord(value)
+    || typeof value.callId !== 'string'
+    || typeof value.toolId !== 'string'
+    || typeof value.reason !== 'string'
+    || !Array.isArray(value.requiredPermissions)
+  ) {
+    return null
+  }
+
+  const requiredPermissions = value.requiredPermissions.map(persistedToolPermission)
+  if (requiredPermissions.some((permission) => permission === null)) {
+    return null
+  }
+
+  return {
+    callId: value.callId,
+    toolId: value.toolId,
+    input: 'input' in value ? value.input : {},
+    reason: value.reason,
+    requiredPermissions: requiredPermissions as ToolPermission[]
+  }
+}
+
+function restorePausedRun(record: AgentRunRecord): StoredRun | null {
+  if (record.status !== 'approval_required' && record.status !== 'pending') {
+    return null
+  }
+
+  const pendingApproval = persistedApprovalRequest(record.trace.pendingApproval)
+  const pausedState = persistedContextLoopState(record.pausedState)
+  const traceMessageId = typeof record.trace.messageId === 'string' ? record.trace.messageId : ''
+  const traceAgentId = typeof record.trace.agentId === 'string' ? record.trace.agentId : ''
+  const traceJobId = typeof record.trace.jobId === 'string' ? record.trace.jobId : undefined
+  const traceTrigger = isAgentTriggerKind(record.trace.trigger) ? record.trace.trigger : undefined
+  const messageId = record.messageId || traceMessageId
+  const agentId = record.agentId || traceAgentId
+  const trigger = isAgentTriggerKind(record.trigger) ? record.trigger : traceTrigger
+  const jobId = record.jobId ?? traceJobId
+
+  if (!pendingApproval || !pausedState || !messageId || !agentId || !trigger) {
+    return null
+  }
+
+  return {
+    runId: record.id,
+    messageId,
+    status: record.status,
+    agentId,
+    trigger,
+    ...(jobId ? { jobId } : {}),
+    ...(record.errorClass ? { errorClass: record.errorClass } : {}),
+    pendingApproval,
+    pausedState
+  }
+}
+
 function isAgentResponse(value: unknown): value is AgentResponse {
   return isRecord(value)
     && (value.type === 'answer' || value.type === 'clarification' || value.type === 'canvasPlan')
@@ -294,8 +546,7 @@ function runFailureTrace(runId: string, messageId: string, previous: StoredRun |
     const status: AgentRunStatus = error.pendingApproval
       ? 'approval_required'
       : error.errorClass === 'agent_max_turns_exceeded' ? 'max_turns_exceeded' : 'failed'
-
-    return {
+    const failedRun: StoredRun = {
       ...(previous ?? { runId, messageId }),
       runId,
       messageId,
@@ -307,15 +558,23 @@ function runFailureTrace(runId: string, messageId: string, previous: StoredRun |
       ...(error.pendingApproval ? { pendingApproval: error.pendingApproval } : {}),
       ...(error.pausedState ? { pausedState: error.pausedState } : {})
     }
+    if (!error.pendingApproval) {
+      delete failedRun.pendingApproval
+      delete failedRun.pausedState
+    }
+    return failedRun
   }
 
-  return {
+  const failedRun: StoredRun = {
     ...(previous ?? { runId, messageId }),
     runId,
     messageId,
     status: 'failed',
     errorClass: error instanceof Error ? error.message : 'agent_run_failed'
   }
+  delete failedRun.pendingApproval
+  delete failedRun.pausedState
+  return failedRun
 }
 
 function applyContextPolicyOverride(agent: AgentDefinition, payload: Record<string, unknown>): AgentDefinition {
@@ -336,6 +595,14 @@ function applyContextPolicyOverride(agent: AgentDefinition, payload: Record<stri
 
 function approvalError(errorClass: string, message: string): { errorClass: string; message: string; retryable: false } {
   return { errorClass, message, retryable: false }
+}
+
+function denialPersistenceError(): { errorClass: 'agent_denial_failed'; message: string; retryable: true } {
+  return {
+    errorClass: 'agent_denial_failed',
+    message: 'Tool denial could not be persisted. Retry the denial.',
+    retryable: true
+  }
 }
 
 function clarificationResponse(summary: string, question: string, missing: string[] = [], dropped: string[] = []): AgentResponse {
@@ -565,7 +832,55 @@ function responseText(response: AgentResponse): string | null {
   return null
 }
 
-function matchingApproval(run: StoredRun, input: AgentToolApprovalInput): AgentToolApprovalRequest | null {
+function terminalTurnContent(turn: ChatTurn, fallbackContent: string): string {
+  for (let index = turn.blocks.length - 1; index >= 0; index -= 1) {
+    const block = turn.blocks[index]
+    if (block?.kind === 'text' && block.markdown.trim().length > 0) {
+      return block.markdown
+    }
+    if (block?.kind === 'error' && block.message.trim().length > 0) {
+      return block.message
+    }
+  }
+
+  return fallbackContent
+}
+
+function persistTerminalAssistantTurn(
+  options: {
+    chatMessages?: ChatMessageRepository
+    runSpine?: AgentRunSpine
+    workflowId?: string
+    clock: () => number
+  },
+  input: {
+    runId: string
+    messageId: string
+    fallbackTurn: ChatTurn
+    fallbackContent: string
+  }
+): void {
+  if (!options.chatMessages) {
+    return
+  }
+
+  const snapshot = options.runSpine?.getSnapshot(input.runId)
+  const turn = snapshot
+    ? projectAgentRunSnapshot(snapshot).chatTurn
+    : input.fallbackTurn
+
+  options.chatMessages.upsertAssistant({
+    id: `${input.messageId}-assistant`,
+    ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+    agentRunId: input.runId,
+    role: 'assistant',
+    content: terminalTurnContent(turn, input.fallbackContent),
+    blocksJson: JSON.stringify(turn.blocks),
+    createdAt: Math.max(options.clock(), turn.createdAt + 1)
+  })
+}
+
+function matchingApproval(run: StoredRun, input: { callId: string }): AgentToolApprovalRequest | null {
   if (run.status !== 'approval_required' || !run.pendingApproval || !run.pausedState) {
     return null
   }
@@ -575,6 +890,80 @@ function matchingApproval(run: StoredRun, input: AgentToolApprovalInput): AgentT
   }
 
   return run.pendingApproval
+}
+
+function approvalPolicyError(state: AgentContextLoopState, message: string): AgentLoopTerminalError {
+  return new AgentLoopTerminalError({
+    errorClass: 'agent_approval_policy_changed',
+    message,
+    turnsUsed: state.turnCount,
+    droppedTools: state.droppedTools,
+    compactionSummary: state.compactionSummary,
+    omittedMessages: state.omittedMessages
+  })
+}
+
+function revalidateApprovalLoop(input: {
+  run: StoredRun
+  approval: AgentToolApprovalRequest
+  agent: AgentDefinition
+  availableTools: ToolDescriptor[]
+}): AgentContextLoopState {
+  const pausedState = input.run.pausedState
+  const trigger = input.run.trigger
+  if (!pausedState || !trigger || !input.agent.enabled) {
+    throw approvalPolicyError(
+      pausedState ?? {
+        agentId: input.agent.id,
+        trigger: trigger ?? 'manual',
+        turnCount: 0,
+        maxTurns: input.agent.maxTurns,
+        transition: 'approval_required',
+        systemPrompt: '',
+        userMessage: '',
+        allowedTools: [],
+        droppedTools: [],
+        messages: [],
+        tokenEstimate: 0,
+        compactionSummary: null,
+        omittedMessages: 0,
+        pendingToolCalls: [],
+        additionalContext: ''
+      },
+      'Agent is disabled or no longer available for this approval.'
+    )
+  }
+
+  const current = createAgentContextLoop({
+    agent: input.agent,
+    trigger,
+    message: pausedState.userMessage,
+    availableTools: input.availableTools
+  })
+  const approvedTool = current.allowedTools.find((tool) => tool.id === input.approval.toolId)
+  if (!approvedTool) {
+    throw approvalPolicyError(pausedState, 'The approved tool is no longer allowed by the current Agent policy.')
+  }
+
+  const approvedPermissionKinds = new Set(input.approval.requiredPermissions.map((permission) => permission.kind))
+  if (approvedTool.permissions.some((permission) => !approvedPermissionKinds.has(permission.kind))) {
+    throw approvalPolicyError(pausedState, 'The tool now requires permissions that were not included in the user approval.')
+  }
+
+  return {
+    ...pausedState,
+    agentId: input.agent.id,
+    trigger,
+    maxTurns: input.agent.maxTurns,
+    systemPrompt: current.systemPrompt,
+    allowedTools: current.allowedTools,
+    droppedTools: [...new Set([...pausedState.droppedTools, ...current.droppedTools])],
+    messages: pausedState.messages.map((message, index) => {
+      return index === 0 && message.role === 'system'
+        ? { role: 'system' as const, content: current.systemPrompt }
+        : message
+    })
+  }
 }
 
 function approvalPayload(value: Record<string, unknown>): ApprovalResumePayload | null {
@@ -611,7 +1000,8 @@ function approvalPayload(value: Record<string, unknown>): ApprovalResumePayload 
     trigger: value.trigger as AgentTriggerKind,
     approval,
     approvedBy: value.approvedBy,
-    approvalScope
+    approvalScope,
+    ...(typeof value.approvalSessionId === 'string' ? { approvalSessionId: value.approvalSessionId } : {})
   }
 }
 
@@ -1024,9 +1414,12 @@ async function consumeRunStream(
     planEvents?: CanvasPlanEventBus
     runSpine?: AgentRunSpine
     runsById: Map<string, StoredRun>
-    setRun: (run: StoredRun) => void
+    persistRun: (run: StoredRun) => void
+    rememberRun: (run: StoredRun) => void
+    transaction: <T>(operation: () => T) => T
     agentId: string
     trigger: AgentTriggerKind
+    workflowId?: string
     clock: () => number
   }
 ): Promise<OrchestratorRunResult> {
@@ -1139,31 +1532,7 @@ async function consumeRunStream(
   }
 
   if (next.value.response.type === 'canvasPlan' && next.value.plan && next.value.planId) {
-    options.plansByMessage.set(next.value.messageId, next.value.plan)
-    options.chatMessages?.updatePlan(next.value.messageId, JSON.stringify(next.value.plan), 'draft')
     persistedTurn = applyAgentEvent(persistedTurn, { type: 'planReady', planId: next.value.planId })
-    options.chatMessages?.create({
-      id: `${next.value.messageId}-assistant`,
-      agentRunId: next.value.runId,
-      role: 'assistant',
-      content: next.value.plan.summary,
-      blocksJson: JSON.stringify(persistedTurn.blocks),
-      createdAt: Date.now()
-    })
-    options.planEvents?.emitPlanReady({ messageId: next.value.messageId, planId: next.value.planId })
-    options.runSpine?.appendEvent(next.value.runId, 'plan.ready', {
-      messageId: next.value.messageId,
-      planId: next.value.planId
-    })
-    options.runSpine?.saveArtifact({
-      id: `artifact-${next.value.runId}-canvasPlan`,
-      runId: next.value.runId,
-      kind: 'canvasPlan',
-      title: artifactTitleForResponse(next.value.response),
-      summary: artifactSummaryForResponse(next.value.response),
-      payload: next.value.plan,
-      createdAt: options.clock()
-    })
   } else {
     const response = next.value.response
     if (response.type === 'canvasPlan') {
@@ -1171,39 +1540,10 @@ async function consumeRunStream(
     }
 
     persistedTurn = applyAgentEvent(persistedTurn, { type: 'responseReady', response })
-    const assistantText = responseText(response)
-    if (assistantText) {
-      options.chatMessages?.create({
-        id: `${next.value.messageId}-assistant`,
-        agentRunId: next.value.runId,
-        role: 'assistant',
-        content: assistantText,
-        blocksJson: JSON.stringify(persistedTurn.blocks),
-        createdAt: Date.now()
-      })
-    }
-    options.planEvents?.emitResponseReady({
-      runId: next.value.runId,
-      messageId: next.value.messageId,
-      response
-    })
-    options.runSpine?.appendEvent(next.value.runId, 'response.ready', {
-      messageId: next.value.messageId,
-      response
-    })
-    options.runSpine?.saveArtifact({
-      id: `artifact-${next.value.runId}-${response.type}`,
-      runId: next.value.runId,
-      kind: response.type,
-      title: artifactTitleForResponse(response),
-      summary: artifactSummaryForResponse(response),
-      payload: response,
-      createdAt: options.clock()
-    })
   }
 
   const previousRun = options.runsById.get(next.value.runId)
-  options.setRun({
+  const completedRun: StoredRun = {
     ...(previousRun ?? { runId: next.value.runId, messageId: next.value.messageId }),
     runId: next.value.runId,
     messageId: next.value.messageId,
@@ -1214,19 +1554,84 @@ async function consumeRunStream(
     trigger: options.trigger,
     ...(previousRun?.intentAnalysis ? { intentAnalysis: previousRun.intentAnalysis } : {}),
     ...(previousRun?.startedAt ? { startedAt: previousRun.startedAt } : {}),
-    completedAt: Date.now(),
+    completedAt: options.clock(),
     turnCount,
     ...(usageSummary ? { usageSummary } : {})
+  }
+  delete completedRun.pendingApproval
+  delete completedRun.pausedState
+  delete completedRun.errorClass
+  const fallbackContent = next.value.response.type === 'canvasPlan'
+    ? next.value.response.plan.summary
+    : responseText(next.value.response) ?? next.value.response.summary
+
+  options.transaction(() => {
+    options.persistRun(completedRun)
+
+    if (next.value.response.type === 'canvasPlan' && next.value.plan && next.value.planId) {
+      options.chatMessages?.updatePlan(next.value.messageId, JSON.stringify(next.value.plan), 'draft')
+      options.runSpine?.appendEvent(next.value.runId, 'plan.ready', {
+        messageId: next.value.messageId,
+        planId: next.value.planId
+      })
+      options.runSpine?.saveArtifact({
+        id: `artifact-${next.value.runId}-canvasPlan`,
+        runId: next.value.runId,
+        kind: 'canvasPlan',
+        title: artifactTitleForResponse(next.value.response),
+        summary: artifactSummaryForResponse(next.value.response),
+        payload: next.value.plan,
+        createdAt: options.clock()
+      })
+    } else {
+      const response = next.value.response
+      if (response.type === 'canvasPlan') {
+        throw new Error('agent_canvas_plan_missing_terminal_metadata')
+      }
+      options.runSpine?.appendEvent(next.value.runId, 'response.ready', {
+        messageId: next.value.messageId,
+        response
+      })
+      options.runSpine?.saveArtifact({
+        id: `artifact-${next.value.runId}-${response.type}`,
+        runId: next.value.runId,
+        kind: response.type,
+        title: artifactTitleForResponse(response),
+        summary: artifactSummaryForResponse(response),
+        payload: response,
+        createdAt: options.clock()
+      })
+    }
+
+    options.runSpine?.updateRun({
+      runId: next.value.runId,
+      status: 'completed',
+      pausedState: null,
+      trace: { pendingApproval: null },
+      errorClass: null,
+      lastCheckpoint: 'run.completed',
+      usage: usageSummary ? { summary: usageSummary } : {}
+    })
+    options.runSpine?.appendEvent(next.value.runId, 'run.completed', { status: 'completed' })
+    persistTerminalAssistantTurn(options, {
+      runId: next.value.runId,
+      messageId: next.value.messageId,
+      fallbackTurn: persistedTurn,
+      fallbackContent
+    })
   })
-  options.runSpine?.updateRun({
-    runId: next.value.runId,
-    status: 'completed',
-    pausedState: null,
-    errorClass: null,
-    lastCheckpoint: 'run.completed',
-    usage: usageSummary ? { summary: usageSummary } : {}
-  })
-  options.runSpine?.appendEvent(next.value.runId, 'run.completed', { status: 'completed' })
+  options.rememberRun(completedRun)
+
+  if (next.value.response.type === 'canvasPlan' && next.value.plan && next.value.planId) {
+    options.plansByMessage.set(next.value.messageId, next.value.plan)
+    options.planEvents?.emitPlanReady({ messageId: next.value.messageId, planId: next.value.planId })
+  } else if (next.value.response.type !== 'canvasPlan') {
+    options.planEvents?.emitResponseReady({
+      runId: next.value.runId,
+      messageId: next.value.messageId,
+      response: next.value.response
+    })
+  }
 
   return next.value
 }
@@ -1241,30 +1646,61 @@ async function consumeRunStream(
 export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): OrchestratorRuntime {
   const idFactory = options.idFactory ?? ((prefix: 'message' | 'run') => `${prefix}-${crypto.randomUUID()}`)
   const planIdFactory = options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`)
+  const appSessionId = options.appSessionId ?? crypto.randomUUID()
   const clock = options.clock ?? Date.now
+  const transaction = options.transaction ?? (<T>(operation: () => T) => operation())
   const plansByMessage = new Map<string, CanvasPlan>()
   const runsById = new Map<string, StoredRun>()
 
-  function setRun(run: StoredRun): void {
+  function loadRun(runId: string): StoredRun | undefined {
+    const current = runsById.get(runId)
+    if (current) {
+      return current
+    }
+
+    const persisted = options.agentRuns?.getById(runId)
+    if (!persisted) {
+      return undefined
+    }
+
+    const restored = restorePausedRun(persisted)
+    if (restored) {
+      runsById.set(runId, restored)
+    }
+
+    return restored ?? undefined
+  }
+
+  function persistRun(run: StoredRun): void {
+    if (options.agentRuns) {
+      const existing = options.agentRuns.getById(run.runId)
+      const record = {
+        id: run.runId,
+        agentId: run.agentId ?? existing?.agentId ?? DEFAULT_CHAT_AGENT_ID,
+        status: run.status,
+        trace: {
+          ...(existing?.trace ?? {}),
+          ...runTrace(run),
+          ...(!run.pendingApproval ? { pendingApproval: null } : {})
+        },
+        pausedState: run.pausedState ? { ...run.pausedState } : null,
+        createdAt: existing?.createdAt ?? clock(),
+        updatedAt: clock(),
+        ...(run.jobId ? { jobId: run.jobId } : {}),
+        ...(run.errorClass ? { errorClass: run.errorClass } : {})
+      }
+
+      options.agentRuns.upsert(record)
+    }
+  }
+
+  function rememberRun(run: StoredRun): void {
     runsById.set(run.runId, run)
+  }
 
-    if (!options.agentRuns) {
-      return
-    }
-
-    const existing = options.agentRuns.getById(run.runId)
-    const record = {
-      id: run.runId,
-      agentId: run.agentId ?? existing?.agentId ?? DEFAULT_CHAT_AGENT_ID,
-      status: run.status,
-      trace: { ...(existing?.trace ?? {}), ...runTrace(run) },
-      createdAt: existing?.createdAt ?? clock(),
-      updatedAt: clock(),
-      ...(run.jobId ? { jobId: run.jobId } : {}),
-      ...(run.errorClass ? { errorClass: run.errorClass } : {})
-    }
-
-    options.agentRuns.upsert(record)
+  function setRun(run: StoredRun): void {
+    persistRun(run)
+    rememberRun(run)
   }
 
   function createSpineRun(input: {
@@ -1293,26 +1729,103 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     options.runSpine.appendEvent(input.runId, 'intent.analyzed', { ...input.intentAnalysis })
   }
 
+  function submitRun(input: {
+    message: string
+    agentId: string
+    trigger: AgentTriggerKind
+    requestedBy: string
+    intentAnalysis: AgentIntentAnalysis
+    contextPolicyOverride?: AgentRunRequest['contextPolicyOverride']
+  }): { runId: string; messageId: string; jobId: string } {
+    const messageId = idFactory('message')
+    const runId = idFactory('run')
+    const committed = transaction(() => {
+      const ticket = options.queue.enqueue({
+        type: 'agent.run',
+        targetId: messageId,
+        payload: {
+          runId,
+          messageId,
+          message: input.message,
+          agentId: input.agentId,
+          trigger: input.trigger,
+          ...(input.contextPolicyOverride ? { contextPolicyOverride: input.contextPolicyOverride } : {})
+        },
+        requestedBy: { type: 'user', id: input.requestedBy }
+      })
+      const run: StoredRun = {
+        runId,
+        messageId,
+        status: 'pending',
+        agentId: input.agentId,
+        jobId: ticket.jobId,
+        trigger: input.trigger,
+        intentAnalysis: input.intentAnalysis
+      }
+
+      createSpineRun({
+        runId,
+        messageId,
+        jobId: ticket.jobId,
+        agentId: input.agentId,
+        trigger: input.trigger,
+        intentAnalysis: input.intentAnalysis
+      })
+      persistRun(run)
+      options.chatMessages?.create({
+        id: messageId,
+        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+        agentRunId: runId,
+        role: 'user',
+        content: input.message,
+        createdAt: clock()
+      })
+
+      return { ticket, run }
+    })
+
+    runsById.set(runId, committed.run)
+    return { runId, messageId, jobId: committed.ticket.jobId }
+  }
+
   function persistRunFailure(
     runId: string,
     messageId: string,
     error: unknown
   ): StoredRun {
     const failedRun = runFailureTrace(runId, messageId, runsById.get(runId), error)
-    setRun(failedRun)
-
     const snapshot = options.runSpine?.getSnapshot(runId)
     if (!options.runSpine || !snapshot) {
+      const failedTurn = applyAgentEvent(
+        createAssistantTurn({
+          id: `${runId}-assistant`,
+          runId,
+          messageId,
+          createdAt: failedRun.startedAt ?? clock()
+        }),
+        {
+          type: 'runFailed',
+          errorClass: failedRun.errorClass ?? 'agent_run_failed',
+          message: error instanceof Error ? error.message : 'Agent run failed.',
+          retryable: false
+        }
+      )
+      transaction(() => {
+        persistRun(failedRun)
+        persistTerminalAssistantTurn({
+          ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
+          ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+          clock
+        }, {
+          runId,
+          messageId,
+          fallbackTurn: failedTurn,
+          fallbackContent: error instanceof Error ? error.message : 'Agent run failed.'
+        })
+      })
+      rememberRun(failedRun)
       return failedRun
     }
-
-    options.runSpine.updateRun({
-      runId,
-      status: failedRun.status,
-      ...(failedRun.pausedState ? { pausedState: { ...failedRun.pausedState } } : {}),
-      ...(failedRun.errorClass ? { errorClass: failedRun.errorClass } : {}),
-      lastCheckpoint: failedRun.status === 'approval_required' ? 'permission.requested' : 'run.failed'
-    })
 
     if (failedRun.status === 'approval_required' && failedRun.pendingApproval) {
       const alreadyRecorded = snapshot.events.some((event) => {
@@ -1320,26 +1833,73 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         if (event.type !== 'permission.requested' || !isRecord(eventPayload)) return false
         return eventPayload.callId === failedRun.pendingApproval?.callId
       })
-      if (!alreadyRecorded) {
-        options.runSpine.appendEvent(runId, 'permission.requested', {
-          callId: failedRun.pendingApproval.callId,
-          toolId: failedRun.pendingApproval.toolId,
-          reason: failedRun.pendingApproval.reason,
-          requiredPermissions: failedRun.pendingApproval.requiredPermissions
+      transaction(() => {
+        persistRun(failedRun)
+        options.runSpine?.updateRun({
+          runId,
+          status: failedRun.status,
+          pausedState: failedRun.pausedState ? { ...failedRun.pausedState } : null,
+          trace: {
+            pendingApproval: failedRun.pendingApproval ?? null
+          },
+          ...(failedRun.errorClass ? { errorClass: failedRun.errorClass } : {}),
+          lastCheckpoint: 'permission.requested'
         })
-      }
+        if (!alreadyRecorded) {
+          options.runSpine?.appendEvent(runId, 'permission.requested', {
+            callId: failedRun.pendingApproval!.callId,
+            toolId: failedRun.pendingApproval!.toolId,
+            reason: failedRun.pendingApproval!.reason,
+            requiredPermissions: failedRun.pendingApproval!.requiredPermissions
+          })
+        }
+      })
+      rememberRun(failedRun)
       return failedRun
     }
 
     const alreadyTerminal = snapshot.events.some((event) => event.type === 'run.failed' || event.type === 'run.completed')
-    if (!alreadyTerminal) {
-      options.runSpine.appendEvent(runId, 'run.failed', {
+    const failureMessage = error instanceof Error ? error.message : 'Agent run failed.'
+    const fallbackTurn = applyAgentEvent(
+      projectAgentRunSnapshot(snapshot).chatTurn,
+      {
+        type: 'runFailed',
         errorClass: failedRun.errorClass ?? 'agent_run_failed',
-        message: error instanceof Error ? error.message : 'Agent run failed.',
-        retryable: false,
-        checkpoint: 'run.failed'
+        message: failureMessage,
+        retryable: false
+      }
+    )
+    transaction(() => {
+      persistRun(failedRun)
+      options.runSpine?.updateRun({
+        runId,
+        status: failedRun.status,
+        pausedState: null,
+        trace: { pendingApproval: null },
+        ...(failedRun.errorClass ? { errorClass: failedRun.errorClass } : {}),
+        lastCheckpoint: 'run.failed'
       })
-    }
+      if (!alreadyTerminal) {
+        options.runSpine?.appendEvent(runId, 'run.failed', {
+          errorClass: failedRun.errorClass ?? 'agent_run_failed',
+          message: failureMessage,
+          retryable: false,
+          checkpoint: 'run.failed'
+        })
+      }
+      persistTerminalAssistantTurn({
+        ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
+        ...(options.runSpine ? { runSpine: options.runSpine } : {}),
+        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+        clock
+      }, {
+        runId,
+        messageId,
+        fallbackTurn,
+        fallbackContent: failureMessage
+      })
+    })
+    rememberRun(failedRun)
 
     return failedRun
   }
@@ -1365,87 +1925,46 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
 
   return {
     chatSend(input) {
-      const messageId = idFactory('message')
-      const runId = idFactory('run')
+      const agentId = input.agentId ?? DEFAULT_CHAT_AGENT_ID
+      const trigger = input.trigger ?? 'canvasChat'
       const intentAnalysis = analyzeAgentIntent(input.message)
-      const ticket = options.queue.enqueue({
-        type: 'agent.run',
-        targetId: messageId,
-        payload: {
-          runId,
-          messageId,
-          message: input.message,
-          agentId: input.agentId ?? DEFAULT_CHAT_AGENT_ID,
-          trigger: input.trigger ?? 'canvasChat'
-        },
-        requestedBy: { type: 'user', id: input.requestedBy }
-      })
-
-      createSpineRun({
-        runId,
-        messageId,
-        jobId: ticket.jobId,
-        agentId: input.agentId ?? DEFAULT_CHAT_AGENT_ID,
-        trigger: input.trigger ?? 'canvasChat',
+      const submitted = submitRun({
+        message: input.message,
+        agentId,
+        trigger,
+        requestedBy: input.requestedBy,
         intentAnalysis
       })
-      setRun({ runId, messageId, status: 'pending', agentId: input.agentId ?? DEFAULT_CHAT_AGENT_ID, jobId: ticket.jobId, trigger: input.trigger ?? 'canvasChat', intentAnalysis })
-      options.chatMessages?.create({
-        id: messageId,
-        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
-        agentRunId: runId,
-        role: 'user',
-        content: input.message,
-        createdAt: clock()
-      })
 
-      return { runId, jobId: ticket.jobId, messageId, status: 'pending' }
+      return {
+        runId: submitted.runId,
+        jobId: submitted.jobId,
+        messageId: submitted.messageId,
+        status: 'pending'
+      }
     },
     agentRun(input) {
-      const messageId = idFactory('message')
-      const runId = idFactory('run')
       const agent = options.registry ? options.registry.get(input.agentId) : fallbackOrchestratorAgent(input.agentId)
       const trigger = agent?.triggerPolicy.defaultTrigger ?? 'manual'
       const intentAnalysis = analyzeAgentIntent(input.message)
-      const ticket = options.queue.enqueue({
-        type: 'agent.run',
-        targetId: messageId,
-        payload: {
-          runId,
-          messageId,
-          message: input.message,
-          agentId: input.agentId,
-          trigger,
-          ...(input.contextPolicyOverride ? { contextPolicyOverride: input.contextPolicyOverride } : {})
-        },
-        requestedBy: { type: 'user', id: 'agent.run' }
-      })
-
-      createSpineRun({
-        runId,
-        messageId,
-        jobId: ticket.jobId,
+      const submitted = submitRun({
+        message: input.message,
         agentId: input.agentId,
         trigger,
-        intentAnalysis
-      })
-      setRun({ runId, messageId, status: 'pending', agentId: input.agentId, jobId: ticket.jobId, trigger, intentAnalysis })
-      options.chatMessages?.create({
-        id: messageId,
-        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
-        agentRunId: runId,
-        role: 'user',
-        content: input.message,
-        createdAt: clock()
+        requestedBy: 'agent.run',
+        intentAnalysis,
+        ...(input.contextPolicyOverride ? { contextPolicyOverride: input.contextPolicyOverride } : {})
       })
 
-      return { runId, jobId: ticket.jobId, status: 'pending' }
+      return { runId: submitted.runId, jobId: submitted.jobId, status: 'pending' }
     },
     approveTool(input) {
-      const run = runsById.get(input.runId)
+      const run = loadRun(input.runId)
 
       if (!run) {
-        return approvalError('agent_not_found', 'Agent run was not found.')
+        return options.agentRuns?.getById(input.runId)
+          ? approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
+          : approvalError('agent_not_found', 'Agent run was not found.')
       }
 
       const approval = matchingApproval(run, input)
@@ -1454,61 +1973,175 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         return approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
       }
 
+      const currentAgent = options.registry
+        ? options.registry.get(run.agentId)
+        : fallbackOrchestratorAgent(run.agentId)
+      try {
+        if (!currentAgent) {
+          throw approvalPolicyError(run.pausedState, 'Agent is no longer available for this approval.')
+        }
+        revalidateApprovalLoop({
+          run,
+          approval,
+          agent: currentAgent,
+          availableTools: options.listTools?.() ?? []
+        })
+      } catch {
+        return approvalError(
+          'agent_approval_policy_changed',
+          'Agent or tool policy changed after this approval was requested.'
+        )
+      }
+
       const requestedScope = input.scope ?? 'session'
       const approvalScope: PermissionGrantScope = approval.requiredPermissions.some((permission) => {
         return permission.kind === 'destructive'
       }) ? 'once' : requestedScope
 
-      const ticket = options.queue.enqueue({
-        type: 'agent.run',
-        targetId: run.messageId,
-        payload: {
-          resumeKind: 'approval',
+      const committed = transaction(() => {
+        const ticket = options.queue.enqueue({
+          type: 'agent.run',
+          targetId: run.messageId,
+          payload: {
+            resumeKind: 'approval',
+            runId: run.runId,
+            messageId: run.messageId,
+            message: run.pausedState?.userMessage ?? '',
+            agentId: run.agentId,
+            trigger: run.trigger,
+            approval,
+            approvedBy: input.approvedBy,
+            approvalScope,
+            approvalSessionId: appSessionId
+          },
+          requestedBy: { type: 'user', id: input.approvedBy }
+        })
+        const nextRun: StoredRun = {
+          ...run,
+          status: 'pending',
+          jobId: ticket.jobId
+        }
+        delete nextRun.errorClass
+
+        options.runSpine?.appendEvent(run.runId, 'permission.resolved', {
+          callId: input.callId,
+          approvedByLabel: input.approvedBy,
+          decision: 'approved',
+          phase: 'queued',
+          requestedScope: approvalScope
+        })
+        options.runSpine?.updateRun({
           runId: run.runId,
-          messageId: run.messageId,
-          message: run.pausedState.userMessage,
-          agentId: run.agentId,
-          trigger: run.trigger,
-          approval,
-          approvedBy: input.approvedBy,
-          approvalScope
-        },
-        requestedBy: { type: 'user', id: input.approvedBy }
+          status: 'pending',
+          jobId: ticket.jobId,
+          trace: {
+            approvalQueued: {
+              callId: input.callId,
+              requestedScope: approvalScope,
+              approvedByLabel: input.approvedBy
+            }
+          },
+          errorClass: null,
+          lastCheckpoint: 'permission.resolved'
+        })
+        persistRun(nextRun)
+        return { ticket, nextRun }
       })
 
-      const permissionKinds = [...new Set(approval.requiredPermissions.map((permission) => permission.kind))].sort()
-      options.runSpine?.savePermissionGrant({
-        id: `grant-${run.runId}-${input.callId}-${approvalScope}`,
-        runId: run.runId,
-        workflowId: options.workflowId ?? 'default',
-        toolId: approval.toolId,
-        permissionKinds,
-        scope: approvalScope,
-        approvedByLabel: input.approvedBy,
-        createdAt: clock()
-      })
-      options.runSpine?.appendEvent(run.runId, 'permission.resolved', {
-        callId: input.callId,
-        approvedByLabel: input.approvedBy,
-        scope: approvalScope
-      })
-      options.runSpine?.updateRun({
-        runId: run.runId,
-        status: 'pending',
-        jobId: ticket.jobId,
-        errorClass: null,
-        lastCheckpoint: 'permission.resolved'
-      })
+      runsById.set(run.runId, committed.nextRun)
+      return { runId: run.runId, jobId: committed.ticket.jobId, status: 'pending' }
+    },
+    denyTool(input) {
+      const run = loadRun(input.runId)
 
-      const nextRun: StoredRun = {
-        ...run,
-        status: 'pending',
-        jobId: ticket.jobId
+      if (!run) {
+        return options.agentRuns?.getById(input.runId)
+          ? approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
+          : approvalError('agent_not_found', 'Agent run was not found.')
       }
-      delete nextRun.errorClass
-      setRun(nextRun)
 
-      return { runId: run.runId, jobId: ticket.jobId, status: 'pending' }
+      const approval = matchingApproval(run, input)
+      if (!approval) {
+        return approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
+      }
+
+      const completedAt = clock()
+      const deniedRun: StoredRun = {
+        ...run,
+        status: 'aborted',
+        errorClass: 'agent_tool_denied',
+        completedAt
+      }
+      delete deniedRun.pendingApproval
+      delete deniedRun.pausedState
+
+      try {
+        if (options.runSpine) {
+          transaction(() => {
+            options.runSpine?.denyTool({
+              runId: run.runId,
+              callId: input.callId,
+              deniedByLabel: input.deniedBy,
+              completedAt
+            })
+            persistTerminalAssistantTurn({
+              ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
+              ...(options.runSpine ? { runSpine: options.runSpine } : {}),
+              ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+              clock
+            }, {
+              runId: run.runId,
+              messageId: run.messageId,
+              fallbackTurn: createAssistantTurn({
+                id: `${run.runId}-assistant`,
+                runId: run.runId,
+                messageId: run.messageId,
+                createdAt: completedAt
+              }),
+              fallbackContent: 'Tool call was denied by the user.'
+            })
+          })
+          rememberRun(deniedRun)
+        } else {
+          const deniedTurn = applyAgentEvent(
+            createAssistantTurn({
+              id: `${run.runId}-assistant`,
+              runId: run.runId,
+              messageId: run.messageId,
+              createdAt: completedAt
+            }),
+            {
+              type: 'runFailed',
+              errorClass: 'agent_tool_denied',
+              message: 'Tool call was denied by the user.',
+              retryable: false
+            }
+          )
+          transaction(() => {
+            persistRun(deniedRun)
+            persistTerminalAssistantTurn({
+              ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
+              ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+              clock
+            }, {
+              runId: run.runId,
+              messageId: run.messageId,
+              fallbackTurn: deniedTurn,
+              fallbackContent: 'Tool call was denied by the user.'
+            })
+          })
+          rememberRun(deniedRun)
+        }
+      } catch {
+        // Keep the paused approval unchanged when its terminal ledger cannot be committed atomically.
+        return denialPersistenceError()
+      }
+
+      return {
+        runId: run.runId,
+        status: 'aborted',
+        errorClass: 'agent_tool_denied'
+      }
     },
     getRun(runId) {
       const run = runsById.get(runId)
@@ -1560,29 +2193,60 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         const approval = approvalPayload(job.payload)
 
         if (approval) {
-          const run = runsById.get(approval.runId)
+          const run = loadRun(approval.runId)
           const resolvedAgent = options.registry ? options.registry.get(approval.agentId) : fallbackOrchestratorAgent(approval.agentId)
 
           if (!run || !run.pausedState || !resolvedAgent) {
             throw new Error('agent_approval_unavailable')
           }
 
-          const agent = run.effectiveAgent ?? resolvedAgent
-          setRun({ ...run, status: 'running', jobId: job.id, effectiveAgent: agent })
-          options.runSpine?.updateRun({
-            runId: approval.runId,
-            status: 'running',
-            jobId: job.id,
-            pausedState: null,
-            errorClass: null,
-            lastCheckpoint: 'run.started'
-          })
-          options.runSpine?.appendEvent(approval.runId, 'run.started', {
-            status: 'running',
-            jobId: job.id
-          })
-
           try {
+            const agent = resolvedAgent
+            const loop = revalidateApprovalLoop({
+              run,
+              approval: approval.approval,
+              agent,
+              availableTools: options.listTools?.() ?? []
+            })
+            const approvalScope = approval.approvalScope === 'session'
+              && approval.approvalSessionId !== appSessionId
+              ? 'once'
+              : approval.approvalScope
+            const runningRun: StoredRun = {
+              ...run,
+              status: 'running',
+              jobId: job.id,
+              effectiveAgent: agent,
+              pausedState: loop
+            }
+            transaction(() => {
+              options.runSpine?.updateRun({
+                runId: approval.runId,
+                status: 'running',
+                jobId: job.id,
+                pausedState: { ...loop },
+                trace: {
+                  effectiveApprovalScope: approvalScope
+                },
+                errorClass: null,
+                lastCheckpoint: 'approval.execution_started'
+              })
+              options.runSpine?.appendEvent(approval.runId, 'permission.resolved', {
+                callId: approval.approval.callId,
+                approvedByLabel: approval.approvedBy,
+                decision: 'approved',
+                phase: 'executing',
+                scope: approvalScope
+              })
+              options.runSpine?.appendEvent(approval.runId, 'run.started', {
+                status: 'running',
+                jobId: job.id,
+                resumedFromApproval: true
+              })
+              persistRun(runningRun)
+            })
+            runsById.set(run.runId, runningRun)
+
             const stream = runApprovalOrchestrator({
               runId: approval.runId,
               messageId: approval.messageId,
@@ -1590,10 +2254,10 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               agentId: approval.agentId,
               agent,
               trigger: approval.trigger,
-              loop: run.pausedState,
+              loop,
               approval: approval.approval,
               approvedBy: approval.approvedBy,
-              approvalScope: approval.approvalScope,
+              approvalScope,
               planner: options.planner,
               planIdFactory
             })
@@ -1605,9 +2269,12 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               ...(options.planEvents ? { planEvents: options.planEvents } : {}),
               ...(options.runSpine ? { runSpine: options.runSpine } : {}),
               runsById,
-              setRun,
+              persistRun,
+              rememberRun,
+              transaction,
               agentId: approval.agentId,
               trigger: approval.trigger,
+              ...(options.workflowId ? { workflowId: options.workflowId } : {}),
               clock
             })
 
@@ -1772,9 +2439,12 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
             ...(options.planEvents ? { planEvents: options.planEvents } : {}),
             ...(options.runSpine ? { runSpine: options.runSpine } : {}),
             runsById,
-            setRun,
+            persistRun,
+            rememberRun,
+            transaction,
             agentId,
             trigger,
+            ...(options.workflowId ? { workflowId: options.workflowId } : {}),
             clock
           })
 

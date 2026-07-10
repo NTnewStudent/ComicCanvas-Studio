@@ -33,6 +33,8 @@ describe('M3 gateway preload bridge', () => {
     expect(source).toContain("invokeMain('agent.getRun'")
     expect(source).toContain('approveAgentTool')
     expect(source).toContain("invokeMain('agent.approveTool'")
+    expect(source).toContain('denyAgentTool')
+    expect(source).toContain("invokeMain('agent.denyTool'")
     expect(source).toContain('spawnSubAgent')
     expect(source).toContain("invokeMain('agent.spawn'")
     expect(source).toContain('listTools')

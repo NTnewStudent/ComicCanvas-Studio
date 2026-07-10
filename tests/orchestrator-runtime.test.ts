@@ -5,16 +5,20 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import type { AgentResponse } from '../shared/agents'
+import type { AgentDefinition, AgentResponse } from '../shared/agents'
 import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
+import type { ChatBlock } from '../shared/chat-blocks'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
 import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
+import { createAgentContextLoop } from '../desktop/src/main/agent/context-loop'
+import type { AgentRegistry } from '../desktop/src/main/agent/registry'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createAgentArtifactRepository } from '../desktop/src/main/db/repositories/agent-artifact.repo'
 import { createAgentPermissionGrantRepository } from '../desktop/src/main/db/repositories/agent-permission-grant.repo'
 import { createAgentRunEventRepository } from '../desktop/src/main/db/repositories/agent-run-event.repo'
 import { createAgentRunRepository } from '../desktop/src/main/db/repositories/agent-run.repo'
+import { createChatMessageRepository } from '../desktop/src/main/db/repositories/chat-message.repo'
 import { createChildAgentTaskRepository } from '../desktop/src/main/db/repositories/child-agent-task.repo'
 import { createJobRepository } from '../desktop/src/main/db/repositories/job.repo'
 import { createJobEventBus } from '../desktop/src/main/jobs/events'
@@ -385,6 +389,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
     try {
       const jobs = createJobRepository(db)
+      const chatMessages = createChatMessageRepository(db)
       const events = createJobEventBus()
       const queue = createJobQueue({
         jobs,
@@ -408,7 +413,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
             plannerLoopMessages = input.loop?.messages.map((message) => message.content) ?? []
             return deferred.promise
           }
-        }
+        },
+        chatMessages,
+        workflowId: 'workflow-1'
       })
       const worker = createJobWorker({
         jobs,
@@ -446,6 +453,13 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       expect(await running).toBe('job-agent-1')
 
       expect(runtime.getPlan('message-1')).toEqual(samplePlan)
+      expect(chatMessages.listByWorkflowId('workflow-1').map((message) => ({
+        role: message.role,
+        agentRunId: message.agentRunId
+      }))).toEqual([
+        { role: 'user', agentRunId: 'run-1' },
+        { role: 'assistant', agentRunId: 'run-1' }
+      ])
       expect(jobs.getById('job-agent-1')?.result).toEqual({ kind: 'agentRun', runId: 'run-1', planId: 'plan-async-1' })
       expect(events.getTerminalEvents()).toEqual([
         {
@@ -454,6 +468,121 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
           result: { kind: 'agentRun', runId: 'run-1', planId: 'plan-async-1' },
           emittedAt: 1_782_700_000_010
         }
+      ])
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('rolls back the job and run when chat submission persistence fails', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-orchestrator-submit-rollback-'))
+    const dbPath = join(tempDir, 'orchestrator-submit-rollback.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const jobs = createJobRepository(db)
+      const agentRuns = createAgentRunRepository(db)
+      const chatMessages = createChatMessageRepository(db)
+      let spineId = 0
+      const runSpine = createAgentRunSpine({
+        runs: agentRuns,
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-submit-rollback-${++spineId}`,
+        clock: () => 1_782_700_000_050
+      })
+      const runtime = createOrchestratorRuntime({
+        queue: createJobQueue({
+          jobs,
+          idFactory: () => 'job-submit-rollback',
+          clock: () => 1_782_700_000_050
+        }),
+        events: createJobEventBus(),
+        agentRuns,
+        runSpine,
+        chatMessages: {
+          ...chatMessages,
+          create() {
+            throw new Error('chat_message_insert_failed')
+          }
+        },
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-submit-rollback`,
+        planner: createDefaultOrchestratorPlanner()
+      })
+
+      expect(() => runtime.chatSend({
+        message: '你好',
+        agentId: 'general-purpose',
+        requestedBy: 'user-1'
+      })).toThrow('chat_message_insert_failed')
+      expect(jobs.getById('job-submit-rollback')).toBeNull()
+      expect(agentRuns.getById('run-submit-rollback')).toBeNull()
+      expect(runSpine.getSnapshot('run-submit-rollback')).toBeNull()
+      expect(runtime.getRun('run-submit-rollback')).toBeNull()
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('persists ordinary assistant answers in the same workflow as the user message', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-orchestrator-answer-history-'))
+    const dbPath = join(tempDir, 'orchestrator-answer-history.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const jobs = createJobRepository(db)
+      const chatMessages = createChatMessageRepository(db)
+      const events = createJobEventBus()
+      const queue = createJobQueue({
+        jobs,
+        idFactory: () => 'job-answer-1',
+        clock: () => 1_782_700_000_100
+      })
+      const runtime = createOrchestratorRuntime({
+        queue,
+        events,
+        listTools: () => [queryGraphTool],
+        idFactory: (prefix) => `${prefix}-answer-1`,
+        planner: {
+          proposePlan() {
+            return {
+              type: 'answer',
+              summary: '普通回答',
+              text: 'Java 是一门通用编程语言。',
+              dropped: []
+            }
+          }
+        },
+        chatMessages,
+        workflowId: 'workflow-answer'
+      })
+      const worker = createJobWorker({
+        jobs,
+        events,
+        leaseOwner: 'answer-worker',
+        clock: () => 1_782_700_000_110,
+        handlers: {
+          'agent.run': runtime.createJobHandler()
+        }
+      })
+
+      runtime.chatSend({ message: '你知道 Java 么', agentId: 'general-purpose', requestedBy: 'user-1' })
+      expect(await worker.runNext()).toBe('job-answer-1')
+
+      expect(chatMessages.listByWorkflowId('workflow-answer').map((message) => ({
+        role: message.role,
+        content: message.content
+      }))).toEqual([
+        { role: 'user', content: '你知道 Java 么' },
+        { role: 'assistant', content: 'Java 是一门通用编程语言。' }
       ])
     } finally {
       db.close()
@@ -599,6 +728,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
     try {
       const jobs = createJobRepository(db)
       const agentRuns = createAgentRunRepository(db)
+      const chatMessages = createChatMessageRepository(db)
       let spineId = 0
       const runSpine = createAgentRunSpine({
         runs: agentRuns,
@@ -606,6 +736,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         artifacts: createAgentArtifactRepository(db),
         grants: createAgentPermissionGrantRepository(db),
         childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
         idFactory: (prefix) => `${prefix}-approval-${++spineId}`,
         clock: () => 1_782_700_002_002
       })
@@ -617,6 +748,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         clock: () => 1_782_700_002_000
       })
       let createNodeCalls = 0
+      let rememberedScope: string | undefined
+      let executionCheckpoint: string | undefined
+      let pausedStatePresentDuringExecution = false
       const toolRuntime = createToolRuntime({
         idFactory: () => 'invoke-agent-approval',
         clock: () => 1_782_700_002_001,
@@ -625,6 +759,14 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
           decisionReason: 'Creating nodes requires confirmation.',
           requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
         }),
+        permissionGrantStore: {
+          remember(input) {
+            rememberedScope = input.approvedInvocation?.scope
+          },
+          has() {
+            return false
+          }
+        },
         tools: [
           defineTool({
             descriptor: writeTool,
@@ -632,6 +774,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
             outputSchema: z.object({ nodeId: z.string() }),
             renderToolUseMessage: () => 'Create node',
             call() {
+              const executingRun = agentRuns.getById('run-approval-1')
+              executionCheckpoint = executingRun?.lastCheckpoint
+              pausedStatePresentDuringExecution = executingRun?.pausedState !== undefined
               createNodeCalls += 1
               return { nodeId: 'node-approved' }
             }
@@ -678,6 +823,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         listTools: () => [writeTool],
         idFactory: (prefix) => `${prefix}-approval-1`,
         planIdFactory: () => 'plan-approval-1',
+        appSessionId: 'app-session-initial',
+        chatMessages,
+        workflowId: 'workflow-approval',
         planner
       })
       const worker = createJobWorker({
@@ -734,7 +882,179 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         }
       })
       expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.requested')).toHaveLength(1)
-      const approvalTicket = runtime.approveTool({
+      const pausedRecord = agentRuns.getById(ticket.runId)
+      if (!pausedRecord?.pausedState) {
+        throw new Error('expected_persisted_paused_run')
+      }
+      agentRuns.upsert({
+        ...pausedRecord,
+        id: 'run-approval-denied',
+        messageId: 'message-approval-denied',
+        jobId: 'job-agent-approval-denied',
+        trace: { ...pausedRecord.trace },
+        pausedState: { ...pausedRecord.pausedState },
+        createdAt: 1_782_700_002_003,
+        updatedAt: 1_782_700_002_003
+      })
+      agentRuns.upsert({
+        ...pausedRecord,
+        id: 'run-approval-denial-failure',
+        messageId: 'message-approval-denial-failure',
+        jobId: 'job-agent-approval-denial-failure',
+        trace: { ...pausedRecord.trace },
+        pausedState: { ...pausedRecord.pausedState },
+        createdAt: 1_782_700_002_004,
+        updatedAt: 1_782_700_002_004
+      })
+      runSpine.appendEvent('run-approval-denied', 'permission.requested', {
+        callId: 'call-create',
+        toolId: 'canvas.createNode',
+        reason: 'Creating nodes requires confirmation.',
+        requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
+      })
+      runSpine.appendEvent('run-approval-denial-failure', 'permission.requested', {
+        callId: 'call-create',
+        toolId: 'canvas.createNode',
+        reason: 'Creating nodes requires confirmation.',
+        requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
+      })
+      const failingRunSpine = {
+        ...runSpine,
+        updateRun(input: Parameters<typeof runSpine.updateRun>[0]) {
+          if (input.runId === 'run-approval-denial-failure' && input.status === 'aborted') {
+            throw new Error('simulated_denial_persistence_failure')
+          }
+          return runSpine.updateRun(input)
+        },
+        denyTool() {
+          throw new Error('simulated_denial_persistence_failure')
+        }
+      }
+      const failingDenialRuntime = createOrchestratorRuntime({
+        queue,
+        events: createJobEventBus(),
+        agentRuns,
+        runSpine: failingRunSpine,
+        chatMessages,
+        workflowId: 'workflow-approval',
+        listTools: () => [writeTool],
+        idFactory: (prefix) => `${prefix}-approval-denial-failure`,
+        planIdFactory: () => 'plan-approval-denial-failure',
+        planner
+      })
+
+      expect(failingDenialRuntime.denyTool({
+        runId: 'run-approval-denial-failure',
+        callId: 'call-create',
+        deniedBy: 'user-local'
+      })).toEqual({
+        errorClass: 'agent_denial_failed',
+        message: 'Tool denial could not be persisted. Retry the denial.',
+        retryable: true
+      })
+      const failedDenialSnapshot = runSpine.getSnapshot('run-approval-denial-failure')
+      expect(failedDenialSnapshot?.run).toMatchObject({
+        status: 'approval_required',
+        errorClass: 'agent_tool_approval_required'
+      })
+      expect(failedDenialSnapshot?.run.pausedState).toBeDefined()
+
+      const denialRuntime = createOrchestratorRuntime({
+        queue,
+        events: createJobEventBus(),
+        agentRuns,
+        runSpine,
+        chatMessages,
+        workflowId: 'workflow-approval',
+        listTools: () => [writeTool],
+        idFactory: (prefix) => `${prefix}-approval-denied`,
+        planIdFactory: () => 'plan-approval-denied',
+        planner
+      })
+
+      expect(denialRuntime.denyTool({
+        runId: 'run-approval-denied',
+        callId: 'call-create',
+        deniedBy: 'user-local'
+      })).toEqual({
+        runId: 'run-approval-denied',
+        status: 'aborted',
+        errorClass: 'agent_tool_denied'
+      })
+      const deniedSnapshot = runSpine.getSnapshot('run-approval-denied')
+      expect(deniedSnapshot?.run).toMatchObject({
+        status: 'aborted',
+        errorClass: 'agent_tool_denied',
+        lastCheckpoint: 'run.failed'
+      })
+      expect(deniedSnapshot?.run.pausedState).toBeUndefined()
+      expect(deniedSnapshot?.events.filter((event) => event.type === 'permission.resolved')).toHaveLength(1)
+      expect(deniedSnapshot?.events.filter((event) => event.type === 'run.failed')).toHaveLength(1)
+      expect(denialRuntime.getRun('run-approval-denied')?.projection).toMatchObject({
+        chatTurn: {
+          status: 'failed',
+          blocks: [
+            expect.objectContaining({ kind: 'permission', callId: 'call-create', resolved: true }),
+            expect.objectContaining({ kind: 'error', errorClass: 'agent_tool_denied' })
+          ]
+        },
+        inspector: {
+          status: 'aborted',
+          permissions: [expect.objectContaining({ callId: 'call-create', resolved: true })]
+        }
+      })
+      const deniedAssistant = chatMessages.getById('message-approval-denied-assistant')
+      const deniedBlocks = JSON.parse(deniedAssistant?.blocksJson ?? '[]') as ChatBlock[]
+      expect(deniedAssistant).toMatchObject({
+        workflowId: 'workflow-approval',
+        agentRunId: 'run-approval-denied',
+        role: 'assistant'
+      })
+      expect(deniedBlocks).toContainEqual(
+        expect.objectContaining({
+          kind: 'permission',
+          callId: 'call-create',
+          resolved: true,
+          decision: 'denied'
+        })
+      )
+      expect(deniedBlocks).toContainEqual(
+        expect.objectContaining({ kind: 'error', errorClass: 'agent_tool_denied' })
+      )
+      const deniedRestartRuntime = createOrchestratorRuntime({
+        queue,
+        events: createJobEventBus(),
+        agentRuns,
+        runSpine,
+        chatMessages,
+        workflowId: 'workflow-approval',
+        listTools: () => [writeTool],
+        idFactory: (prefix) => `${prefix}-approval-denied-restarted`,
+        planIdFactory: () => 'plan-approval-denied',
+        planner
+      })
+      expect(deniedRestartRuntime.approveTool({
+        runId: 'run-approval-denied',
+        callId: 'call-create',
+        approvedBy: 'user-local',
+        scope: 'once'
+      })).toMatchObject({ errorClass: 'agent_approval_unavailable' })
+
+      const restartedEvents = createJobEventBus()
+      const restartedRuntime = createOrchestratorRuntime({
+        queue,
+        events: restartedEvents,
+        agentRuns,
+        runSpine,
+        chatMessages,
+        workflowId: 'workflow-approval',
+        listTools: () => [writeTool],
+        idFactory: (prefix) => `${prefix}-approval-restarted`,
+        planIdFactory: () => 'plan-approval-1',
+        appSessionId: 'app-session-approved',
+        planner
+      })
+      const approvalTicket = restartedRuntime.approveTool({
         runId: ticket.runId,
         callId: 'call-create',
         approvedBy: 'user-local',
@@ -742,39 +1062,276 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       })
 
       expect(approvalTicket).toEqual({ runId: 'run-approval-1', jobId: 'job-agent-approval-2', status: 'pending' })
-      expect(runSpine.getSnapshot(ticket.runId)?.permissionGrants).toEqual([
-        expect.objectContaining({
-          runId: 'run-approval-1',
-          toolId: 'canvas.createNode',
-          permissionKinds: ['canvas.write'],
-          scope: 'session',
-          approvedByLabel: 'user-local'
-        })
-      ])
+      expect(runSpine.getSnapshot(ticket.runId)?.permissionGrants).toEqual([])
       expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.resolved')).toHaveLength(1)
-      expect(runtime.getRun(ticket.runId)).toMatchObject({
+      expect(runSpine.getSnapshot(ticket.runId)?.events.find((event) => event.type === 'permission.resolved')?.payload).toMatchObject({
+        callId: 'call-create',
+        decision: 'approved',
+        phase: 'queued',
+        requestedScope: 'session'
+      })
+      expect(runSpine.getSnapshot(ticket.runId)?.events.find((event) => event.type === 'permission.resolved')?.payload).not.toHaveProperty('scope')
+      expect(runSpine.getSnapshot(ticket.runId)?.run).toMatchObject({
+        status: 'pending',
+        lastCheckpoint: 'permission.resolved'
+      })
+      expect(runSpine.getSnapshot(ticket.runId)?.run.pausedState).toBeDefined()
+      expect(restartedRuntime.getRun(ticket.runId)).toMatchObject({
         runId: 'run-approval-1',
         status: 'pending'
       })
 
-      expect(await worker.runNext()).toBe('job-agent-approval-2')
+      const resumedEvents = createJobEventBus()
+      const resumedRuntime = createOrchestratorRuntime({
+        queue,
+        events: resumedEvents,
+        agentRuns,
+        runSpine,
+        chatMessages,
+        workflowId: 'workflow-approval',
+        listTools: () => [writeTool],
+        idFactory: (prefix) => `${prefix}-approval-resumed`,
+        planIdFactory: () => 'plan-approval-1',
+        appSessionId: 'app-session-resumed',
+        planner
+      })
+      const restartedWorker = createJobWorker({
+        jobs,
+        events: resumedEvents,
+        leaseOwner: 'agent-approval-restarted-worker',
+        clock: () => 1_782_700_002_020,
+        handlers: {
+          'agent.run': resumedRuntime.createJobHandler()
+        }
+      })
+
+      expect(await restartedWorker.runNext()).toBe('job-agent-approval-2')
       expect(createNodeCalls).toBe(1)
-      expect(runtime.getRun(ticket.runId)).toMatchObject({
+      expect(rememberedScope).toBe('once')
+      expect(executionCheckpoint).toBe('approval.execution_started')
+      expect(pausedStatePresentDuringExecution).toBe(true)
+      expect(resumedRuntime.getRun(ticket.runId)).toMatchObject({
         runId: 'run-approval-1',
         status: 'completed',
         trace: {
           planId: 'plan-approval-1'
         }
       })
-      expect(runtime.getPlan('message-approval-1')).toMatchObject({
+      expect(resumedRuntime.getRun(ticket.runId)?.trace).not.toHaveProperty('pendingApproval')
+      expect(resumedRuntime.getPlan('message-approval-1')).toMatchObject({
         kind: 'plan',
         summary: 'Approved tool call completed.',
         nodes: [{ ref: 'prompt-approved', type: 'text', title: 'Approved prompt', data: { content: 'done' } }]
       })
       expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'run.completed')).toHaveLength(1)
+      expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.resolved')).toHaveLength(2)
+      expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.resolved').at(-1)?.payload).toMatchObject({
+        callId: 'call-create',
+        decision: 'approved',
+        phase: 'executing',
+        scope: 'once'
+      })
+      expect(runSpine.getSnapshot(ticket.runId)?.run.pausedState).toBeUndefined()
+      expect(runSpine.getSnapshot(ticket.runId)?.run.trace).toMatchObject({ pendingApproval: null })
       expect(runSpine.getSnapshot(ticket.runId)?.artifacts).toEqual([
         expect.objectContaining({ kind: 'canvasPlan', summary: 'Approved tool call completed.' })
       ])
+      const resumedAssistant = chatMessages.getById('message-approval-1-assistant')
+      const resumedBlocks = JSON.parse(resumedAssistant?.blocksJson ?? '[]') as ChatBlock[]
+      expect(resumedBlocks).toContainEqual(
+        expect.objectContaining({
+          kind: 'toolCall',
+          callId: 'call-create',
+          status: 'completed'
+        })
+      )
+      expect(resumedBlocks).toContainEqual(
+        expect.objectContaining({
+          kind: 'permission',
+          callId: 'call-create',
+          resolved: true,
+          decision: 'approved',
+          scope: 'once'
+        })
+      )
+      expect(resumedBlocks).toContainEqual({ kind: 'plan', planId: 'plan-approval-1' })
+      expect(chatMessages.listByWorkflowId('workflow-approval').filter((message) => {
+        return message.id === 'message-approval-1-assistant'
+      })).toHaveLength(1)
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('fails a queued approval when the current Agent policy no longer allows the tool', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-agent-approval-policy-change-'))
+    const dbPath = join(tempDir, 'agent-approval-policy-change.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const jobs = createJobRepository(db)
+      const agentRuns = createAgentRunRepository(db)
+      let spineId = 0
+      const runSpine = createAgentRunSpine({
+        runs: agentRuns,
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-policy-change-${++spineId}`,
+        clock: () => 1_782_700_005_000
+      })
+      const initiallyAllowedAgent: AgentDefinition = {
+        id: 'orchestrator',
+        source: 'builtin',
+        name: 'Orchestrator',
+        description: 'Test agent.',
+        instructions: 'Use allowed tools.',
+        allowedTools: ['canvas.createNode'],
+        allowedSkills: '*',
+        gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: {
+          includeCanvasGraph: false,
+          includeSelectedAssets: false,
+          includeRecentMessages: false,
+          includeKnowledge: false,
+          maxContextTokens: 4000
+        },
+        permissionPolicy: {
+          allowedPermissionKinds: ['canvas.write'],
+          requireAskForDestructive: true
+        },
+        triggerPolicy: {
+          allowedTriggers: ['manual'],
+          defaultTrigger: 'manual',
+          autoRun: false
+        },
+        maxTurns: 4,
+        effort: 'medium',
+        enabled: true
+      }
+      const pausedState = createAgentContextLoop({
+        agent: initiallyAllowedAgent,
+        trigger: 'manual',
+        message: '创建一个节点',
+        availableTools: [writeTool]
+      })
+      pausedState.transition = 'approval_required'
+      const approval = {
+        callId: 'call-policy-change',
+        toolId: 'canvas.createNode',
+        input: { type: 'text' },
+        reason: 'Creating nodes requires confirmation.',
+        requiredPermissions: [{ kind: 'canvas.write' as const, reason: 'Mutates canvas graph.' }]
+      }
+
+      runSpine.createRun({
+        runId: 'run-policy-change',
+        threadId: 'default',
+        workflowId: 'default',
+        messageId: 'message-policy-change',
+        jobId: 'job-policy-change',
+        agentId: 'orchestrator',
+        trigger: 'manual',
+        policyProfileId: 'local-default'
+      })
+      runSpine.updateRun({
+        runId: 'run-policy-change',
+        status: 'pending',
+        jobId: 'job-policy-change',
+        pausedState: { ...pausedState },
+        trace: { pendingApproval: approval },
+        lastCheckpoint: 'permission.resolved'
+      })
+      jobs.create({
+        id: 'job-policy-change',
+        type: 'agent.run',
+        status: 'pending',
+        targetId: 'message-policy-change',
+        payload: {
+          resumeKind: 'approval',
+          runId: 'run-policy-change',
+          messageId: 'message-policy-change',
+          message: '创建一个节点',
+          agentId: 'orchestrator',
+          trigger: 'manual',
+          approval,
+          approvedBy: 'user-local',
+          approvalScope: 'once',
+          approvalSessionId: 'session-before-policy-change'
+        },
+        progress: 0,
+        attempts: 0,
+        retryable: false,
+        createdAt: 1_782_700_005_000,
+        updatedAt: 1_782_700_005_000
+      })
+
+      const changedAgent: AgentDefinition = {
+        ...initiallyAllowedAgent,
+        allowedTools: ['canvas.queryGraph'],
+        permissionPolicy: {
+          allowedPermissionKinds: ['canvas.read'],
+          requireAskForDestructive: true
+        }
+      }
+      const registry: AgentRegistry = {
+        list: () => [changedAgent],
+        get: () => changedAgent,
+        save: (agent) => agent,
+        delete: (agentId) => ({ agentId, deleted: true }),
+        isBuiltin: () => true
+      }
+      let resumed = false
+      const defaultPlanner = createDefaultOrchestratorPlanner()
+      const runtime = createOrchestratorRuntime({
+        queue: createJobQueue({ jobs }),
+        events: createJobEventBus(),
+        agentRuns,
+        runSpine,
+        registry,
+        listTools: () => [writeTool, queryGraphTool],
+        appSessionId: 'session-after-policy-change',
+        planner: {
+          proposePlan: (input) => defaultPlanner.proposePlan(input),
+          resumeApprovedTool() {
+            resumed = true
+            return {
+              type: 'answer',
+              summary: 'Should not run.',
+              text: 'Should not run.',
+              dropped: []
+            }
+          }
+        }
+      })
+      const worker = createJobWorker({
+        jobs,
+        events: createJobEventBus(),
+        leaseOwner: 'approval-policy-change-worker',
+        clock: () => 1_782_700_005_010,
+        handlers: { 'agent.run': runtime.createJobHandler() }
+      })
+
+      expect(await worker.runNext()).toBe('job-policy-change')
+      expect(resumed).toBe(false)
+      expect(jobs.getById('job-policy-change')).toMatchObject({
+        status: 'failed',
+        error: {
+          errorClass: 'agent_approval_policy_changed',
+          retryable: false
+        }
+      })
+      expect(runSpine.getSnapshot('run-policy-change')?.run).toMatchObject({
+        status: 'failed',
+        errorClass: 'agent_approval_policy_changed',
+        lastCheckpoint: 'run.failed'
+      })
+      expect(runSpine.getSnapshot('run-policy-change')?.run.pausedState).toBeUndefined()
+      expect(runSpine.getSnapshot('run-policy-change')?.events.filter((event) => event.type === 'run.failed')).toHaveLength(1)
     } finally {
       db.close()
       rmSync(tempDir, { recursive: true, force: true })
@@ -797,6 +1354,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         artifacts: createAgentArtifactRepository(db),
         grants: createAgentPermissionGrantRepository(db),
         childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
         idFactory: (prefix) => `${prefix}-spine-${++spineId}`,
         clock: (() => {
           let now = 1_782_700_010_000
@@ -874,6 +1432,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
     try {
       const jobs = createJobRepository(db)
       const agentRuns = createAgentRunRepository(db)
+      const chatMessages = createChatMessageRepository(db)
       let spineId = 0
       const runSpine = createAgentRunSpine({
         runs: agentRuns,
@@ -881,6 +1440,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         artifacts: createAgentArtifactRepository(db),
         grants: createAgentPermissionGrantRepository(db),
         childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
         idFactory: (prefix) => `${prefix}-failure-${++spineId}`,
         clock: () => 1_782_700_011_000
       })
@@ -895,6 +1455,8 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         events,
         agentRuns,
         runSpine,
+        chatMessages,
+        workflowId: 'workflow-failure',
         idFactory: (prefix) => `${prefix}-spine-failure`,
         planner: {
           proposePlan() {
@@ -925,6 +1487,21 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         message: 'Gateway unavailable.',
         retryable: false
       })
+      const failedAssistant = chatMessages.getById('message-spine-failure-assistant')
+      const failedBlocks = JSON.parse(failedAssistant?.blocksJson ?? '[]') as ChatBlock[]
+      expect(failedAssistant).toMatchObject({
+        workflowId: 'workflow-failure',
+        agentRunId: 'run-spine-failure',
+        role: 'assistant',
+        content: 'Gateway unavailable.'
+      })
+      expect(failedBlocks).toContainEqual(
+        expect.objectContaining({
+          kind: 'error',
+          errorClass: 'Gateway unavailable.',
+          message: 'Gateway unavailable.'
+        })
+      )
     } finally {
       db.close()
       rmSync(tempDir, { recursive: true, force: true })
