@@ -619,6 +619,7 @@ describe('Gateway-backed Agent loop planner', () => {
     expect(prompts[0]).toContain('Allowed tools')
     expect(prompts[0]).toContain('Use web.search before answering current, latest, price, news, or time-sensitive questions')
     expect(prompts[0]).toContain('If web.search is unavailable or denied, say that clearly')
+    expect(prompts[0]).toContain('cite the relevant source URL or numbered source marker')
     expect(prompts[1]).toContain('\\"nodeCount\\":0')
     expect(expectAgentResponse(next.value)).toEqual({ type: 'canvasPlan', plan: finalPlan })
   })
