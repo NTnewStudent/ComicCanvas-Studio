@@ -9,6 +9,7 @@ import { AtSign, Check, Loader2, Send, Square, Trash2 } from 'lucide-react'
 import { useStore } from 'zustand'
 
 import type { AgentDefinition } from '../../../../../shared/agents'
+import type { AgentArtifactViewModel } from '../../../../../shared/agent-run-events'
 import type { IpcEventMap, IpcRequestMap, IpcResponseMap } from '../../../../../shared/ipc'
 import type { CanvasPlan } from '../../../../../shared/plan'
 import { cn } from '../lib/cn'
@@ -31,6 +32,8 @@ export interface ChatPanelApi {
   approveAgentTool?: (input: IpcRequestMap['agent.approveTool']) => Promise<IpcResponseMap['agent.approveTool']>
   /** @see docs/api-contracts/agents.md */
   denyAgentTool?: (input: IpcRequestMap['agent.denyTool']) => Promise<IpcResponseMap['agent.denyTool']>
+  /** @see docs/api-contracts/agents.md */
+  applyAgentArtifact?: (input: IpcRequestMap['agent.applyArtifact']) => Promise<IpcResponseMap['agent.applyArtifact']>
   /** @see docs/api-contracts/agents.md */
   getChatHistory?: (input: IpcRequestMap['chat.history']) => Promise<IpcResponseMap['chat.history']>
   /** @see docs/api-contracts/canvas-plan.md */
@@ -56,6 +59,7 @@ export interface ChatPanelApi {
 export interface ChatPanelProps {
   api?: ChatPanelApi
   onApplyPlan: (plan: CanvasPlan, options: ApplyPlanOptions) => void
+  onDraftGraphApplied?: (() => void | Promise<void>) | undefined
   /** 会话恢复用的 workflow 作用域；缺省对齐 orchestrator 默认。 */
   workflowId?: string
 }
@@ -119,7 +123,7 @@ function toStoreApi(api: ChatPanelApi): ChatStoreApi {
  * @throws Error never intentionally; IPC failures surface as in-transcript error blocks.
  * @see docs/api-contracts/canvas-plan.md
  */
-export function ChatPanel({ api = window.comicCanvas, onApplyPlan, workflowId = 'default' }: ChatPanelProps): JSX.Element {
+export function ChatPanel({ api = window.comicCanvas, onApplyPlan, onDraftGraphApplied, workflowId = 'default' }: ChatPanelProps): JSX.Element {
   const [input, setInput] = useState('')
   const [caretIndex, setCaretIndex] = useState(0)
   const [agents, setAgents] = useState<AgentDefinition[]>([])
@@ -248,6 +252,7 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan, workflowId = 
       message,
       agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID,
       agentAutoRun: selectedAgent?.triggerPolicy.autoRun,
+      ...(workflowId !== 'default' ? { workflowId } : {})
     })
     setInput('')
     setCaretIndex(0)
@@ -321,6 +326,17 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan, workflowId = 
         }}
       />
     )
+  }
+
+  async function applyDraftGraph(artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>): Promise<void> {
+    if (!api.applyAgentArtifact) {
+      throw new Error('Child artifact application is unavailable.')
+    }
+    const result = await api.applyAgentArtifact({ parentRunId: artifact.lineage.parentRunId, artifactId: artifact.id })
+    if ('errorClass' in result) {
+      throw new Error(result.message)
+    }
+    await onDraftGraphApplied?.()
   }
 
   const headerActions = (
@@ -429,6 +445,8 @@ export function ChatPanel({ api = window.comicCanvas, onApplyPlan, workflowId = 
       renderPlan={renderPlan}
       onApprovePermission={(callId, scope) => { void handle.store.getState().approvePermission(callId, scope) }}
       onDenyPermission={(callId) => { void handle.store.getState().denyPermission(callId) }}
+      onApplyDraftGraph={applyDraftGraph}
+      {...(api.getAgentRun ? { getChildRun: (runId: string) => api.getAgentRun!({ runId }) } : {})}
       headerActions={headerActions}
       composer={composer}
     />

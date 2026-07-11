@@ -2,13 +2,15 @@
 
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentArtifactViewModel, AgentRunSnapshot } from '../shared/agent-run-events'
 import { projectAgentArtifacts, projectAgentRunSnapshot } from '../shared/agent-run-projector'
 import type { AgentRunViewResponse } from '../shared/agents'
+import type { CanvasPlan } from '../shared/plan'
 import { PermissionBlock } from '../desktop/src/renderer/src/chat/blocks/PermissionBlock'
+import { PlanCard } from '../desktop/src/renderer/src/chat/PlanCard'
 import { AgentWorkbench } from '../desktop/src/renderer/src/chat/workbench/AgentWorkbench'
 import { ArtifactPanel } from '../desktop/src/renderer/src/chat/workbench/ArtifactPanel'
 import { RunInspector } from '../desktop/src/renderer/src/chat/workbench/RunInspector'
@@ -272,6 +274,23 @@ const artifactRunView: AgentRunViewResponse = {
   projection: projectAgentRunSnapshot(artifactSnapshot)
 }
 
+const comicScenePlan: CanvasPlan = {
+  kind: 'plan',
+  summary: '生成雨夜巷口的侦探分镜，并制作首帧和短视频。',
+  nodes: [
+    { ref: 'scene-1', type: 'scene', title: '雨夜巷口', data: { description: '雨夜巷口，霓虹倒影' } },
+    { ref: 'image-1', type: 'imageConfigV2', title: '分镜首帧', data: { promptOverride: '雨夜巷口的侦探', status: 'idle' } },
+    { ref: 'video-1', type: 'videoConfigV2', title: '推进镜头', data: { promptOverride: '镜头缓慢推进', status: 'idle' } }
+  ],
+  edges: [
+    { source: 'scene-1', target: 'image-1', edgeType: 'promptOrder' },
+    { source: 'image-1', target: 'video-1', edgeType: 'imageRole', imageRole: 'first_frame' }
+  ],
+  runSteps: [{ ref: 'image-1', action: 'imageRun' }, { ref: 'video-1', action: 'videoRun' }],
+  question: null,
+  dropped: ['edge:video-1->scene-1:connection_rejected']
+}
+
 afterEach(() => {
   cleanup()
 })
@@ -288,6 +307,102 @@ describe('Agent Workbench', () => {
     expect(screen.getByText('创建运行')).toBeInTheDocument()
     expect(screen.getByText('canvas.queryGraph')).toBeInTheDocument()
     expect(screen.getByText('qa-verifier')).toBeInTheDocument()
+  })
+
+  it('golden: presents a comic scene child proposal with its plan, warnings, and explicit parent apply action', async () => {
+    const onApplyPlan = vi.fn()
+    const onApplyDraftGraph = vi.fn().mockResolvedValue(undefined)
+    const sceneRunView: AgentRunViewResponse = {
+      ...runView,
+      snapshot: {
+        ...runView.snapshot!,
+        childTasks: [{
+          id: 'child-scene-operator', parentRunId: 'run-1', roleId: 'canvas-operator',
+          inputSummary: 'Create a rainy alley comic scene.', effectiveTools: ['canvas.createNode', 'canvas.connectNodes'],
+          status: 'completed', outputSummary: 'Drafted a scene, image, and video sequence.',
+          artifactIds: ['artifact-scene-draft', 'artifact-scene-plan'], createdAt: 14, updatedAt: 18
+        }]
+      },
+      projection: {
+        ...runView.projection!,
+        chatTurn: {
+          ...runView.projection!.chatTurn,
+          blocks: [{ kind: 'plan', planId: 'comic-scene-plan' }]
+        },
+        taskTree: [{
+          id: 'child-scene-operator', parentRunId: 'run-1', roleId: 'canvas-operator', status: 'completed',
+          summary: 'Drafted a scene, image, and video sequence.', artifactIds: ['artifact-scene-draft', 'artifact-scene-plan']
+        }],
+        inspector: {
+          ...runView.projection!.inspector,
+          childTasks: [{
+            id: 'child-scene-operator', parentRunId: 'run-1', roleId: 'canvas-operator', status: 'completed',
+            summary: 'Drafted a scene, image, and video sequence.', artifactIds: ['artifact-scene-draft', 'artifact-scene-plan']
+          }]
+        }
+      }
+    }
+    const childSnapshot: AgentRunSnapshot = {
+      ...runView.snapshot!,
+      run: { ...runView.snapshot!.run, id: 'child-scene-operator', agentId: 'canvas-operator', trace: { parentRunId: 'run-1' } },
+      artifacts: [{
+        id: 'artifact-scene-draft', runId: 'child-scene-operator', kind: 'draftGraph', title: '漫剧场景草稿', summary: '隔离画布草稿', createdAt: 18,
+        payload: {
+          graph: {
+            nodes: [
+              { id: 'scene-1', type: 'scene', position: { x: 0, y: 0 }, data: { label: '雨夜巷口' } },
+              { id: 'image-1', type: 'imageConfigV2', position: { x: 320, y: 0 }, data: { label: '分镜首帧' } }
+            ],
+            edges: [{ id: 'edge-1', source: 'scene-1', target: 'image-1', type: 'default' }], viewport: { x: 0, y: 0, zoom: 1 }
+          },
+          lineage: { parentRunId: 'run-1', childRunId: 'child-scene-operator', traceId: 'run-1/child-scene-operator' },
+          warnings: ['应用前仍需父级确认'], dropped: ['edge:video-1->scene-1:connection_rejected']
+        }
+      }, {
+        id: 'artifact-scene-plan', runId: 'child-scene-operator', kind: 'canvasPlan', title: '子场景计划', summary: '只读子计划', createdAt: 18,
+        payload: comicScenePlan
+      }],
+      childTasks: []
+    }
+    const getChildRun = vi.fn().mockResolvedValue({
+      ...sceneRunView, runId: 'child-scene-operator', snapshot: childSnapshot, projection: projectAgentRunSnapshot(childSnapshot)
+    } satisfies AgentRunViewResponse)
+
+    render(
+      <AgentWorkbench
+        variant="full"
+        title="AI 对话"
+        statusText="已完成"
+        agentName="General Assistant"
+        turns={[sceneRunView.projection!.chatTurn]}
+        busy={false}
+        permissionBusy={false}
+        runView={sceneRunView}
+        renderPlan={(planId) => planId === 'comic-scene-plan'
+          ? <PlanCard plan={comicScenePlan} autoExecute={false} onAutoExecuteChange={vi.fn()} onApplyPlan={onApplyPlan} />
+          : null}
+        onApprovePermission={vi.fn()}
+        onDenyPermission={vi.fn()}
+        onApplyDraftGraph={onApplyDraftGraph}
+        getChildRun={getChildRun}
+        composer={<div>Composer</div>}
+      />,
+    )
+
+    expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('canvas-operator')
+    expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('canvas.createNode')
+    expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('artifact-scene-draft')
+    expect(screen.getByRole('article', { name: '画布计划预览' })).toHaveTextContent('3 个节点')
+
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+    expect(await screen.findByRole('tab', { name: '子场景计划' })).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('tab', { name: '漫剧场景草稿' }))
+    expect(screen.getByRole('tabpanel', { name: '漫剧场景草稿' })).toHaveTextContent('应用前仍需父级确认')
+    fireEvent.click(screen.getByRole('button', { name: '应用子画布草稿' }))
+    await waitFor(() => expect(onApplyDraftGraph).toHaveBeenCalledWith(expect.objectContaining({ id: 'artifact-scene-draft' })))
+
+    fireEvent.click(screen.getByRole('button', { name: '应用计划' }))
+    expect(onApplyPlan).toHaveBeenCalledWith(comicScenePlan, { autoExecute: false })
   })
 
   it('switches from run details to persisted artifacts', () => {
@@ -579,6 +694,7 @@ describe('Agent Workbench', () => {
   })
 
   it('renders the dedicated draft graph artifact view', () => {
+    const applyDraftGraph = vi.fn().mockResolvedValue(undefined)
     const draftGraph: AgentArtifactViewModel = {
       id: 'artifact-draft-graph', runId: 'run-child', kind: 'draftGraph', title: '子画布草稿',
       summary: '隔离提案', createdAt: 30, viewType: 'draftGraph',
@@ -588,10 +704,147 @@ describe('Agent Workbench', () => {
       warnings: ['已移除不安全字段'], dropped: []
     }
 
-    render(<ArtifactPanel artifacts={[draftGraph]} />)
+    render(<ArtifactPanel artifacts={[draftGraph]} onApplyDraftGraph={applyDraftGraph} />)
 
     expect(screen.getByRole('tabpanel', { name: '子画布草稿' })).toHaveTextContent('1 个节点 · 1 条连线')
     expect(screen.getByRole('tabpanel', { name: '子画布草稿' })).toHaveTextContent('已移除不安全字段')
+    fireEvent.click(screen.getByRole('button', { name: '应用子画布草稿' }))
+
+    return waitFor(() => {
+      expect(applyDraftGraph).toHaveBeenCalledWith(draftGraph)
+      expect(screen.getByText('已应用到画布')).toBeInTheDocument()
+    })
+  })
+
+  it('forwards a draft graph apply action from the inspector to its parent gate handler', async () => {
+    const applyDraftGraph = vi.fn().mockResolvedValue(undefined)
+    const snapshot: AgentRunSnapshot = {
+      ...runView.snapshot!,
+      artifacts: [{
+        id: 'artifact-gated-draft', runId: 'run-child', kind: 'draftGraph', title: '受控草稿', summary: '等待父级确认', createdAt: 30,
+        payload: {
+          graph: {
+            nodes: [{ id: 'scene-1', type: 'scene', position: { x: 0, y: 0 }, data: { label: '雨夜巷口' } }],
+            edges: [], viewport: { x: 0, y: 0, zoom: 1 }
+          },
+          lineage: { parentRunId: 'run-1', childRunId: 'run-child', traceId: 'run-1/run-child' },
+          warnings: ['需要父级确认'], dropped: []
+        }
+      }]
+    }
+    const gatedRunView: AgentRunViewResponse = {
+      ...runView, snapshot, projection: projectAgentRunSnapshot(snapshot)
+    }
+
+    render(<RunInspector runView={gatedRunView} onApplyDraftGraph={applyDraftGraph} />)
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+    fireEvent.click(screen.getByRole('button', { name: '应用子画布草稿' }))
+
+    await waitFor(() => expect(applyDraftGraph).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'artifact-gated-draft', lineage: expect.objectContaining({ parentRunId: 'run-1', childRunId: 'run-child' })
+    })))
+  })
+
+  it('loads a completed child draft through the parent task linkage before enabling its parent-gated apply action', async () => {
+    const applyDraftGraph = vi.fn().mockResolvedValue(undefined)
+    const parentSnapshot: AgentRunSnapshot = {
+      ...runView.snapshot!,
+      artifacts: [],
+      childTasks: [{
+        id: 'run-child', parentRunId: 'run-1', roleId: 'canvas-operator', inputSummary: 'Create a rainy alley.',
+        effectiveTools: ['canvas.createNode'], status: 'completed', outputSummary: 'Created isolated draft.',
+        artifactIds: ['artifact-child-draft'], createdAt: 14, updatedAt: 18
+      }]
+    }
+    const childSnapshot: AgentRunSnapshot = {
+      ...runView.snapshot!,
+      run: { ...runView.snapshot!.run, id: 'run-child', agentId: 'canvas-operator', trace: { parentRunId: 'run-1' } },
+      artifacts: [{
+        id: 'artifact-child-draft', runId: 'run-child', kind: 'draftGraph', title: '雨夜巷口草稿', summary: '隔离草稿', createdAt: 18,
+        payload: {
+          graph: {
+            nodes: [{ id: 'scene-1', type: 'scene', position: { x: 0, y: 0 }, data: { label: '雨夜巷口' } }],
+            edges: [], viewport: { x: 0, y: 0, zoom: 1 }
+          },
+          lineage: { parentRunId: 'run-1', childRunId: 'run-child', traceId: 'run-1/run-child' },
+          warnings: ['需要父级确认'], dropped: []
+        }
+      }],
+      childTasks: []
+    }
+    const parentRunView: AgentRunViewResponse = {
+      ...runView, snapshot: parentSnapshot, projection: projectAgentRunSnapshot(parentSnapshot)
+    }
+    const childRunView: AgentRunViewResponse = {
+      ...runView, runId: 'run-child', snapshot: childSnapshot, projection: projectAgentRunSnapshot(childSnapshot)
+    }
+    const getChildRun = vi.fn().mockResolvedValue(childRunView)
+
+    render(<RunInspector runView={parentRunView} getChildRun={getChildRun} onApplyDraftGraph={applyDraftGraph} />)
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+
+    await screen.findByRole('tab', { name: '雨夜巷口草稿' })
+    expect(getChildRun).toHaveBeenCalledWith('run-child')
+    fireEvent.click(screen.getByRole('button', { name: '应用子画布草稿' }))
+    await waitFor(() => expect(applyDraftGraph).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'artifact-child-draft', lineage: expect.objectContaining({ parentRunId: 'run-1', childRunId: 'run-child' })
+    })))
+  })
+
+  it('does not surface child drafts with forged task, child-trace, or artifact-lineage parents', async () => {
+    const parentSnapshot: AgentRunSnapshot = {
+      ...runView.snapshot!,
+      artifacts: [],
+      childTasks: [
+        {
+          id: 'child-forged-task', parentRunId: 'run-other', roleId: 'canvas-operator', inputSummary: 'Forged parent.',
+          effectiveTools: [], status: 'completed', outputSummary: 'Forged.', artifactIds: ['artifact-forged-task'], createdAt: 14, updatedAt: 18
+        },
+        {
+          id: 'child-forged-trace', parentRunId: 'run-1', roleId: 'canvas-operator', inputSummary: 'Forged trace.',
+          effectiveTools: [], status: 'completed', outputSummary: 'Forged.', artifactIds: ['artifact-forged-trace'], createdAt: 14, updatedAt: 18
+        },
+        {
+          id: 'child-forged-lineage', parentRunId: 'run-1', roleId: 'canvas-operator', inputSummary: 'Forged lineage.',
+          effectiveTools: [], status: 'completed', outputSummary: 'Forged.', artifactIds: ['artifact-forged-lineage'], createdAt: 14, updatedAt: 18
+        }
+      ]
+    }
+    const childRun = (id: string, traceParentRunId: string, lineageParentRunId: string): AgentRunViewResponse => {
+      const snapshot: AgentRunSnapshot = {
+        ...runView.snapshot!,
+        run: { ...runView.snapshot!.run, id, agentId: 'canvas-operator', trace: { parentRunId: traceParentRunId } },
+        artifacts: [{
+          id: `artifact-${id.replace('child-', '')}`, runId: id, kind: 'draftGraph', title: `草稿 ${id}`, summary: '隔离草稿', createdAt: 18,
+          payload: {
+            graph: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+            lineage: { parentRunId: lineageParentRunId, childRunId: id, traceId: `${lineageParentRunId}/${id}` },
+            warnings: [], dropped: []
+          }
+        }],
+        childTasks: []
+      }
+      return { ...runView, runId: id, snapshot, projection: projectAgentRunSnapshot(snapshot) }
+    }
+    const getChildRun = vi.fn().mockImplementation((id: string) => {
+      if (id === 'child-forged-trace') {
+        return Promise.resolve(childRun(id, 'run-other', 'run-1'))
+      }
+      return Promise.resolve(childRun(id, 'run-1', 'run-other'))
+    })
+    const parentRunView: AgentRunViewResponse = {
+      ...runView, snapshot: parentSnapshot, projection: projectAgentRunSnapshot(parentSnapshot)
+    }
+
+    render(<RunInspector runView={parentRunView} getChildRun={getChildRun} onApplyDraftGraph={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+
+    await waitFor(() => expect(getChildRun).toHaveBeenCalledTimes(2))
+    expect(getChildRun).not.toHaveBeenCalledWith('child-forged-task')
+    expect(screen.queryByRole('tab', { name: '草稿 child-forged-task' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '草稿 child-forged-trace' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '草稿 child-forged-lineage' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '应用子画布草稿' })).not.toBeInTheDocument()
   })
 
   it('keeps artifact tabs in one horizontal row and constrains long citations', () => {

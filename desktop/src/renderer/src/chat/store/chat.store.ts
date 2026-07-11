@@ -26,6 +26,26 @@ import { applyAgentPlanOnReady } from '../agent/apply-agent-plan-on-ready'
 import { approvalRequestFromJobFailure, isApprovalRequiredJobFailure } from '../agent/approval-job-failure'
 import { agentResponseFromTrace, errorClassFromTrace } from '../agent/run-trace-state'
 
+const approvalRequestsInFlight = new Map<string, Set<string>>()
+const approvedPermissionCalls = new Map<string, Set<string>>()
+
+function hasPermissionCall(callsByRun: Map<string, Set<string>>, runId: string, callId: string): boolean {
+  return callsByRun.get(runId)?.has(callId) ?? false
+}
+
+function addPermissionCall(callsByRun: Map<string, Set<string>>, runId: string, callId: string): void {
+  const calls = callsByRun.get(runId) ?? new Set<string>()
+  calls.add(callId)
+  callsByRun.set(runId, calls)
+}
+
+function removePermissionCall(callsByRun: Map<string, Set<string>>, runId: string, callId: string): void {
+  const calls = callsByRun.get(runId)
+  if (!calls) return
+  calls.delete(callId)
+  if (calls.size === 0) callsByRun.delete(runId)
+}
+
 interface JobFailedError {
   errorClass: string
   message: string
@@ -35,7 +55,7 @@ interface JobFailedError {
 
 /** chatStore 依赖的 preload API 子集（可注入 fake 以便测试）。 */
 export interface ChatStoreApi {
-  sendCanvasChat(input: { message: string; agentId: string }): Promise<{ runId: string; jobId: string; messageId: string; status: 'pending' }>
+  sendCanvasChat(input: { message: string; agentId: string; workflowId?: string }): Promise<{ runId: string; jobId: string; messageId: string; status: 'pending' }>
   getCanvasPlan(input: { messageId: string }): Promise<CanvasPlan>
   approveAgentTool?(input: { runId: string; callId: string; approvedBy: string; scope?: PermissionGrantScope }): Promise<{ runId: string; jobId: string; status: 'pending' } | { errorClass: string; message: string; retryable: false }>
   denyAgentTool?(input: { runId: string; callId: string; deniedBy: string }): Promise<{ runId: string; status: 'aborted'; errorClass: 'agent_tool_denied' } | { errorClass: string; message: string; retryable: boolean }>
@@ -63,7 +83,7 @@ export interface ChatStoreState {
   pending: { messageId: string; runId: string; jobId: string; agentAutoRun: boolean } | null
   activeRunId: string | null
   activeRunView: AgentRunViewResponse | null
-  send(input: { message: string; agentId: string; agentAutoRun?: boolean | undefined }): Promise<void>
+  send(input: { message: string; agentId: string; agentAutoRun?: boolean | undefined; workflowId?: string | undefined }): Promise<void>
   approvePermission(callId: string, scope?: PermissionGrantScope): Promise<void>
   denyPermission(callId: string): Promise<void>
   setAutoExecute(value: boolean): void
@@ -130,6 +150,8 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
 
   function markRunTerminal(runId: string): void {
     terminalRunIds.add(runId)
+    approvedPermissionCalls.delete(runId)
+    approvalRequestsInFlight.delete(runId)
     nextReconcileGeneration(runId)
   }
 
@@ -337,7 +359,11 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
         }))
 
         try {
-          const ticket = await deps.api.sendCanvasChat({ message: input.message, agentId: input.agentId })
+          const ticket = await deps.api.sendCanvasChat({
+            message: input.message,
+            agentId: input.agentId,
+            ...(input.workflowId ? { workflowId: input.workflowId } : {})
+          })
           if (operationId !== conversationOperationId) {
             return
           }
@@ -377,16 +403,20 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
 
       async approvePermission(callId, scope = 'session') {
         const pending = get().pending
-        if (!pending || !deps.api.approveAgentTool) {
+        if (!pending || get().permissionBusy || hasPermissionCall(approvalRequestsInFlight, pending.runId, callId)
+          || hasPermissionCall(approvedPermissionCalls, pending.runId, callId) || !deps.api.approveAgentTool) {
           return
         }
 
+        addPermissionCall(approvalRequestsInFlight, pending.runId, callId)
         set({ permissionBusy: true })
         try {
           const result = await deps.api.approveAgentTool({ runId: pending.runId, callId, approvedBy: 'chat-user', scope })
           if ('errorClass' in result) {
             throw new Error(result.message)
           }
+
+          addPermissionCall(approvedPermissionCalls, pending.runId, callId)
 
           applyToPending({ type: 'permissionResolved', callId, decision: 'approved', scope })
           set({ pending: { ...pending, jobId: result.jobId }, busy: true })
@@ -398,6 +428,7 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
           applyToPending({ type: 'runFailed', errorClass: 'agent_approval_failed', message: '工具批准失败，请重试。', retryable: true })
           set({ busy: true })
         } finally {
+          removePermissionCall(approvalRequestsInFlight, pending.runId, callId)
           set({ permissionBusy: false })
         }
       },

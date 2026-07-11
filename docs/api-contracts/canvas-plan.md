@@ -28,6 +28,7 @@ Request:
 interface CanvasChatSendRequest {
   message: string
   agentId?: string
+  workflowId?: string
 }
 ```
 
@@ -46,6 +47,8 @@ Rules:
 
 - `canvas.chatSend` SHALL 入队一个 `agent.run` 任务，并在一秒内返回，不
   同步返回 CanvasPlan。
+- 当请求提供非空 `workflowId` 时，Run Spine、用户/assistant 历史、上下文包、
+  知识检索与画布快照 SHALL 全程使用该工作流；省略时才使用默认工作流。
 - 响应 SHALL 包含 `runId`，以便渲染层 UI 能通过 `agent.getRun` 恢复 Agent
   的 trace 摘要。
 - 编排任务 SHALL 在主进程中运行 orchestrator 的 AsyncGenerator，并通过

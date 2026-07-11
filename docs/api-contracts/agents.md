@@ -219,6 +219,8 @@ type ChildCanvasArtifactDraft =
 
 `agent.applyArtifact({ parentRunId, artifactId })` 仅接受已完成 child task 的 `draftGraph` artifact。主进程 SHALL 从 Run Spine 重建 parent、child task、child run 与 artifact；不得信任渲染进程传入的图数据。应用前 SHALL 验证 child task 归属 parent、child run 为 `completed`、artifact 归属 child run、artifact ID 已被该 task 引用，并再次验证 graph 结构及 lineage。任一检查失败 SHALL 返回非重试错误且不得创建 workflow graph version。通过后才写入新的不可变 graph version。
 
+渲染层在展示或启用 child `draftGraph` 应用按钮前 SHALL 复核同一组谱系事实：完成的 task `parentRunId` 等于当前 parent Run、child Run 的 trace `parentRunId` 相同、artifact 属于该 child Run 且被 task 引用、artifact lineage 的 `parentRunId` 与 `childRunId` 分别匹配 parent 和 child。此 UI 校验仅用于 fail closed 展示；主进程 apply gate 仍是最终可信边界。
+
 Events:
 
 ```ts

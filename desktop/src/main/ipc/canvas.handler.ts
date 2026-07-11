@@ -596,6 +596,9 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
   ipcMain.handle('canvas.chatSend', (_event, request) => {
     const message = isObject(request) && typeof request.message === 'string' ? request.message : ''
     const agentId = isObject(request) && typeof request.agentId === 'string' ? request.agentId : undefined
+    const workflowId = isObject(request) && typeof request.workflowId === 'string' && request.workflowId.trim().length > 0
+      ? request.workflowId
+      : undefined
 
     if (!dependencies.orchestrator) {
       return { runId: 'run-agent-unavailable', jobId: 'job-agent-unavailable', messageId: 'message-unavailable', status: 'pending' as const }
@@ -604,7 +607,8 @@ export function registerCanvasHandlers(ipcMain: IpcRegistrar, dependencies: Canv
     return dependencies.orchestrator.chatSend({
       message,
       agentId: agentId ?? DEFAULT_CHAT_AGENT_ID,
-      requestedBy: dependencies.currentUserId ?? 'user-local'
+      requestedBy: dependencies.currentUserId ?? 'user-local',
+      ...(workflowId ? { workflowId } : {})
     })
   })
 

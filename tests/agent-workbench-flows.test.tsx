@@ -566,6 +566,7 @@ describe('Local Agent Platform workbench flows', () => {
     await waitFor(() => expect(harness.api.sendCanvasChat).toHaveBeenCalledWith({
       message: '重新发送',
       agentId: 'general-purpose',
+      workflowId,
     }))
   })
 

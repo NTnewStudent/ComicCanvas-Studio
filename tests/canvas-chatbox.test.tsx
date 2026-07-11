@@ -8,7 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import CanvasChatBox from '../desktop/src/renderer/src/canvas/components/CanvasChatBox'
 import { AgentPermissionModal } from '../desktop/src/renderer/src/chat/agent/AgentPermissionModal'
-import type { AgentDefinition } from '../shared/agents'
+import type { AgentRunSnapshot } from '../shared/agent-run-events'
+import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
+import type { AgentDefinition, AgentRunViewResponse } from '../shared/agents'
 
 type ProgressHandler = (event: { jobId: string; message?: string; progress: number }) => void
 
@@ -106,7 +108,7 @@ describe('CanvasChatBox', () => {
       }),
     } as unknown as Window['comicCanvas']
 
-    render(<CanvasChatBox open onToggle={vi.fn()} onApplyPlan={vi.fn()} />)
+    render(<CanvasChatBox open onToggle={vi.fn()} onApplyPlan={vi.fn()} workflowId="workflow-rainy-alley" />)
 
     const textbox = await screen.findByRole('textbox', { name: 'Canvas floating agent message' })
     expect(textbox).toBeEnabled()
@@ -124,6 +126,7 @@ describe('CanvasChatBox', () => {
     await waitFor(() => expect(sendCanvasChat).toHaveBeenCalledWith({
       message: '生成一个角色和首帧',
       agentId: 'canvas',
+      workflowId: 'workflow-rainy-alley',
     }))
     expect(await screen.findByText('Agent 已排队：job-agent-1')).toBeInTheDocument()
     await waitFor(() => expect(getAgentRun).toHaveBeenCalledWith({ runId: 'run-agent-1' }))
@@ -270,6 +273,77 @@ describe('CanvasChatBox', () => {
     fireEvent.keyDown(textbox, { key: 'Enter' })
 
     expect(await screen.findByText('你好，我是 ComicCanvas 的通用 Agent。')).toBeInTheDocument()
+  })
+
+  it('applies a restored child draft through the compact inspector and refreshes its workflow canvas', async () => {
+    const parentSnapshot: AgentRunSnapshot = {
+      run: {
+        id: 'run-parent', threadId: 'workflow-rainy-alley', workflowId: 'workflow-rainy-alley', agentId: 'general-purpose',
+        status: 'completed', trigger: 'canvasChat', messageId: 'message-parent', policyProfileId: 'local-default', trace: {}, createdAt: 1, updatedAt: 2
+      },
+      events: [],
+      artifacts: [],
+      permissionGrants: [],
+      childTasks: [{
+        id: 'run-child', parentRunId: 'run-parent', roleId: 'canvas-operator', inputSummary: 'Create a rainy alley.',
+        effectiveTools: ['canvas.createNode'], status: 'completed', outputSummary: 'Created isolated draft.',
+        artifactIds: ['artifact-child-draft'], createdAt: 1, updatedAt: 2
+      }]
+    }
+    const childSnapshot: AgentRunSnapshot = {
+      ...parentSnapshot,
+      run: {
+        ...parentSnapshot.run, id: 'run-child', agentId: 'canvas-operator', messageId: 'message-child', trace: { parentRunId: 'run-parent' }
+      },
+      artifacts: [{
+        id: 'artifact-child-draft', runId: 'run-child', kind: 'draftGraph', title: '雨夜巷口草稿', summary: '隔离草稿', createdAt: 2,
+        payload: {
+          graph: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
+          lineage: { parentRunId: 'run-parent', childRunId: 'run-child', traceId: 'run-parent/run-child' },
+          warnings: ['需要父级确认'], dropped: []
+        }
+      }],
+      childTasks: []
+    }
+    const parentRun: AgentRunViewResponse = {
+      runId: 'run-parent', status: 'completed', trace: {}, snapshot: parentSnapshot, projection: projectAgentRunSnapshot(parentSnapshot)
+    }
+    const childRun: AgentRunViewResponse = {
+      runId: 'run-child', status: 'completed', trace: {}, snapshot: childSnapshot, projection: projectAgentRunSnapshot(childSnapshot)
+    }
+    const sendCanvasChat = vi.fn().mockResolvedValue({ runId: 'run-parent', jobId: 'job-parent', messageId: 'message-parent', status: 'pending' })
+    const getAgentRun = vi.fn().mockImplementation(({ runId }: { runId: string }) => Promise.resolve(runId === 'run-child' ? childRun : parentRun))
+    const applyAgentArtifact = vi.fn().mockResolvedValue({
+      graphVersion: 'graph-version-1', appliedNodeIds: [], appliedEdgeIds: [], dropped: [], traceId: 'trace-1'
+    })
+    const onDraftGraphApplied = vi.fn().mockResolvedValue(undefined)
+    window.comicCanvas = {
+      listAgents: vi.fn().mockResolvedValue([generalAgent]),
+      sendCanvasChat,
+      getAgentRun,
+      getCanvasPlan: vi.fn(),
+      applyAgentArtifact,
+      onCanvasPlanReady: vi.fn().mockReturnValue(vi.fn()),
+      onAgentResponseReady: vi.fn().mockReturnValue(vi.fn()),
+      onJobProgress: vi.fn().mockReturnValue(vi.fn())
+    } as unknown as Window['comicCanvas']
+
+    render(<CanvasChatBox open onToggle={vi.fn()} onApplyPlan={vi.fn()} workflowId="workflow-rainy-alley" onDraftGraphApplied={onDraftGraphApplied} />)
+
+    const textbox = await screen.findByRole('textbox', { name: 'Canvas floating agent message' })
+    fireEvent.change(textbox, { target: { value: '创建雨夜巷口分镜' } })
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+    await waitFor(() => expect(sendCanvasChat).toHaveBeenCalledWith({
+      message: '创建雨夜巷口分镜', agentId: 'general-purpose', workflowId: 'workflow-rainy-alley'
+    }))
+
+    fireEvent.click(await screen.findByRole('button', { name: '打开运行检查器' }))
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+    fireEvent.click(await screen.findByRole('tab', { name: '雨夜巷口草稿' }))
+    fireEvent.click(screen.getByRole('button', { name: '应用子画布草稿' }))
+
+    await waitFor(() => expect(applyAgentArtifact).toHaveBeenCalledWith({ parentRunId: 'run-parent', artifactId: 'artifact-child-draft' }))
+    expect(onDraftGraphApplied).toHaveBeenCalledTimes(1)
   })
 
   it('shows a visible assistant error when the floating chat Agent job fails', async () => {

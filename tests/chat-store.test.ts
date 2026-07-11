@@ -642,6 +642,145 @@ describe('chat store', () => {
     expect(store.getState().busy).toBe(true)
   })
 
+  it('golden: resumes an inline approval once and clears the waiting state after the answer arrives', async () => {
+    const approveAgentTool = vi.fn().mockResolvedValue({ runId: 'run-1', jobId: 'job-2', status: 'pending' })
+    const { api, handlers } = createFakeApi({ approveAgentTool })
+    const { store } = createChatStore({ api })
+
+    await store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' })
+    const request = {
+      runId: 'run-1', messageId: 'message-1', callId: 'call-search', toolId: 'web.search', reason: '联网搜索需要确认'
+    }
+    handlers.permissionRequired?.(request)
+    handlers.permissionRequired?.(request)
+
+    expect(store.getState().turns[1]!.blocks.filter((block) => block.kind === 'permission')).toHaveLength(1)
+
+    await store.getState().approvePermission('call-search', 'session')
+    handlers.responseReady?.({
+      runId: 'run-1',
+      messageId: 'message-1',
+      response: { type: 'answer', summary: 'Weather search', text: '明天晴朗。', dropped: [] }
+    })
+    await store.getState().approvePermission('call-search', 'session')
+
+    expect(approveAgentTool).toHaveBeenCalledTimes(1)
+    expect(store.getState().turns[1]).toMatchObject({ status: 'completed' })
+    expect(store.getState().turns[1]!.blocks).toContainEqual(expect.objectContaining({
+      kind: 'permission', callId: 'call-search', resolved: true, decision: 'approved', scope: 'session'
+    }))
+    expect(store.getState().turns[1]!.blocks).toContainEqual({ kind: 'text', markdown: '明天晴朗。', streaming: false })
+    expect(store.getState().busy).toBe(false)
+    expect(store.getState().pending).toBeNull()
+  })
+
+  it('does not queue a duplicate approval while the first approval request is still in flight', async () => {
+    let resolveApproval: ((value: { runId: string; jobId: string; status: 'pending' }) => void) | undefined
+    const approveAgentTool = vi.fn().mockImplementation(() => new Promise<{ runId: string; jobId: string; status: 'pending' }>((resolve) => {
+      resolveApproval = resolve
+    }))
+    const { api, handlers } = createFakeApi({ approveAgentTool })
+    const { store } = createChatStore({ api })
+
+    await store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' })
+    handlers.permissionRequired?.({
+      runId: 'run-1', messageId: 'message-1', callId: 'call-search', toolId: 'web.search', reason: '联网搜索需要确认'
+    })
+
+    const firstApproval = store.getState().approvePermission('call-search', 'session')
+    const duplicateApproval = store.getState().approvePermission('call-search', 'session')
+
+    expect(approveAgentTool).toHaveBeenCalledTimes(1)
+    resolveApproval?.({ runId: 'run-1', jobId: 'job-2', status: 'pending' })
+    await Promise.all([firstApproval, duplicateApproval])
+  })
+
+  it('does not queue a duplicate approval from separate workbench stores', async () => {
+    let resolveApproval: ((value: { runId: string; jobId: string; status: 'pending' }) => void) | undefined
+    const approveAgentTool = vi.fn().mockImplementation(() => new Promise<{ runId: string; jobId: string; status: 'pending' }>((resolve) => {
+      resolveApproval = resolve
+    }))
+    const first = createFakeApi({ approveAgentTool })
+    const second = createFakeApi({ approveAgentTool })
+    const firstStore = createChatStore({ api: first.api })
+    const secondStore = createChatStore({ api: second.api })
+
+    await Promise.all([
+      firstStore.store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' }),
+      secondStore.store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' })
+    ])
+    const request = { runId: 'run-1', messageId: 'message-1', callId: 'call-search-cross-store', toolId: 'web.search', reason: '联网搜索需要确认' }
+    first.handlers.permissionRequired?.(request)
+    second.handlers.permissionRequired?.(request)
+
+    const firstApproval = firstStore.store.getState().approvePermission('call-search-cross-store', 'session')
+    const secondApproval = secondStore.store.getState().approvePermission('call-search-cross-store', 'session')
+
+    expect(approveAgentTool).toHaveBeenCalledTimes(1)
+    resolveApproval?.({ runId: 'run-1', jobId: 'job-2', status: 'pending' })
+    await Promise.all([firstApproval, secondApproval])
+  })
+
+  it('does not queue a stale second-panel approval after the first approval has been accepted', async () => {
+    const approveAgentTool = vi.fn().mockResolvedValue({ runId: 'run-approval-after-success', jobId: 'job-2', status: 'pending' })
+    const first = createFakeApi({
+      approveAgentTool,
+      sendCanvasChat: vi.fn().mockResolvedValue({ runId: 'run-approval-after-success', jobId: 'job-1', messageId: 'message-1', status: 'pending' })
+    })
+    const second = createFakeApi({
+      approveAgentTool,
+      sendCanvasChat: vi.fn().mockResolvedValue({ runId: 'run-approval-after-success', jobId: 'job-1', messageId: 'message-1', status: 'pending' })
+    })
+    const firstStore = createChatStore({ api: first.api })
+    const secondStore = createChatStore({ api: second.api })
+    const request = { runId: 'run-approval-after-success', messageId: 'message-1', callId: 'call-after-success', toolId: 'web.search', reason: '联网搜索需要确认' }
+
+    await Promise.all([
+      firstStore.store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' }),
+      secondStore.store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' })
+    ])
+    first.handlers.permissionRequired?.(request)
+    second.handlers.permissionRequired?.(request)
+
+    await firstStore.store.getState().approvePermission('call-after-success', 'session')
+    await secondStore.store.getState().approvePermission('call-after-success', 'session')
+
+    expect(approveAgentTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps approvals for colon-containing run and call IDs independent', async () => {
+    const resolutions: Array<(value: { runId: string; jobId: string; status: 'pending' }) => void> = []
+    const approveAgentTool = vi.fn().mockImplementation(() => new Promise<{ runId: string; jobId: string; status: 'pending' }>((resolve) => {
+      resolutions.push(resolve)
+    }))
+    const first = createFakeApi({
+      approveAgentTool,
+      sendCanvasChat: vi.fn().mockResolvedValue({ runId: 'run:one', jobId: 'job-1', messageId: 'message-1', status: 'pending' })
+    })
+    const second = createFakeApi({
+      approveAgentTool,
+      sendCanvasChat: vi.fn().mockResolvedValue({ runId: 'run', jobId: 'job-2', messageId: 'message-2', status: 'pending' })
+    })
+    const firstStore = createChatStore({ api: first.api })
+    const secondStore = createChatStore({ api: second.api })
+
+    await Promise.all([
+      firstStore.store.getState().send({ message: '搜索一', agentId: 'general-purpose' }),
+      secondStore.store.getState().send({ message: '搜索二', agentId: 'general-purpose' })
+    ])
+    first.handlers.permissionRequired?.({ runId: 'run:one', messageId: 'message-1', callId: 'call', toolId: 'web.search', reason: '联网搜索需要确认' })
+    second.handlers.permissionRequired?.({ runId: 'run', messageId: 'message-2', callId: 'one:call', toolId: 'web.search', reason: '联网搜索需要确认' })
+
+    const firstApproval = firstStore.store.getState().approvePermission('call', 'session')
+    const secondApproval = secondStore.store.getState().approvePermission('one:call', 'session')
+
+    expect(approveAgentTool).toHaveBeenCalledTimes(2)
+    for (const resolve of resolutions) {
+      resolve({ runId: 'run', jobId: 'job-approved', status: 'pending' })
+    }
+    await Promise.all([firstApproval, secondApproval])
+  })
+
   it('keeps an approval pending when approval cannot be queued', async () => {
     const approveAgentTool = vi.fn().mockResolvedValue({
       errorClass: 'agent_approval_policy_changed',
@@ -655,12 +794,12 @@ describe('chat store', () => {
     handlers.permissionRequired?.({
       runId: 'run-1',
       messageId: 'message-1',
-      callId: 'call-9',
+      callId: 'call-approval-retry',
       toolId: 'web.search',
       reason: '联网搜索需要确认'
     })
 
-    await store.getState().approvePermission('call-9', 'session')
+    await store.getState().approvePermission('call-approval-retry', 'session')
 
     expect(store.getState().pending).toMatchObject({
       runId: 'run-1',
@@ -671,7 +810,7 @@ describe('chat store', () => {
     expect(store.getState().turns[1]!.blocks).toContainEqual(
       expect.objectContaining({
         kind: 'permission',
-        callId: 'call-9',
+        callId: 'call-approval-retry',
         resolved: false
       })
     )
@@ -1059,6 +1198,46 @@ describe('chat store', () => {
     store.getState().clearView()
     expect(store.getState().turns).toHaveLength(0)
     expect(store.getState().busy).toBe(false)
+  })
+
+  it('golden: restores answer, tool, permission, plan, and error blocks after an app restart', async () => {
+    const getCanvasPlan = vi.fn().mockResolvedValue(samplePlan)
+    const restartFixture = createRunView([
+      'run.created', 'tool.started', 'tool.completed', 'permission.requested', 'permission.resolved',
+      'response.ready', 'plan.ready', 'run.failed'
+    ])
+    const restartSnapshot: AgentRunSnapshot = {
+      ...restartFixture.snapshot!,
+      run: { ...restartFixture.snapshot!.run, status: 'failed' },
+      events: restartFixture.snapshot!.events
+    }
+    const restartRun: AgentRunViewResponse = {
+      runId: 'run-1', status: 'failed', trace: {}, snapshot: restartSnapshot,
+      projection: projectAgentRunSnapshot(restartSnapshot)
+    }
+    const getAgentRun = vi.fn().mockResolvedValue(restartRun)
+    const { api } = createFakeApi({
+      getCanvasPlan,
+      getAgentRun,
+      getChatHistory: vi.fn().mockResolvedValue([
+        { id: 'user-restart', role: 'user', runId: 'run-1', blocks: [{ kind: 'text', markdown: '生成雨夜巷口漫剧', streaming: false }], status: 'completed', createdAt: 1 }
+      ])
+    })
+    const { store } = createChatStore({ api })
+
+    await store.getState().restore('workflow-1')
+    await flush()
+
+    const restored = store.getState().turns[1]
+    expect(getAgentRun).toHaveBeenCalledWith({ runId: 'run-1' })
+    expect(restored).toMatchObject({ status: 'failed', runId: 'run-1' })
+    expect(restored?.blocks).toContainEqual(expect.objectContaining({ kind: 'toolCall', callId: 'call-1', status: 'completed' }))
+    expect(restored?.blocks).toContainEqual(expect.objectContaining({ kind: 'permission', callId: 'call-2', resolved: true, decision: 'approved' }))
+    expect(restored?.blocks).toContainEqual({ kind: 'text', markdown: 'Visible answer', streaming: false })
+    expect(restored?.blocks).toContainEqual({ kind: 'plan', planId: 'plan-1' })
+    expect(restored?.blocks).toContainEqual(expect.objectContaining({ kind: 'error', errorClass: 'event_fixture_failure', retryable: false }))
+    expect(getCanvasPlan).toHaveBeenCalledWith({ messageId: 'message-1' })
+    expect(store.getState().plansById['plan-1']).toEqual(samplePlan)
   })
 
   it('does not let late history restore erase a message sent while restore was loading', async () => {

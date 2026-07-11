@@ -662,7 +662,8 @@ describe('main process runtime wiring', () => {
 
       const ticket = await handlers.get('canvas.chatSend')?.({}, {
         message: '你好',
-        agentId: 'general-purpose'
+        agentId: 'general-purpose',
+        workflowId: 'workflow-rainy-alley'
       }) as { runId: string }
       await runtime.waitForIdleForTests()
 
@@ -670,10 +671,11 @@ describe('main process runtime wiring', () => {
         runId: string
         status: string
         projection?: { chatTurn: { blocks: Array<{ kind: string }> } }
-        snapshot?: { events: Array<{ type: string }> }
+        snapshot?: { run: { workflowId: string }; events: Array<{ type: string }> }
       }
 
       expect(run).toMatchObject({ runId: ticket.runId, status: 'completed' })
+      expect(run.snapshot?.run.workflowId).toBe('workflow-rainy-alley')
       expect(run.snapshot?.events.map((event) => event.type)).toContain('run.completed')
       expect(run.projection?.chatTurn.blocks.some((block) => block.kind === 'text')).toBe(true)
     } finally {

@@ -158,12 +158,51 @@ Repository-wide gates currently have pre-existing blockers outside this iteratio
 - `bun run lint`: 119 existing errors across unrelated main, canvas, generated `.js` tests, and legacy test fixtures.
 - `bun run verify:repo`: the tracked root `package-lock.json` violates the Bun-only repository check; it was introduced before this iteration.
 
-## Remaining Gaps
+## Known Limits Outside This Cutover
 
-- `ChatPanel` and `CanvasChatBox` share the same implementation but still create separate live store instances. Opening both does not yet guarantee one in-memory source of truth.
-- Restore currently reconciles only the latest persisted Run referenced by chat history; an older unresolved approval can remain hidden after a newer Run completes.
+- `ChatPanel` and `CanvasChatBox` share the same implementation but still create separate live store instances. In-flight approval keys are shared across those instances; the rest of their transient presentation state is not.
+- A local conversation permits one interactive pending Run at a time; while it is waiting for approval, the composer does not start another Run.
 - `RunInspector` renders the complete event list, including every persisted model delta, without virtualization or event compaction.
-- Artifact views are read-only; editing, accepting, rejecting, or mutating artifact content remains future work.
+- Artifact content is read-only; completed child draft graphs are the exception and can be applied only through the parent-gated `agent.applyArtifact` path.
 - Browser automation covers the primary typed-answer restart path; the complete answer/tool/plan/error matrix remains covered across jsdom and service-level suites rather than one end-to-end browser suite.
 
-These gaps remain unchecked in `specs/local-agent-platform/tasks.md` and should be completed before calling the whole local Agent platform finished.
+These limits are outside the local-first Phase 6 acceptance scope. They do not leave unchecked items in `specs/local-agent-platform/tasks.md`.
+
+## Phase 6 Cutover - 2026-07-12
+
+All 40 Local Agent Platform tasks are now checked in `specs/local-agent-platform/tasks.md`.
+
+New golden scenarios cover:
+
+- Inline approval replay: duplicate permission events stay idempotent across both Workbench entry points, approval is sent once, and the waiting state clears when the visible answer arrives.
+- Comic scene workflow: the parent task tree loads only its linked child draft, shows the safe draft warning and CanvasPlan preview, then routes the explicit apply action through the parent gate; the canvas entry reloads the applied workflow graph afterwards.
+- Application restart: persisted answer, tool, permission, plan, and error blocks restore together, while the referenced plan is rehydrated for its PlanCard.
+- Non-default canvas workflows: the compact chat entry preserves the selected workflow through IPC, durable Run, history, context, knowledge retrieval, and child-draft application refresh.
+- Child-draft trust boundary: the inspector fails closed unless the completed task, child trace, artifact ownership/reference, and draft lineage all point to the active parent Run.
+- Cross-entry approval idempotency: accepted approvals remain deduplicated for the active renderer session, while run/call IDs containing colons remain independent.
+
+Fresh automated verification:
+
+```text
+bun scripts/run-vitest.mjs run \
+  tests/agent-golden-scenarios.test.ts tests/chat-store.test.ts tests/chat-history.test.ts \
+  tests/agent-run-projector.test.ts tests/runtime-agent-spawn-ipc.test.ts \
+  tests/agent-workbench.test.tsx tests/child-artifact-apply-gate.test.ts \
+  tests/sub-agent-isolation.test.ts tests/agent-spawn-tool.test.ts \
+  tests/agent-context-loop.test.ts tests/gateway-agent-loop-model.test.ts \
+  tests/web-search-tool.test.ts tests/context-builder.test.ts tests/knowledge-store.test.ts \
+  tests/local-memory.handler.test.ts --reporter=dot
+
+15 test files, 161 tests passed
+bun run typecheck
+git diff --check
+```
+
+Full repository regression on the same working tree also passed:
+
+```text
+bun run test
+173 test files, 849 tests passed
+```
+
+Repository-wide `lint` and `verify:repo` remain affected by the pre-existing blockers documented above; they are not caused by this Local Agent Platform cutover.

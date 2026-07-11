@@ -6,7 +6,7 @@
 import { AtSign, Bot, Loader2, PanelRight } from 'lucide-react'
 import { useState, type ReactNode, type Ref } from 'react'
 
-import type { PermissionGrantScope } from '../../../../../../shared/agent-run-events'
+import type { AgentArtifactViewModel, PermissionGrantScope } from '../../../../../../shared/agent-run-events'
 import type { AgentRunViewResponse } from '../../../../../../shared/agents'
 import type { ChatTurn } from '../../../../../../shared/chat-blocks'
 import { cn } from '../../lib/cn'
@@ -28,6 +28,8 @@ export interface AgentWorkbenchProps {
   renderPlan: (planId: string) => ReactNode
   onApprovePermission: (callId: string, scope: PermissionGrantScope) => void
   onDenyPermission: (callId: string) => void
+  onApplyDraftGraph?: ((artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>) => Promise<void>) | undefined
+  getChildRun?: ((runId: string) => Promise<AgentRunViewResponse>) | undefined
   headerActions?: ReactNode
   composer: ReactNode
   emptyText?: string | undefined
@@ -53,6 +55,8 @@ export function AgentWorkbench({
   renderPlan,
   onApprovePermission,
   onDenyPermission,
+  onApplyDraftGraph,
+  getChildRun,
   headerActions,
   composer,
   emptyText = '让内置 Agent 起草文本、图片和视频节点，或直接提问、读取与检索项目文件。'
@@ -156,7 +160,13 @@ export function AgentWorkbench({
           <div className="shrink-0 border-t border-border-secondary bg-bg-panel">{composer}</div>
         </div>
 
-        {showInspector && <RunInspector runView={runView} />}
+        {showInspector && (
+          <RunInspector
+            runView={runView}
+            {...(onApplyDraftGraph ? { onApplyDraftGraph } : {})}
+            {...(getChildRun ? { getChildRun } : {})}
+          />
+        )}
       </div>
     </section>
   )

@@ -2367,6 +2367,8 @@ function CanvasPageInner(): JSX.Element {
           open={showChatBox}
           onToggle={() => setShowChatBox((v) => !v)}
           onApplyPlan={handleApplyPlan}
+          onDraftGraphApplied={() => loadGraphForWorkflow(currentWorkflowId)}
+          workflowId={currentWorkflowId}
         />
       </div>
       </div>

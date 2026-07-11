@@ -11,7 +11,7 @@ import {
   TriangleAlert,
   Wrench
 } from 'lucide-react'
-import { useId, useMemo, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useMemo, useState, type KeyboardEvent } from 'react'
 
 import {
   AGENT_ARTIFACT_KINDS,
@@ -30,6 +30,8 @@ import { ArtifactPanel } from './ArtifactPanel'
 export interface RunInspectorProps {
   runView: AgentRunViewResponse | null
   className?: string | undefined
+  onApplyDraftGraph?: ((artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>) => Promise<void>) | undefined
+  getChildRun?: ((runId: string) => Promise<AgentRunViewResponse>) | undefined
 }
 
 type InspectorTab = 'run' | 'artifacts'
@@ -319,8 +321,9 @@ function formatEventTime(timestamp: number): string {
  * @param props - Active run snapshot and optional layout class.
  * @returns Inspector sidebar.
  */
-export function RunInspector({ runView, className }: RunInspectorProps): JSX.Element {
+export function RunInspector({ runView, className, onApplyDraftGraph, getChildRun }: RunInspectorProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>('run')
+  const [childArtifacts, setChildArtifacts] = useState<AgentArtifactViewModel[]>([])
   const tabInstanceId = useId()
   const projection = useMemo(() => {
     if (runView?.projection) {
@@ -347,6 +350,51 @@ export function RunInspector({ runView, className }: RunInspectorProps): JSX.Ele
     () => new Map((runView?.snapshot?.childTasks ?? []).map((task) => [task.id, task])),
     [runView?.snapshot?.childTasks]
   )
+  const childArtifactTasks = useMemo(() => {
+    const parentRunId = runView?.snapshot?.run.id
+    return (runView?.snapshot?.childTasks ?? []).filter((task) => {
+      return task.parentRunId === parentRunId && task.status === 'completed' && task.artifactIds.length > 0
+    })
+  }, [runView?.snapshot?.childTasks, runView?.snapshot?.run.id])
+  const childArtifactTaskKey = useMemo(() => {
+    return childArtifactTasks.map((task) => `${task.id}:${task.artifactIds.join(',')}`).join('|')
+  }, [childArtifactTasks])
+  const visibleArtifacts = useMemo(() => [...artifacts, ...childArtifacts], [artifacts, childArtifacts])
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!getChildRun || childArtifactTasks.length === 0) {
+      setChildArtifacts([])
+      return () => { cancelled = true }
+    }
+
+    void Promise.all(childArtifactTasks.map(async (task) => ({ task, run: await getChildRun(task.id) })))
+      .then((children) => {
+        if (cancelled) return
+        const nextArtifacts = children.flatMap(({ task, run }) => {
+          const snapshot = run.snapshot
+          if (!snapshot || snapshot.run.id !== task.id || snapshot.run.trace.parentRunId !== runView?.snapshot?.run.id) return []
+          const linkedIds = new Set(task.artifactIds)
+          return projectAgentArtifacts(snapshot.artifacts.filter((artifact) => {
+            return artifact.runId === task.id
+              && linkedIds.has(artifact.id)
+              && (artifact.kind !== 'draftGraph' || (
+                isRecord(artifact.payload)
+                && isRecord(artifact.payload.lineage)
+                && artifact.payload.lineage.parentRunId === runView?.snapshot?.run.id
+                && artifact.payload.lineage.childRunId === task.id
+              ))
+          }))
+        })
+        setChildArtifacts(nextArtifacts)
+      })
+      .catch(() => {
+        if (!cancelled) setChildArtifacts([])
+      })
+
+    return () => { cancelled = true }
+  }, [childArtifactTaskKey, childArtifactTasks, getChildRun])
   const runTabId = `${tabInstanceId}-inspector-tab-run`
   const artifactsTabId = `${tabInstanceId}-inspector-tab-artifacts`
   const runPanelId = `${tabInstanceId}-inspector-panel-run`
@@ -565,10 +613,11 @@ export function RunInspector({ runView, className }: RunInspectorProps): JSX.Ele
               className="outline-none focus-visible:ring-1 focus-visible:ring-brand"
             >
               <ArtifactPanel
-                artifacts={artifacts}
+                artifacts={visibleArtifacts}
                 onConfirmMemorySuggestion={(artifactId) => {
                   void window.comicCanvas.confirmMemorySuggestion({ artifactId, confirmed: true })
                 }}
+                {...(onApplyDraftGraph ? { onApplyDraftGraph } : {})}
               />
             </div>
           </div>

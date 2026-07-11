@@ -170,6 +170,7 @@ export interface OrchestratorChatInput {
   agentId?: string
   trigger?: AgentTriggerKind
   requestedBy: string
+  workflowId?: string
 }
 
 export interface OrchestratorChatTicket {
@@ -1872,16 +1873,16 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     agentId: string
     trigger: AgentTriggerKind
     intentAnalysis: AgentIntentAnalysis
+    workflowId: string
   }): void {
     if (!options.runSpine) {
       return
     }
 
-    const workflowId = options.workflowId ?? 'default'
     options.runSpine.createRun({
       runId: input.runId,
-      threadId: workflowId,
-      workflowId,
+      threadId: input.workflowId,
+      workflowId: input.workflowId,
       messageId: input.messageId,
       jobId: input.jobId,
       agentId: input.agentId,
@@ -1891,6 +1892,13 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     options.runSpine.appendEvent(input.runId, 'intent.analyzed', { ...input.intentAnalysis })
   }
 
+  function workflowIdForRun(runId: string, fallback?: string): string {
+    return options.runSpine?.getSnapshot(runId)?.run.workflowId
+      ?? fallback
+      ?? options.workflowId
+      ?? 'default'
+  }
+
   function submitRun(input: {
     message: string
     agentId: string
@@ -1898,9 +1906,11 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     requestedBy: string
     intentAnalysis: AgentIntentAnalysis
     contextPolicyOverride?: AgentRunRequest['contextPolicyOverride']
+    workflowId?: string
   }): { runId: string; messageId: string; jobId: string } {
     const messageId = idFactory('message')
     const runId = idFactory('run')
+    const workflowId = input.workflowId ?? options.workflowId ?? 'default'
     const committed = transaction(() => {
       const ticket = options.queue.enqueue({
         type: 'agent.run',
@@ -1911,6 +1921,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           message: input.message,
           agentId: input.agentId,
           trigger: input.trigger,
+          workflowId,
           ...(input.contextPolicyOverride ? { contextPolicyOverride: input.contextPolicyOverride } : {})
         },
         requestedBy: { type: 'user', id: input.requestedBy }
@@ -1931,12 +1942,13 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         jobId: ticket.jobId,
         agentId: input.agentId,
         trigger: input.trigger,
-        intentAnalysis: input.intentAnalysis
+        intentAnalysis: input.intentAnalysis,
+        workflowId
       })
       persistRun(run)
       options.chatMessages?.create({
         id: messageId,
-        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+        workflowId,
         agentRunId: runId,
         role: 'user',
         content: input.message,
@@ -1957,6 +1969,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
   ): StoredRun {
     const failedRun = runFailureTrace(runId, messageId, runsById.get(runId), error)
     const snapshot = options.runSpine?.getSnapshot(runId)
+    const workflowId = snapshot?.run.workflowId ?? workflowIdForRun(runId)
     if (!options.runSpine || !snapshot) {
       const failedTurn = applyAgentEvent(
         createAssistantTurn({
@@ -1976,7 +1989,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         persistRun(failedRun)
         persistTerminalAssistantTurn({
           ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
-          ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+          workflowId,
           clock
         }, {
           runId,
@@ -2052,7 +2065,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       persistTerminalAssistantTurn({
         ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
         ...(options.runSpine ? { runSpine: options.runSpine } : {}),
-        ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+        workflowId,
         clock
       }, {
         runId,
@@ -2100,7 +2113,8 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         agentId,
         trigger,
         requestedBy: input.requestedBy,
-        intentAnalysis
+        intentAnalysis,
+        ...(input.workflowId ? { workflowId: input.workflowId } : {})
       })
 
       return {
@@ -2192,6 +2206,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
             message: run.pausedState?.userMessage ?? '',
             agentId: run.agentId,
             trigger: run.trigger,
+            workflowId: workflowIdForRun(run.runId),
             approval,
             approvedBy: input.approvedBy,
             approvalScope,
@@ -2262,6 +2277,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       }
 
       const completedAt = clock()
+      const workflowId = workflowIdForRun(run.runId)
       const deniedRun: StoredRun = {
         ...run,
         status: 'aborted',
@@ -2283,7 +2299,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
             persistTerminalAssistantTurn({
               ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
               ...(options.runSpine ? { runSpine: options.runSpine } : {}),
-              ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+              workflowId,
               clock
             }, {
               runId: run.runId,
@@ -2317,7 +2333,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
             persistRun(deniedRun)
             persistTerminalAssistantTurn({
               ...(options.chatMessages ? { chatMessages: options.chatMessages } : {}),
-              ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+              workflowId,
               clock
             }, {
               runId: run.runId,
@@ -2389,6 +2405,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         const approval = approvalPayload(job.payload)
 
         if (approval) {
+          const workflowId = workflowIdForRun(approval.runId)
           const run = loadRun(approval.runId)
           const resolvedAgent = options.registry ? options.registry.get(approval.agentId) : fallbackOrchestratorAgent(approval.agentId)
 
@@ -2470,7 +2487,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               transaction,
               agentId: approval.agentId,
               trigger: approval.trigger,
-              ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+              workflowId,
               clock
             })
             reconcileApprovalChild(result.runId, 'completed')
@@ -2492,6 +2509,10 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         const message = typeof job.payload.message === 'string' ? job.payload.message : ''
         const agentId = typeof job.payload.agentId === 'string' ? job.payload.agentId : DEFAULT_CHAT_AGENT_ID
         const trigger = typeof job.payload.trigger === 'string' ? job.payload.trigger as AgentTriggerKind : 'canvasChat'
+        const workflowId = workflowIdForRun(
+          runId,
+          typeof job.payload.workflowId === 'string' && job.payload.workflowId.trim().length > 0 ? job.payload.workflowId : undefined
+        )
         const intentAnalysis = analyzeAgentIntent(message)
         const resolvedAgent = options.registry ? options.registry.get(agentId) : fallbackOrchestratorAgent(agentId)
         if (!resolvedAgent) {
@@ -2531,24 +2552,24 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         })
 
         // Load recent workflow conversation so follow-up messages keep context.
-        const history = options.chatMessages && options.workflowId
-          ? options.chatMessages.listByWorkflowId(options.workflowId)
+        const history = options.chatMessages
+          ? options.chatMessages.listByWorkflowId(workflowId)
               .filter((record) => record.id !== messageId && (record.role === 'user' || record.role === 'assistant') && record.content.trim().length > 0)
               .slice(-10)
               .map((record) => ({ role: record.role as 'user' | 'assistant', content: record.content }))
           : []
 
         // Build a bounded context pack (canvas summary, asset hints, recent messages).
-        const recentMessages = options.chatMessages && options.workflowId
-          ? options.chatMessages.listByWorkflowId(options.workflowId)
+        const recentMessages = options.chatMessages
+          ? options.chatMessages.listByWorkflowId(workflowId)
               .filter((record) => record.id !== messageId && (record.role === 'user' || record.role === 'assistant'))
           : []
         const knowledgeChunks = agent.contextPolicy.includeKnowledge && options.knowledgeStore
           ? options.knowledgeStore.retrieve({
               query: message,
               scope: {
-                projectId: options.workflowId ?? 'default',
-                userApprovedSourceIds: [options.workflowId ?? 'default']
+                projectId: workflowId,
+                userApprovedSourceIds: [workflowId]
               },
               limit: 5,
               retrievalMode: 'lexical'
@@ -2562,13 +2583,13 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
         const contextResult = buildAgentContext({
           agentId,
           policy: agent.contextPolicy,
-          workflowId: options.workflowId ?? 'default',
+          workflowId,
           recentMessages,
           ...(knowledgeChunks ? { knowledgeChunks } : {}),
           ...(options.getCanvasGraph && agent.contextPolicy.includeCanvasGraph
             ? {
                 canvas: {
-                  graph: options.getCanvasGraph(options.workflowId),
+                  graph: options.getCanvasGraph(workflowId),
                   ...(options.getSelectedNodeIds ? { selectedNodeIds: options.getSelectedNodeIds() } : {})
                 }
               }
@@ -2642,7 +2663,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
             transaction,
             agentId,
             trigger,
-            ...(options.workflowId ? { workflowId: options.workflowId } : {}),
+            workflowId,
             clock
           })
 

@@ -16,7 +16,7 @@ export default function ChatPage(): JSX.Element {
   return (
     <div className="flex h-full min-h-0 justify-center p-4 md:p-6">
       <div className="flex h-full min-h-0 w-full max-w-6xl flex-col">
-        <ChatPanel onApplyPlan={handleApplyPlan} />
+        <ChatPanel onApplyPlan={handleApplyPlan} onDraftGraphApplied={handleApplyPlan} />
       </div>
     </div>
   )

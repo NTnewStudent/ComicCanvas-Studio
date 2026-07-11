@@ -362,7 +362,7 @@ export interface WorkflowGraphValidationResponse {
 }
 
 export interface IpcRequestMap {
-  'canvas.chatSend': { message: string; agentId?: string }
+  'canvas.chatSend': { message: string; agentId?: string; workflowId?: string }
   'canvas.chatGetPlan': { messageId: string }
   'canvas.applyPlan': CanvasApplyPlanRequest
   'canvas.runPlan': CanvasRunPlanRequest

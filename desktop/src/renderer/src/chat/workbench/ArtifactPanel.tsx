@@ -6,6 +6,7 @@
 import {
   Activity,
   Brain,
+  Check,
   CircleHelp,
   FileText,
   GitBranch,
@@ -13,6 +14,7 @@ import {
   PackageOpen,
   Search,
   TriangleAlert,
+  Loader2,
   type LucideIcon
 } from 'lucide-react'
 import {
@@ -36,6 +38,7 @@ import { cn } from '../../lib/cn'
 export interface ArtifactPanelProps {
   artifacts: AgentArtifactViewModel[]
   onConfirmMemorySuggestion?: (artifactId: string) => void
+  onApplyDraftGraph?: (artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>) => Promise<void>
 }
 
 const ARTIFACT_ICONS: Record<AgentArtifactViewModel['viewType'], LucideIcon> = {
@@ -504,19 +507,62 @@ function FallbackView({
 }
 
 function DraftGraphView({
-  artifact
+  artifact,
+  onApply
 }: {
   artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>
+  onApply?: ((artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>) => Promise<void>) | undefined
 }): JSX.Element {
+  const [applyState, setApplyState] = useState<'idle' | 'applying' | 'applied' | 'failed'>('idle')
+
+  async function applyDraft(): Promise<void> {
+    if (!onApply || applyState !== 'idle') return
+    setApplyState('applying')
+    try {
+      await onApply(artifact)
+      setApplyState('applied')
+    } catch {
+      setApplyState('failed')
+    }
+  }
+
   return (
     <div className="min-w-0 space-y-3 text-[10px] text-text-secondary">
       <p className="m-0">{artifact.nodes.length} 个节点 · {artifact.edges.length} 条连线</p>
       {artifact.warnings.map((warning) => <p key={warning} className="m-0 text-semantic-warning">{warning}</p>)}
+      {onApply && (applyState === 'applied' ? (
+        <p className="m-0 inline-flex items-center gap-1.5 text-semantic-success">
+          <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          已应用到画布
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            aria-label="应用子画布草稿"
+            disabled={applyState === 'applying'}
+            onClick={() => { void applyDraft() }}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-3 text-[11px] font-semibold text-bg-base transition-colors hover:bg-brand-hover disabled:cursor-wait disabled:opacity-50"
+          >
+            {applyState === 'applying' && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+            应用到画布
+          </button>
+          {applyState === 'failed' && <span className="text-semantic-negative">应用失败，请重试。</span>}
+        </div>
+      ))}
     </div>
   )
 }
 
-function ArtifactBody({ artifact, onConfirmMemorySuggestion }: { artifact: AgentArtifactViewModel; onConfirmMemorySuggestion?: ((artifactId: string) => void) | undefined }): JSX.Element {
+function ArtifactBody({
+  artifact,
+  onConfirmMemorySuggestion,
+  onApplyDraftGraph
+}: {
+  artifact: AgentArtifactViewModel
+  onConfirmMemorySuggestion?: ((artifactId: string) => void) | undefined
+  onApplyDraftGraph?: ((artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>) => Promise<void>) | undefined
+}): JSX.Element {
   switch (artifact.viewType) {
     case 'answer':
       return <AnswerView artifact={artifact} />
@@ -525,7 +571,7 @@ function ArtifactBody({ artifact, onConfirmMemorySuggestion }: { artifact: Agent
     case 'canvasPlan':
       return <CanvasPlanView artifact={artifact} />
     case 'draftGraph':
-      return <DraftGraphView artifact={artifact} />
+      return <DraftGraphView artifact={artifact} onApply={onApplyDraftGraph} />
     case 'canvasPatchDraft':
       return <CanvasPatchDraftView artifact={artifact} />
     case 'searchSummary':
@@ -544,7 +590,7 @@ function ArtifactBody({ artifact, onConfirmMemorySuggestion }: { artifact: Agent
  * @param props - Projected artifact view models.
  * @returns Artifact tablist and selected detail panel.
  */
-export function ArtifactPanel({ artifacts, onConfirmMemorySuggestion }: ArtifactPanelProps): JSX.Element {
+export function ArtifactPanel({ artifacts, onConfirmMemorySuggestion, onApplyDraftGraph }: ArtifactPanelProps): JSX.Element {
   const instanceId = useId()
   const selectionKeys = useMemo(
     () => new Set(artifacts.map((artifact) => `${artifact.runId}:${artifact.id}`)),
@@ -657,7 +703,11 @@ export function ArtifactPanel({ artifacts, onConfirmMemorySuggestion }: Artifact
                 {artifact.summary}
               </p>
             </div>
-            <ArtifactBody artifact={artifact} onConfirmMemorySuggestion={onConfirmMemorySuggestion} />
+            <ArtifactBody
+              artifact={artifact}
+              onConfirmMemorySuggestion={onConfirmMemorySuggestion}
+              onApplyDraftGraph={onApplyDraftGraph}
+            />
           </article>
         )
       })}

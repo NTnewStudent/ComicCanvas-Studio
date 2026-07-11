@@ -15,6 +15,7 @@ import { Bot, Check, ChevronDown, Loader2, Send } from 'lucide-react'
 import { useStore } from 'zustand'
 
 import type { AgentDefinition } from '../../../../../../shared/agents'
+import type { AgentArtifactViewModel } from '../../../../../../shared/agent-run-events'
 import type { CanvasPlan } from '../../../../../../shared/plan'
 import { cn } from '../../lib/cn'
 import { AgentMentionPopover } from '../../chat/AgentMentionPopover'
@@ -28,6 +29,7 @@ export interface CanvasChatBoxProps {
   onToggle: () => void
   agentEnabled?: boolean
   onApplyPlan: (plan: CanvasPlan, options: ApplyPlanOptions) => void
+  onDraftGraphApplied?: (() => Promise<void>) | undefined
   /** 会话恢复用的 workflow 作用域。 */
   workflowId?: string
 }
@@ -80,7 +82,7 @@ function storeApiFromPreload(): ChatStoreApi | null {
  * @param props - 面板开合、Plan 应用回调与 workflow 作用域。
  * @returns 浮动对话组件。
  */
-const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, workflowId = 'default' }: CanvasChatBoxProps): JSX.Element => {
+const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, onDraftGraphApplied, workflowId = 'default' }: CanvasChatBoxProps): JSX.Element => {
   const [input, setInput] = useState('')
   const [caretIndex, setCaretIndex] = useState(0)
   const [agents, setAgents] = useState<AgentDefinition[]>([])
@@ -91,11 +93,16 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, workf
   const [fabX, setFabX] = useState<number | null>(null)
   const dragRef = useRef({ active: false, startX: 0, startFabX: 0, moved: false })
   const onApplyPlanRef = useRef(onApplyPlan)
+  const onDraftGraphAppliedRef = useRef(onDraftGraphApplied)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     onApplyPlanRef.current = onApplyPlan
   }, [onApplyPlan])
+
+  useEffect(() => {
+    onDraftGraphAppliedRef.current = onDraftGraphApplied
+  }, [onDraftGraphApplied])
 
   const handle = useMemo(() => {
     const storeApi = storeApiFromPreload()
@@ -231,10 +238,11 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, workf
       message: content,
       agentId: selectedAgent?.id ?? DEFAULT_AGENT_ID,
       agentAutoRun: selectedAgent?.triggerPolicy.autoRun,
+      ...(workflowId !== 'default' ? { workflowId } : {})
     })
     setInput('')
     setCaretIndex(0)
-  }, [agentEnabled, busy, handle, input, selectedAgent])
+  }, [agentEnabled, busy, handle, input, selectedAgent, workflowId])
 
   /* ── Keyboard: Enter sends, Shift+Enter newline ── */
   const handleKeyDown = useCallback(
@@ -313,6 +321,17 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, workf
       <ChevronDown className="h-4 w-4" aria-hidden="true" />
     </button>
   )
+
+  async function applyDraftGraph(artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>): Promise<void> {
+    const result = await window.comicCanvas.applyAgentArtifact({
+      parentRunId: artifact.lineage.parentRunId,
+      artifactId: artifact.id
+    })
+    if ('errorClass' in result) {
+      throw new Error(result.message)
+    }
+    await onDraftGraphAppliedRef.current?.()
+  }
 
   const composer = (
     <div className="px-4 pb-3 pt-3">
@@ -433,6 +452,8 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, workf
           renderPlan={renderPlan}
           onApprovePermission={(callId, scope) => { void handle?.store.getState().approvePermission(callId, scope) }}
           onDenyPermission={(callId) => { void handle?.store.getState().denyPermission(callId) }}
+          onApplyDraftGraph={applyDraftGraph}
+          getChildRun={(runId) => window.comicCanvas.getAgentRun({ runId })}
           headerActions={headerActions}
           composer={composer}
         />
