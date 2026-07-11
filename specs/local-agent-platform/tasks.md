@@ -54,7 +54,7 @@
 
 ## Phase 6 - Golden Scenarios And Cutover
 
-- [ ] 35. Add golden scenario tests for `你好`, `你是谁`, `明天星期几`, and `你知道 Java 吗` producing visible answers without canvas mutation. _(R3, R9)_
+- [x] 35. Add golden scenario tests for `你好`, `你是谁`, `明天星期几`, and `你知道 Java 吗` producing visible answers without canvas mutation. _(R3, R9)_
 - [ ] 36. Add golden scenario for inline approval resume with no stuck spinner and no repeated unnecessary prompts. _(R6, R9)_
 - [ ] 37. Add golden scenario for comic scene workflow: child task tree, PlanCard, warnings, apply gate. _(R4, R5, R9)_
 - [ ] 38. Add golden scenario for app restart restoring answer/tool/permission/plan/error blocks. _(R1, R2, R8, R9)_
