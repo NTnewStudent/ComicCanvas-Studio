@@ -791,6 +791,52 @@ describe('Agent Workbench', () => {
     })))
   })
 
+  it('clears a previous parent draft during a run switch and rejects incomplete child runs', async () => {
+    const childTask = (id: string, artifactId: string) => ({
+      id, parentRunId: 'run-1', roleId: 'canvas-operator', inputSummary: 'Create draft.', effectiveTools: [],
+      status: 'completed' as const, outputSummary: 'Created draft.', artifactIds: [artifactId], createdAt: 1, updatedAt: 2
+    })
+    const parentA: AgentRunSnapshot = { ...runView.snapshot!, artifacts: [], childTasks: [childTask('child-a', 'artifact-a')] }
+    const parentB: AgentRunSnapshot = {
+      ...runView.snapshot!, run: { ...runView.snapshot!.run, id: 'run-b' }, artifacts: [],
+      childTasks: [{ ...childTask('child-b', 'artifact-b'), parentRunId: 'run-b' }]
+    }
+    const childA: AgentRunSnapshot = {
+      ...runView.snapshot!, run: { ...runView.snapshot!.run, id: 'child-a', agentId: 'canvas-operator', trace: { parentRunId: 'run-1' } },
+      artifacts: [{
+        id: 'artifact-a', runId: 'child-a', kind: 'draftGraph', title: '父级 A 草稿', summary: '隔离草稿', createdAt: 2,
+        payload: { graph: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, lineage: { parentRunId: 'run-1', childRunId: 'child-a', traceId: 'run-1/child-a' }, warnings: [], dropped: [] }
+      }], childTasks: []
+    }
+    const incompleteChildB: AgentRunSnapshot = {
+      ...childA,
+      run: { ...childA.run, id: 'child-b', status: 'running', trace: { parentRunId: 'run-b' } },
+      artifacts: [{
+        id: 'artifact-b', runId: 'child-b', kind: 'draftGraph', title: '未完成草稿', summary: '隔离草稿', createdAt: 2,
+        payload: { graph: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, lineage: { parentRunId: 'run-b', childRunId: 'child-b', traceId: 'run-b/child-b' }, warnings: [], dropped: [] }
+      }]
+    }
+    let resolveChildB: ((value: AgentRunViewResponse) => void) | undefined
+    const getChildRun = vi.fn().mockImplementation((id: string): Promise<AgentRunViewResponse> => {
+      if (id === 'child-a') {
+        return Promise.resolve({ ...runView, runId: 'child-a', snapshot: childA, projection: projectAgentRunSnapshot(childA) })
+      }
+      return new Promise<AgentRunViewResponse>((resolve) => { resolveChildB = resolve })
+    })
+    const parentAView: AgentRunViewResponse = { ...runView, snapshot: parentA, projection: projectAgentRunSnapshot(parentA) }
+    const parentBView: AgentRunViewResponse = { ...runView, runId: 'run-b', snapshot: parentB, projection: projectAgentRunSnapshot(parentB) }
+    const { rerender } = render(<RunInspector runView={parentAView} getChildRun={getChildRun} onApplyDraftGraph={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: '产物' }))
+    await screen.findByRole('tab', { name: '父级 A 草稿' })
+    rerender(<RunInspector runView={parentBView} getChildRun={getChildRun} onApplyDraftGraph={vi.fn()} />)
+
+    expect(screen.queryByRole('tab', { name: '父级 A 草稿' })).not.toBeInTheDocument()
+    resolveChildB?.({ ...runView, runId: 'child-b', snapshot: incompleteChildB, projection: projectAgentRunSnapshot(incompleteChildB) })
+    await waitFor(() => expect(getChildRun).toHaveBeenCalledWith('child-b'))
+    expect(screen.queryByRole('tab', { name: '未完成草稿' })).not.toBeInTheDocument()
+  })
+
   it('does not surface child drafts with forged task, child-trace, or artifact-lineage parents', async () => {
     const parentSnapshot: AgentRunSnapshot = {
       ...runView.snapshot!,

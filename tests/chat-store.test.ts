@@ -684,11 +684,11 @@ describe('chat store', () => {
 
     await store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' })
     handlers.permissionRequired?.({
-      runId: 'run-1', messageId: 'message-1', callId: 'call-search', toolId: 'web.search', reason: '联网搜索需要确认'
+      runId: 'run-1', messageId: 'message-1', callId: 'call-search-in-flight', toolId: 'web.search', reason: '联网搜索需要确认'
     })
 
-    const firstApproval = store.getState().approvePermission('call-search', 'session')
-    const duplicateApproval = store.getState().approvePermission('call-search', 'session')
+    const firstApproval = store.getState().approvePermission('call-search-in-flight', 'session')
+    const duplicateApproval = store.getState().approvePermission('call-search-in-flight', 'session')
 
     expect(approveAgentTool).toHaveBeenCalledTimes(1)
     resolveApproval?.({ runId: 'run-1', jobId: 'job-2', status: 'pending' })
@@ -744,6 +744,37 @@ describe('chat store', () => {
 
     await firstStore.store.getState().approvePermission('call-after-success', 'session')
     await secondStore.store.getState().approvePermission('call-after-success', 'session')
+
+    expect(approveAgentTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an accepted approval deduplicated after another panel receives the terminal response', async () => {
+    const approveAgentTool = vi.fn().mockResolvedValue({ runId: 'run-terminal-dedup', jobId: 'job-2', status: 'pending' })
+    const first = createFakeApi({
+      approveAgentTool,
+      sendCanvasChat: vi.fn().mockResolvedValue({ runId: 'run-terminal-dedup', jobId: 'job-1', messageId: 'message-1', status: 'pending' })
+    })
+    const second = createFakeApi({
+      approveAgentTool,
+      sendCanvasChat: vi.fn().mockResolvedValue({ runId: 'run-terminal-dedup', jobId: 'job-1', messageId: 'message-1', status: 'pending' })
+    })
+    const firstStore = createChatStore({ api: first.api })
+    const secondStore = createChatStore({ api: second.api })
+    const request = { runId: 'run-terminal-dedup', messageId: 'message-1', callId: 'call-terminal-dedup', toolId: 'web.search', reason: '联网搜索需要确认' }
+
+    await Promise.all([
+      firstStore.store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' }),
+      secondStore.store.getState().send({ message: '搜索明天的天气', agentId: 'general-purpose' })
+    ])
+    first.handlers.permissionRequired?.(request)
+    second.handlers.permissionRequired?.(request)
+    await firstStore.store.getState().approvePermission('call-terminal-dedup', 'session')
+    first.handlers.responseReady?.({
+      runId: 'run-terminal-dedup', messageId: 'message-1',
+      response: { type: 'answer', summary: '已完成', text: '已完成。', dropped: [] }
+    })
+
+    await secondStore.store.getState().approvePermission('call-terminal-dedup', 'session')
 
     expect(approveAgentTool).toHaveBeenCalledTimes(1)
   })

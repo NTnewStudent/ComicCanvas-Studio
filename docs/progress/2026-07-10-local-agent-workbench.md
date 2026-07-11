@@ -180,6 +180,8 @@ New golden scenarios cover:
 - Non-default canvas workflows: the compact chat entry preserves the selected workflow through IPC, durable Run, history, context, knowledge retrieval, and child-draft application refresh.
 - Child-draft trust boundary: the inspector fails closed unless the completed task, child trace, artifact ownership/reference, and draft lineage all point to the active parent Run.
 - Cross-entry approval idempotency: accepted approvals remain deduplicated for the active renderer session, while run/call IDs containing colons remain independent.
+- Permission scope isolation: reusable grants resolve the workflow from their Agent Run, so one workflow cannot suppress another workflow's approval prompt.
+- Inspector run switching: child artifacts are parent-scoped and cleared synchronously; only child Runs in the `completed` state can expose an actionable draft.
 
 Fresh automated verification:
 
@@ -193,7 +195,7 @@ bun scripts/run-vitest.mjs run \
   tests/web-search-tool.test.ts tests/context-builder.test.ts tests/knowledge-store.test.ts \
   tests/local-memory.handler.test.ts --reporter=dot
 
-15 test files, 161 tests passed
+15 test files, 163 tests passed
 bun run typecheck
 git diff --check
 ```
@@ -202,7 +204,7 @@ Full repository regression on the same working tree also passed:
 
 ```text
 bun run test
-173 test files, 849 tests passed
+173 test files, 852 tests passed
 ```
 
 Repository-wide `lint` and `verify:repo` remain affected by the pre-existing blockers documented above; they are not caused by this Local Agent Platform cutover.

@@ -151,6 +151,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const permissionService = createAgentPermissionService({
     grants: agentPermissionGrants,
     workflowId: 'default',
+    workflowIdForRun: (runId) => runSpine.getSnapshot(runId)?.run.workflowId ?? 'default',
     clock
   })
   const storageConfigs = createStorageConfigRepository(db)

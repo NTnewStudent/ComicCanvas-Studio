@@ -323,7 +323,7 @@ function formatEventTime(timestamp: number): string {
  */
 export function RunInspector({ runView, className, onApplyDraftGraph, getChildRun }: RunInspectorProps): JSX.Element {
   const [tab, setTab] = useState<InspectorTab>('run')
-  const [childArtifacts, setChildArtifacts] = useState<AgentArtifactViewModel[]>([])
+  const [childArtifactState, setChildArtifactState] = useState<{ parentRunId: string | null; artifacts: AgentArtifactViewModel[] }>({ parentRunId: null, artifacts: [] })
   const tabInstanceId = useId()
   const projection = useMemo(() => {
     if (runView?.projection) {
@@ -359,22 +359,25 @@ export function RunInspector({ runView, className, onApplyDraftGraph, getChildRu
   const childArtifactTaskKey = useMemo(() => {
     return childArtifactTasks.map((task) => `${task.id}:${task.artifactIds.join(',')}`).join('|')
   }, [childArtifactTasks])
+  const parentRunId = runView?.snapshot?.run.id ?? null
+  const childArtifacts = childArtifactState.parentRunId === parentRunId ? childArtifactState.artifacts : []
   const visibleArtifacts = useMemo(() => [...artifacts, ...childArtifacts], [artifacts, childArtifacts])
 
   useEffect(() => {
     let cancelled = false
 
     if (!getChildRun || childArtifactTasks.length === 0) {
-      setChildArtifacts([])
+      setChildArtifactState({ parentRunId, artifacts: [] })
       return () => { cancelled = true }
     }
 
+    setChildArtifactState({ parentRunId, artifacts: [] })
     void Promise.all(childArtifactTasks.map(async (task) => ({ task, run: await getChildRun(task.id) })))
       .then((children) => {
         if (cancelled) return
         const nextArtifacts = children.flatMap(({ task, run }) => {
           const snapshot = run.snapshot
-          if (!snapshot || snapshot.run.id !== task.id || snapshot.run.trace.parentRunId !== runView?.snapshot?.run.id) return []
+          if (!snapshot || snapshot.run.id !== task.id || snapshot.run.status !== 'completed' || snapshot.run.trace.parentRunId !== parentRunId) return []
           const linkedIds = new Set(task.artifactIds)
           return projectAgentArtifacts(snapshot.artifacts.filter((artifact) => {
             return artifact.runId === task.id
@@ -382,19 +385,19 @@ export function RunInspector({ runView, className, onApplyDraftGraph, getChildRu
               && (artifact.kind !== 'draftGraph' || (
                 isRecord(artifact.payload)
                 && isRecord(artifact.payload.lineage)
-                && artifact.payload.lineage.parentRunId === runView?.snapshot?.run.id
+                && artifact.payload.lineage.parentRunId === parentRunId
                 && artifact.payload.lineage.childRunId === task.id
               ))
           }))
         })
-        setChildArtifacts(nextArtifacts)
+        setChildArtifactState({ parentRunId, artifacts: nextArtifacts })
       })
       .catch(() => {
-        if (!cancelled) setChildArtifacts([])
+        if (!cancelled) setChildArtifactState({ parentRunId, artifacts: [] })
       })
 
     return () => { cancelled = true }
-  }, [childArtifactTaskKey, childArtifactTasks, getChildRun])
+  }, [childArtifactTaskKey, childArtifactTasks, getChildRun, parentRunId])
   const runTabId = `${tabInstanceId}-inspector-tab-run`
   const artifactsTabId = `${tabInstanceId}-inspector-tab-artifacts`
   const runPanelId = `${tabInstanceId}-inspector-panel-run`

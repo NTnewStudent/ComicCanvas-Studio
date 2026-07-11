@@ -150,7 +150,6 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
 
   function markRunTerminal(runId: string): void {
     terminalRunIds.add(runId)
-    approvedPermissionCalls.delete(runId)
     approvalRequestsInFlight.delete(runId)
     nextReconcileGeneration(runId)
   }

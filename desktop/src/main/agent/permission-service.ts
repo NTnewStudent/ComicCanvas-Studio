@@ -37,6 +37,7 @@ export interface AgentPermissionService {
 export interface AgentPermissionServiceOptions {
   grants: AgentPermissionGrantRepository
   workflowId: string
+  workflowIdForRun?: (runId: string) => string
   idFactory?: () => string
   clock?: () => number
 }
@@ -63,6 +64,7 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
   const clock = options.clock ?? Date.now
   const idFactory = options.idFactory ?? (() => `grant-${crypto.randomUUID()}`)
   const currentSessionGrantIds = new Set<string>()
+  const workflowIdForRun = (runId: string): string => options.workflowIdForRun?.(runId) ?? options.workflowId
 
   return {
     rememberApproval(input) {
@@ -76,7 +78,7 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
       const scope = effectiveScope(input.scope, kinds)
       const existing = options.grants.findActive({
         runId: input.runId,
-        workflowId: options.workflowId,
+        workflowId: workflowIdForRun(input.runId),
         toolId: input.toolId,
         permissionKinds: kinds,
         now,
@@ -90,7 +92,7 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
       const saved = options.grants.save({
         id: idFactory(),
         runId: input.runId,
-        workflowId: options.workflowId,
+        workflowId: workflowIdForRun(input.runId),
         toolId: input.toolId,
         permissionKinds: kinds,
         scope,
@@ -109,7 +111,7 @@ export function createAgentPermissionService(options: AgentPermissionServiceOpti
 
       const grant = options.grants.findActive({
         runId: input.runId,
-        workflowId: options.workflowId,
+        workflowId: workflowIdForRun(input.runId),
         toolId: input.toolId,
         permissionKinds: permissionKinds(input.permission),
         now: clock(),

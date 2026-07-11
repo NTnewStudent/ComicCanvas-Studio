@@ -95,6 +95,38 @@ describe('Agent permission grants', () => {
     })
   })
 
+  it('does not reuse a session grant across workflows resolved from different runs', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-permission-workflow-'))
+    const dbPath = join(tempDir, 'permission-workflow.sqlite')
+    migrateDatabaseAtPath(dbPath)
+    const db = openDatabaseAtPath(dbPath)
+
+    try {
+      const service = createAgentPermissionService({
+        grants: createAgentPermissionGrantRepository(db),
+        workflowId: 'default',
+        workflowIdForRun: (runId: string) => runId === 'run-workflow-a' ? 'workflow-a' : 'workflow-b',
+        clock: () => 1_783_900_000_000,
+        idFactory: () => 'grant-workflow'
+      })
+      const networkPermission: ToolPermissionResult = {
+        decision: 'ask',
+        decisionReason: 'Network search requires confirmation.',
+        requiredPermissions: [{ kind: 'network', reason: 'Uses network.' }]
+      }
+
+      service.rememberApproval({
+        runId: 'run-workflow-a', toolId: 'web.search', permission: networkPermission, approvedByLabel: 'user-local', scope: 'session'
+      })
+
+      expect(service.hasReusableGrant({ runId: 'run-workflow-a-next', toolId: 'web.search', permission: networkPermission })).toBe(false)
+      expect(service.hasReusableGrant({ runId: 'run-workflow-b', toolId: 'web.search', permission: networkPermission })).toBe(false)
+    } finally {
+      db.close()
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
   it('never reuses once grants for a later invocation', () => {
     withService((service) => {
       service.rememberApproval({
