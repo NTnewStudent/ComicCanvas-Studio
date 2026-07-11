@@ -57,6 +57,7 @@ describe('M1 IPC skeleton', () => {
     registerToolHandlers(ipcMain, { runtime: createToolRuntime(), currentUserId: 'user-local' })
 
     expect(Array.from(handlers.keys()).sort()).toEqual([
+      'agent.applyArtifact',
       'agent.approveTool',
       'agent.delete',
       'agent.denyTool',

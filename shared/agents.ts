@@ -127,6 +127,25 @@ export interface AgentToolDenialResult {
   errorClass: 'agent_tool_denied'
 }
 
+/** Parent-controlled request to apply a completed child draft artifact. */
+export interface AgentApplyArtifactInput {
+  parentRunId: string
+  artifactId: string
+}
+
+/** Successful child draft application or a safe refusal. */
+export type AgentApplyArtifactResponse = {
+  graphVersion: string
+  appliedNodeIds: string[]
+  appliedEdgeIds: string[]
+  dropped: string[]
+  traceId: string
+} | AgentIpcValidationError | {
+  errorClass: 'agent_child_artifact_unavailable' | 'agent_runtime_unavailable'
+  message: string
+  retryable: false
+}
+
 export interface AgentToolDenialError {
   errorClass: string
   message: string

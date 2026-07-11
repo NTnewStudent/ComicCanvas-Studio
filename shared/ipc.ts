@@ -35,6 +35,8 @@ import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRec
 import type { CanvasPlan, PlanRunStep } from './plan'
 import type {
   AgentDefinition,
+  AgentApplyArtifactInput,
+  AgentApplyArtifactResponse,
   AgentIpcValidationError,
   AgentNonCanvasResponse,
   AgentRuntimeUnavailableError,
@@ -147,6 +149,7 @@ export type AgentIpcChannel =
   | 'agent.getRun'
   | 'agent.approveTool'
   | 'agent.denyTool'
+  | 'agent.applyArtifact'
   | 'agent.spawn'
   | 'chat.history'
   | 'agent.responseReady'
@@ -418,6 +421,7 @@ export interface IpcRequestMap {
   'agent.getRun': { runId: string }
   'agent.approveTool': AgentToolApprovalInput
   'agent.denyTool': AgentToolDenialInput
+  'agent.applyArtifact': AgentApplyArtifactInput
   'agent.spawn': SpawnSubAgentInput
   'chat.history': { workflowId: string }
   'skill.list': SkillListRequest
@@ -504,6 +508,7 @@ export interface IpcResponseMap {
   'agent.getRun': AgentRunViewResponse
   'agent.approveTool': AgentRunTicket | AgentIpcValidationError | { errorClass: string; message: string; retryable: false }
   'agent.denyTool': AgentToolDenialResponse | AgentIpcValidationError
+  'agent.applyArtifact': AgentApplyArtifactResponse
   'agent.spawn': SpawnSubAgentResult | AgentIpcValidationError | AgentRuntimeUnavailableError
   'chat.history': ChatTurn[]
   'skill.list': SkillDefinition[]

@@ -7,6 +7,8 @@ import { z } from 'zod'
 
 import type {
   AgentDefinition,
+  AgentApplyArtifactInput,
+  AgentApplyArtifactResponse,
   AgentIpcValidationError,
   AgentRunRequest,
   AgentToolApprovalInput,
@@ -22,6 +24,7 @@ export interface AgentHandlerOptions {
   registry: AgentRegistry
   runtime?: Pick<OrchestratorRuntime, 'agentRun' | 'approveTool' | 'denyTool' | 'getRun'>
   spawnSubAgent?: (input: SpawnSubAgentInput) => Promise<SpawnSubAgentResult> | SpawnSubAgentResult
+  applyArtifact?: (input: AgentApplyArtifactInput) => AgentApplyArtifactResponse
 }
 
 const boundedIdentifierSchema = z.string().trim().min(1).max(256)
@@ -39,12 +42,14 @@ const agentToolDenialInputSchema = z.object({
   deniedBy: boundedIdentifierSchema
 }).strict()
 
+const agentApplyArtifactInputSchema = z.object({ parentRunId: boundedIdentifierSchema, artifactId: boundedIdentifierSchema }).strict()
+
 const spawnSubAgentInputSchema = z.object({
   roleId: z.enum(CANONICAL_AGENT_ROLE_IDS),
   task: z.string().trim().min(1).max(4000)
 }).strict()
 
-function invalidAgentRequest(action: 'approveTool' | 'denyTool' | 'spawn'): AgentIpcValidationError {
+function invalidAgentRequest(action: 'approveTool' | 'denyTool' | 'spawn' | 'applyArtifact'): AgentIpcValidationError {
   return {
     errorClass: 'agent_invalid_request',
     message: `Invalid agent.${action} request.`,
@@ -95,6 +100,11 @@ export function registerAgentHandlers(ipcMain: IpcRegistrar, options: AgentHandl
     const parsed = agentToolDenialInputSchema.safeParse(request)
     if (!parsed.success) return invalidAgentRequest('denyTool')
     return options.runtime?.denyTool(parsed.data) ?? runtimeUnavailable()
+  })
+  ipcMain.handle('agent.applyArtifact', (_event, request) => {
+    const parsed = agentApplyArtifactInputSchema.safeParse(request)
+    if (!parsed.success) return invalidAgentRequest('applyArtifact')
+    return options.applyArtifact?.(parsed.data) ?? runtimeUnavailable()
   })
   ipcMain.handle('agent.spawn', (_event, request) => {
     const parsed = spawnSubAgentInputSchema.safeParse(request)

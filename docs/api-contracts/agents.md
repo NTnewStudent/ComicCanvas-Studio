@@ -215,6 +215,10 @@ type ChildCanvasArtifactDraft =
 - `draftGraph.graph` SHALL 在离开 child isolation boundary 前经过 graph sanitization。`warnings` 记录 sanitization 丢弃项；共享 projector 仅公开安全的 node id/type/label/position、edge id/source/target/type、lineage、warnings 与可选 dropped metadata，不向 renderer 透传 node/edge data。
 - 相同请求指纹的 terminal retry SHALL 从持久化 ChildAgentTask 返回缓存 artifact IDs，不得重新运行 child、重复 artifact rows，或追加 `artifact.created` / child lifecycle events。
 
+#### Parent Draft Graph Apply Gate
+
+`agent.applyArtifact({ parentRunId, artifactId })` 仅接受已完成 child task 的 `draftGraph` artifact。主进程 SHALL 从 Run Spine 重建 parent、child task、child run 与 artifact；不得信任渲染进程传入的图数据。应用前 SHALL 验证 child task 归属 parent、child run 为 `completed`、artifact 归属 child run、artifact ID 已被该 task 引用，并再次验证 graph 结构及 lineage。任一检查失败 SHALL 返回非重试错误且不得创建 workflow graph version。通过后才写入新的不可变 graph version。
+
 Events:
 
 ```ts

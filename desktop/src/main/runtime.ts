@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
 import { createGatewayAgentPlanner, createGatewayChildLoopModel } from './agent/gateway-loop-model'
 import { createAgentPermissionService, createToolPermissionGrantStore } from './agent/permission-service'
+import { createChildArtifactApplyGate } from './agent/child-artifact-apply-gate'
 import { createAgentRegistry } from './agent/registry'
 import { createAgentRunSpine } from './agent/run-spine'
 import { createIpcCanvasPlanEventBus } from './ipc/canvas-plan-fanout'
@@ -154,6 +155,12 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const styles = createStyleRepository(db)
   const snippets = createCanvasSnippetRepository(db)
   const workflows = createWorkflowRepository(db)
+  const childArtifactApplyGate = createChildArtifactApplyGate({
+    runSpine,
+    workflows,
+    idFactory: () => `graph-version-child-${crypto.randomUUID()}`,
+    clock
+  })
   try {
     workflows.create({ id: 'default', name: 'Default workspace', createdAt: clock(), updatedAt: clock() })
   } catch {
@@ -422,6 +429,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerAgentHandlers(options.ipcMain, {
     registry: agentRegistry,
     runtime: orchestrator,
+    applyArtifact: (input) => childArtifactApplyGate.apply({ ...input, appliedBy: options.currentUserId ?? 'user-local' }),
     spawnSubAgent: async (input) => {
       const parentRunId = `ipc-spawn-${crypto.randomUUID()}`
       const parentTraceId = `ipc-spawn-trace-${crypto.randomUUID()}`
