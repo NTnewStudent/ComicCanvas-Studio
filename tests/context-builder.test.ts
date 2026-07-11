@@ -107,6 +107,20 @@ describe('ContextBuilderService', () => {
     expect(result.rendered).toContain('[Character Notes]')
     expect(result.pack.sources.some((s) => s.kind === 'knowledge')).toBe(true)
   })
+
+  it('records included sources in deterministic context priority order', () => {
+    const result = buildAgentContext({
+      ...baseInput,
+      policy: { ...basePolicy, includeCanvasGraph: true, includeSelectedAssets: true, includeKnowledge: true, includeRecentMessages: true },
+      canvas: { graph: smallGraph },
+      assets: { assetIds: ['asset-1'], resolveAssetLabel: () => 'Reference frame' },
+      knowledgeChunks: [{ id: 'k1', text: 'A cited fact.', citation: { sourceRef: 'notes.md' } }],
+      recentMessages: [{ id: 'm1', role: 'user', content: 'Keep the same protagonist.', createdAt: 1 }]
+    })
+
+    expect(result.pack.sources.map((source) => source.kind)).toEqual(['canvas', 'asset', 'knowledge', 'message'])
+    expect(result.pack.sources.map((source) => source.priority)).toEqual([3, 4, 5, 6])
+  })
 })
 
 describe('lexicalRetrieve', () => {
