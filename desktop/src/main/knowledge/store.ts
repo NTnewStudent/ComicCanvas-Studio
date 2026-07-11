@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 import type {
+  ContextPack,
   KnowledgeChunk,
   KnowledgeDocument,
   KnowledgeIngestRequest,
@@ -21,6 +22,8 @@ export interface KnowledgeStore {
   retrieve(query: KnowledgeQuery): KnowledgeChunk[]
   delete(documentId: string): { documentId: string; deleted: true }
   rebuild(projectId: string): { projectId: string; rebuilt: true; documentCount: number }
+  saveContextPack(pack: ContextPack): void
+  getContextPack(id: string): ContextPack | null
 }
 
 function chunkText(text: string, documentId: string, sourceRef: string): KnowledgeChunk[] {
@@ -131,6 +134,12 @@ export function createKnowledgeStore(options: {
         return document.scope.projectId === projectId && document.status !== 'deleted'
       })
       return { projectId, rebuilt: true, documentCount: active.length }
+    },
+    saveContextPack(pack) {
+      options.repo.saveContextPack(pack)
+    },
+    getContextPack(id) {
+      return options.repo.getContextPack(id)
     }
   }
 }

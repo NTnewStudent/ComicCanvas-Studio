@@ -2572,6 +2572,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
           tokenBudget: Math.floor(agent.contextPolicy.maxContextTokens * 0.4),
           clock
         })
+        options.knowledgeStore?.saveContextPack(contextResult.pack)
         options.runSpine?.updateRun({
           runId,
           status: 'running',

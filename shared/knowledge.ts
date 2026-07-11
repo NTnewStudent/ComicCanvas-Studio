@@ -72,6 +72,9 @@ export interface ContextPack {
   id: string
   agentId: string
   sources: ContextSource[]
+  omissions: string[]
+  warnings: string[]
   redactions: string[]
+  tokenEstimate: number
   createdAt: number
 }

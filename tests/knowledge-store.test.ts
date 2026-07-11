@@ -60,4 +60,23 @@ describe('KnowledgeStore', () => {
     const rebuilt = store.rebuild('project-a')
     expect(rebuilt.documentCount).toBe(0)
   })
+
+  it('persists ContextPack provenance, omissions, warnings, redactions, and token estimate', () => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'cc-context-pack-'))
+    db = openDatabaseAtPath(join(tempRoot, 'context.db'))
+    applyMigrations(db)
+    const store = createKnowledgeStore({ repo: createKnowledgeRepository(db), clock: () => 1_700_000_000_000 })
+
+    store.saveContextPack({
+      id: 'ctx-1', agentId: 'run-1', sources: [{ kind: 'knowledge', refId: 'notes.md', priority: 5 }],
+      omissions: ['message:m3:token_budget_exceeded'], warnings: ['token_budget_exhausted'],
+      redactions: ['source:credentials'], tokenEstimate: 321, createdAt: 1_700_000_000_000
+    })
+
+    expect(store.getContextPack('ctx-1')).toEqual(expect.objectContaining({
+      sources: [{ kind: 'knowledge', refId: 'notes.md', priority: 5 }],
+      omissions: ['message:m3:token_budget_exceeded'], warnings: ['token_budget_exhausted'],
+      redactions: ['source:credentials'], tokenEstimate: 321
+    }))
+  })
 })

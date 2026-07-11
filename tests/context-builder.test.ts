@@ -89,6 +89,9 @@ describe('ContextBuilderService', () => {
     })
     expect(result.messagesIncluded).toBeLessThan(30)
     expect(result.tokenEstimate).toBeLessThanOrEqual(510)
+    expect(result.pack.tokenEstimate).toBe(result.tokenEstimate)
+    expect(result.pack.omissions.some((entry) => entry.includes('message'))).toBe(true)
+    expect(result.pack.warnings).toContain('token_budget_exhausted')
   })
 
   it('includes knowledge chunks when flag is on', () => {

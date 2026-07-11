@@ -142,7 +142,12 @@ export function createKnowledgeRepository(db: BetterSqliteDatabase): KnowledgeRe
       upsertContextPack.run({
         id: pack.id,
         agentRunId: pack.agentId,
-        summaryJson: encodeJson({ agentId: pack.agentId }),
+        summaryJson: encodeJson({
+          agentId: pack.agentId,
+          omissions: pack.omissions,
+          warnings: pack.warnings,
+          tokenEstimate: pack.tokenEstimate
+        }),
         sourceRefsJson: encodeJson(pack.sources),
         redactionsJson: encodeJson(pack.redactions),
         createdAt: pack.createdAt
@@ -160,12 +165,20 @@ export function createKnowledgeRepository(db: BetterSqliteDatabase): KnowledgeRe
       if (!row) {
         return null
       }
-      const summary = decodeJson<{ agentId?: string }>(row.summary_json) ?? {}
+      const summary = decodeJson<{
+        agentId?: string
+        omissions?: string[]
+        warnings?: string[]
+        tokenEstimate?: number
+      }>(row.summary_json) ?? {}
       return {
         id: row.id,
         agentId: summary.agentId ?? row.agent_run_id ?? 'unknown',
         sources: decodeJson(row.source_refs_json) ?? [],
+        omissions: summary.omissions ?? [],
+        warnings: summary.warnings ?? [],
         redactions: decodeJson<string[]>(row.redactions_json) ?? [],
+        tokenEstimate: summary.tokenEstimate ?? 0,
         createdAt: row.created_at
       }
     }

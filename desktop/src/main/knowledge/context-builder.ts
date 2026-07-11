@@ -147,12 +147,16 @@ export function buildAgentContext(input: ContextBuilderInput): BuiltContext {
   const clock = input.clock ?? Date.now
   const packId = `ctx-${randomUUID()}`
   const sources: ContextSource[] = []
+  const omissions: string[] = []
+  const warnings: string[] = []
   const parts: string[] = []
   let tokenEstimate = 0
 
   function tryAdd(text: string, source: ContextSource): boolean {
     const tokens = estimateTokens(text)
     if (tokenEstimate + tokens > input.tokenBudget) {
+      omissions.push(`${source.kind}:${source.refId}:token_budget_exceeded`)
+      if (!warnings.includes('token_budget_exhausted')) warnings.push('token_budget_exhausted')
       return false
     }
     tokenEstimate += tokens
@@ -208,7 +212,10 @@ export function buildAgentContext(input: ContextBuilderInput): BuiltContext {
     id: packId,
     agentId: input.agentId,
     sources,
+    omissions,
+    warnings,
     redactions: [],
+    tokenEstimate,
     createdAt: clock()
   }
 
