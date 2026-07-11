@@ -75,6 +75,10 @@ const migrations = [
   {
     id: '0015_agent_run_spine',
     fileName: '0015_agent_run_spine.sql'
+  },
+  {
+    id: '0016_local_memories',
+    fileName: '0016_local_memories.sql'
   }
 ] as const
 
