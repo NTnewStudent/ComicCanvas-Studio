@@ -5,6 +5,7 @@
 
 import type { ToolPermission, ToolPermissionKind } from './tools'
 import type { CanvasPlan } from './plan'
+import type { CanvasGraphSnapshot } from './graph'
 import type { AgentRunProjection, AgentRunSnapshot, PermissionGrantScope } from './agent-run-events'
 
 export type AgentSource = 'builtin' | 'user'
@@ -146,6 +147,27 @@ export interface SpawnSubAgentInput {
   roleId: string
   task: string
 }
+
+export interface ChildCanvasPlanArtifactDraft {
+  kind: 'canvasPlan'
+  title: string
+  summary: string
+  payload: CanvasPlan
+}
+
+export interface ChildDraftGraphArtifactDraft {
+  kind: 'draftGraph'
+  title: string
+  summary: string
+  payload: {
+    graph: CanvasGraphSnapshot
+    lineage: { parentRunId: string; childRunId: string; traceId: string }
+    warnings: string[]
+  }
+}
+
+/** Sanitized child output awaiting durable artifact ownership by the child run. */
+export type ChildAgentArtifactDraft = ChildCanvasPlanArtifactDraft | ChildDraftGraphArtifactDraft
 
 /** Stable IPC response returned when an Agent boundary request is malformed. */
 export interface AgentIpcValidationError {

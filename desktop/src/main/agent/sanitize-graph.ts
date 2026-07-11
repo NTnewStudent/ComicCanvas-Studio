@@ -5,8 +5,13 @@
  */
 
 import type { CanvasNodeData } from '../../../../shared/nodes'
+import { redactSensitiveText } from '../security/redaction'
 
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+const SENSITIVE_KEY = /(?:token|secret|password|apiKey|authorization|cookie|credential|privateKey)/iu
+const ABSOLUTE_PATH = /^(?:\/[A-Za-z0-9._-]+\/|[A-Za-z]:\\)/u
+const BINARY_DATA = /^(?:data:[^;,]+;base64,[A-Za-z0-9+/]*={0,2}$|[A-Za-z0-9+/]{256,}={0,2}$)/u
+const EMPTY_NODE_DATA: CanvasNodeData = { label: '', content: '' }
 
 const executablePatterns: ReadonlyArray<RegExp> = [
   /<script\b[^>]*>[\s\S]*?<\/script>/gi,
@@ -31,7 +36,7 @@ function normalizeText(value: string): string {
 }
 
 function stripExecutableText(value: string, location: string, dropped: string[]): string {
-  let next = value
+  let next = redactSensitiveText(value)
 
   for (const pattern of executablePatterns) {
     next = next.replace(pattern, '')
@@ -52,6 +57,14 @@ function sanitizeValue(value: unknown, location: string, dropped: string[]): San
   }
 
   if (typeof value === 'string') {
+    if (ABSOLUTE_PATH.test(value)) {
+      dropped.push(`${location}:absolute_path_dropped`)
+      return undefined
+    }
+    if (BINARY_DATA.test(value)) {
+      dropped.push(`${location}:binary_data_dropped`)
+      return undefined
+    }
     return stripExecutableText(value, location, dropped)
   }
 
@@ -96,6 +109,11 @@ function sanitizeValue(value: unknown, location: string, dropped: string[]): San
         continue
       }
 
+      if (SENSITIVE_KEY.test(key)) {
+        dropped.push(`${location}.${key}:sensitive_key_dropped`)
+        continue
+      }
+
       const sanitized = sanitizeValue(entry, `${location}.${key}`, dropped)
 
       if (sanitized !== undefined) {
@@ -127,5 +145,19 @@ export function sanitizeGraphData(data: CanvasNodeData, location: string, droppe
   }
 
   dropped.push(`${location}:invalid_object`)
-  return data
+  return EMPTY_NODE_DATA
+}
+
+/** Sanitizes one exposed child-artifact string without retaining its source object. */
+export function sanitizeArtifactText(value: unknown, location: string, dropped: string[]): string {
+  const sanitized = sanitizeValue(value, location, dropped)
+  return typeof sanitized === 'string' ? sanitized : ''
+}
+
+/** Sanitizes unknown child-artifact node data into a fresh allowlisted JSON object. */
+export function sanitizeUnknownGraphData(data: unknown, location: string, dropped: string[]): CanvasNodeData {
+  const sanitized = sanitizeValue(data, location, dropped)
+  if (isRecord(sanitized)) return sanitized as unknown as CanvasNodeData
+  dropped.push(`${location}:invalid_object`)
+  return EMPTY_NODE_DATA
 }

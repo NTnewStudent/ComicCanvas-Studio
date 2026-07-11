@@ -9,6 +9,7 @@ import {
   CANONICAL_AGENT_ROLE_IDS,
   MAX_SPAWN_DEPTH,
   type AgentDefinition,
+  type ChildAgentArtifactDraft,
   type AgentRunStatus,
   type SpawnSubAgentError,
   type SpawnSubAgentInput,
@@ -21,15 +22,18 @@ import { redactSensitiveText } from '../security/redaction'
 import type { AgentRegistry } from './registry'
 import type { AgentRunSpine } from './run-spine'
 import type { AgentContextLoopState, AgentToolApprovalRequest } from './context-loop'
+import { sanitizeArtifactText } from './sanitize-graph'
+import { sanitizeStrictChildCanvasPlan } from './sanitize-plan'
+import { sanitizeStrictChildDraftGraphArtifactPayload } from './sub-agent-isolation'
 
 type PermissionSet = string[] | '*'
 type SpawnPersistence = Pick<AgentRunSpine, 'appendEvent' | 'upsertChildTask'> & Partial<Pick<
   AgentRunSpine,
-  'transaction' | 'createRun' | 'updateRun' | 'getSnapshot'
+  'transaction' | 'createRun' | 'updateRun' | 'getSnapshot' | 'saveArtifact'
 >>
 type DurableSpawnPersistence = Pick<
   AgentRunSpine,
-  'transaction' | 'createRun' | 'updateRun' | 'getSnapshot' | 'appendEvent' | 'upsertChildTask'
+  'transaction' | 'createRun' | 'updateRun' | 'getSnapshot' | 'appendEvent' | 'upsertChildTask' | 'saveArtifact'
 >
 
 export interface SpawnParentContext {
@@ -57,6 +61,7 @@ export interface ChildAgentRunResult {
   status: Exclude<AgentRunStatus, 'pending' | 'running'>
   turnsUsed: number
   artifactIds?: string[]
+  artifactDrafts?: ChildAgentArtifactDraft[]
   error?: string
   pausedState?: AgentContextLoopState
   pendingApproval?: AgentToolApprovalRequest
@@ -97,6 +102,12 @@ function requestFingerprint(input: {
   return `sha256:${createHash('sha256').update(canonical).digest('hex')}`
 }
 
+/** Derives an idempotency key for a child request after effective capabilities are known. */
+function childRunIdForFingerprint(parentRunId: string, fingerprint: string): string {
+  const digest = createHash('sha256').update(`${parentRunId}\u0000${fingerprint}`).digest('hex')
+  return `child-${digest.slice(0, 32)}`
+}
+
 function rolePermissionItems(value: PermissionSet): string[] {
   return value === '*' ? [] : [...value]
 }
@@ -115,6 +126,53 @@ function durablePersistence(value: SpawnPersistence | undefined): DurableSpawnPe
 
 function isTerminalStatus(status: AgentRunStatus): status is Exclude<AgentRunStatus, 'pending' | 'running'> {
   return status === 'completed' || status === 'failed' || status === 'aborted'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function validArtifactDrafts(
+  value: ChildAgentArtifactDraft[] | undefined,
+  lineage: { parentRunId: string; childRunId: string; traceId: string }
+): ChildAgentArtifactDraft[] {
+  if (!value) return []
+  const kinds = new Set<string>()
+  const normalized: ChildAgentArtifactDraft[] = []
+  for (const draft of value) {
+    if (!isRecord(draft) || (draft.kind !== 'canvasPlan' && draft.kind !== 'draftGraph') || kinds.has(draft.kind)) {
+      throw new Error('Malformed child artifact draft')
+    }
+    if (typeof draft.title !== 'string' || typeof draft.summary !== 'string') {
+      throw new Error('Malformed child artifact draft')
+    }
+    kinds.add(draft.kind)
+    const dropped: string[] = []
+    const title = sanitizeArtifactText(draft.title, `${draft.kind}.title`, dropped)
+    const summary = sanitizeArtifactText(draft.summary, `${draft.kind}.summary`, dropped)
+    if (draft.kind === 'canvasPlan') {
+      const payload = draft.payload
+      if (!isRecord(payload) || (payload.kind !== 'plan' && payload.kind !== 'clarify')
+        || typeof payload.summary !== 'string' || !Array.isArray(payload.nodes)
+        || !Array.isArray(payload.edges) || !Array.isArray(payload.runSteps)) {
+        throw new Error('Malformed child artifact draft')
+      }
+      const plan = sanitizeStrictChildCanvasPlan(payload)
+      if (!plan) throw new Error('Malformed child artifact draft')
+      normalized.push({ kind: 'canvasPlan', title, summary, payload: plan })
+      continue
+    }
+
+    const payload = draft.payload
+    if (!isRecord(payload) || !isRecord(payload.graph) || !Array.isArray(payload.graph.nodes)
+      || !Array.isArray(payload.graph.edges) || !isRecord(payload.graph.viewport)) {
+      throw new Error('Malformed child artifact draft')
+    }
+    const graph = sanitizeStrictChildDraftGraphArtifactPayload(payload, lineage)
+    if (!graph) throw new Error('Malformed child artifact draft')
+    normalized.push({ kind: 'draftGraph', title, summary, payload: graph })
+  }
+  return normalized
 }
 
 function cachedResult(input: {
@@ -281,7 +339,7 @@ export async function spawnSubAgent(
   parent: SpawnParentContext,
   options: SpawnSubAgentOptions
 ): Promise<SpawnSubAgentResult> {
-  const runId = options.idFactory?.() ?? createRunId()
+  let runId = options.idFactory?.() ?? createRunId()
   const startedAt = options.clock?.() ?? Date.now()
   const depth = parent.depth + 1
   const role = canonicalRoleIds.has(input.roleId) ? options.registry.get(input.roleId) : null
@@ -335,6 +393,7 @@ export async function spawnSubAgent(
     effectiveTools: tools.effective,
     effectiveSkills: skills.effective
   })
+  if (!options.idFactory) runId = childRunIdForFingerprint(parent.parentRunId, inputSummary)
   const startedRecord = {
     id: runId,
     parentRunId: parent.parentRunId,
@@ -475,6 +534,7 @@ export async function spawnSubAgent(
       })
     }
 
+    const childTraceId = `${parent.parentTraceId}/${runId}`
     const childResult = await options.runChild({
       runId,
       parentRunId: parent.parentRunId,
@@ -482,12 +542,22 @@ export async function spawnSubAgent(
       task: input.task,
       allowedTools: tools.effective,
       allowedSkills: skills.effective,
-      traceId: `${parent.parentTraceId}/${runId}`,
+      traceId: childTraceId,
       parentTraceId: parent.parentTraceId,
       depth
     })
     const completedAt = options.clock?.() ?? Date.now()
-    const artifactIds = [...(childResult.artifactIds ?? [])]
+    const artifactDrafts = validArtifactDrafts(childResult.artifactDrafts, {
+      parentRunId: parent.parentRunId,
+      childRunId: runId,
+      traceId: childTraceId
+    })
+    const requestedArtifactIds = new Set(childResult.artifactIds ?? [])
+    const artifactIds = childResult.status === 'completed'
+      ? (options.runSpine?.getSnapshot?.(runId)?.artifacts ?? [])
+        .map((artifact) => artifact.id)
+        .filter((artifactId) => requestedArtifactIds.has(artifactId))
+      : []
     const outputSummary = safeSummary(childResult.output)
 
     if (childResult.status === 'approval_required' && childResult.pausedState && childResult.pendingApproval) {
@@ -578,7 +648,21 @@ export async function spawnSubAgent(
       })
     }
 
+
     const persistCompletion = () => {
+      for (const draft of artifactDrafts) {
+        const artifactId = `${runId}:artifact:${draft.kind}`
+        options.runSpine?.saveArtifact?.({
+          id: artifactId,
+          runId,
+          kind: draft.kind,
+          title: draft.title,
+          summary: draft.summary,
+          payload: draft.payload,
+          createdAt: completedAt
+        })
+        artifactIds.push(artifactId)
+      }
       durable?.updateRun({ runId, status: 'completed', lastCheckpoint: 'run.completed' })
       durable?.appendEvent(runId, 'run.completed', { status: 'completed' })
       options.runSpine?.upsertChildTask({

@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AgentDefinition } from '../shared/agents'
 import { MAX_SPAWN_DEPTH } from '../shared/agents'
 import type { AgentRunSpine } from '../desktop/src/main/agent/run-spine'
+import type { ChildAgentRunResult } from '../desktop/src/main/agent/spawn-sub-agent'
 import { spawnSubAgent } from '../desktop/src/main/agent/spawn-sub-agent'
 import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
@@ -95,6 +96,222 @@ function createSpineRecorder(): {
 }
 
 describe('Task 23 spawnSubAgent', () => {
+  it('normalizes untrusted child canvas artifacts into new safe allowlisted payloads', async () => {
+    const persistence = createSpineRecorder()
+    const saved: Array<{ title: string; summary: string; payload: unknown }> = []
+    const originalPlan = {
+      kind: 'plan', summary: 'Plan <script>alert(1)</script> token=sk-123456789012345678901234', question: null,
+      nodes: [{ ref: 'node-1', type: 'text', title: 'Title require("fs")', data: {
+        prompt: 'Use /Users/private/secret.png', image: 'data:image/png;base64,AAAA', apiToken: 'top-secret', safe: 'keep'
+      }, extraNodeSecret: 'leak' }],
+      edges: [], runSteps: [], dropped: [], extraPayloadSecret: 'leak'
+    }
+    const originalGraph = {
+      graph: {
+        nodes: [
+          { id: 'text<script>x</script>-1', type: 'text', title: '/Users/private/title', position: { x: 0, y: 0 },
+            data: { label: 'Prompt eval(bad)', safe: 'keep', binary: 'data:image/png;base64,AAAA' }, extra: 'leak' },
+          { id: 'image-1', type: 'image', position: { x: 20, y: 20 }, data: { label: 'Image' } }
+        ],
+        edges: [
+          { id: 'edge<script>x</script>-1', source: 'text<script>x</script>-1', target: 'image-1', type: 'default', data: { hidden: 'leak' } }
+        ],
+        viewport: { x: 0, y: 0, zoom: 1, secret: 'leak' }, extraGraphSecret: 'leak'
+      },
+      lineage: { parentRunId: 'run-parent<script>x</script>', childRunId: 'child-normalize', traceId: 'trace/root eval(bad)', extra: 'leak' },
+      warnings: ['warn /Users/private/file', 'warn <script>x</script>'], dropped: ['drop token=sk-123456789012345678901234'],
+      extraPayloadSecret: 'leak'
+    }
+
+    const result = await spawnSubAgent(
+      { roleId: 'canvas-planner', task: 'Normalize.' }, parentContext,
+      {
+        registry, idFactory: () => 'child-normalize',
+        runSpine: { ...persistence.spine, saveArtifact(record) { saved.push(record); return record } },
+        runChild: () => ({ output: 'done', status: 'completed', turnsUsed: 1, artifactDrafts: [
+          { kind: 'canvasPlan', title: 'Plan /Users/private <script>x</script>', summary: 'Summary sk-123456789012345678901234', payload: originalPlan },
+          { kind: 'draftGraph', title: 'Graph eval(bad)', summary: 'Graph /Users/private', payload: originalGraph }
+        ] } as unknown as ChildAgentRunResult)
+      }
+    )
+
+    expect(result.status).toBe('completed')
+    expect(saved).toHaveLength(2)
+    expect(saved[0]?.payload).not.toBe(originalPlan)
+    expect(saved[1]?.payload).not.toBe(originalGraph)
+    expect(saved[0]?.payload).toMatchObject({ nodes: [{ data: { safe: 'keep' } }] })
+    expect(saved[1]?.payload).toMatchObject({
+      graph: { nodes: expect.arrayContaining([expect.objectContaining({ id: 'text-1', type: 'text' })]), viewport: { x: 0, y: 0, zoom: 1 } },
+      lineage: { parentRunId: 'run-parent', childRunId: 'child-normalize', traceId: 'run-parent/child-normalize' }
+    })
+    expect(JSON.stringify(saved)).not.toMatch(/Users|base64|sk-123|<script|eval\(|require\(|extraPayloadSecret|extraGraphSecret|extraNodeSecret|hidden|"shell"/u)
+    expect((saved[1]?.payload as { graph: { nodes: unknown[]; edges: unknown[] } }).graph.nodes).toHaveLength(2)
+    expect((saved[1]?.payload as { graph: { nodes: unknown[]; edges: unknown[] } }).graph.edges).toHaveLength(1)
+  })
+
+  it.each(['failed', 'approval_required'] as const)('drops spoofed artifact IDs for %s children', async (status) => {
+    const persistence = createSpineRecorder()
+    const result = await spawnSubAgent(
+      { roleId: 'canvas-planner', task: 'Do not trust IDs.' }, parentContext,
+      {
+        registry, runSpine: persistence.spine, idFactory: () => `child-spoof-${status}`,
+        runChild: () => ({ output: status, status, turnsUsed: 1, artifactIds: ['artifact-unrelated'],
+          ...(status === 'approval_required' ? {
+            pausedState: {
+              agentId: 'canvas-planner', trigger: 'manual', turnCount: 1, maxTurns: 8,
+              transition: 'approval_required', systemPrompt: '', userMessage: '', allowedTools: [], droppedTools: [],
+              messages: [], tokenEstimate: 0, compactionSummary: null, omittedMessages: 0, pendingToolCalls: [], additionalContext: ''
+            },
+            pendingApproval: { callId: 'call', toolId: 'tool', input: {}, reason: 'reason', requiredPermissions: [] }
+          } : {}) } as ChildAgentRunResult)
+      }
+    )
+
+    expect(result.artifactIds).toEqual([])
+    expect(persistence.records.at(-1)?.artifactIds).toEqual([])
+  })
+
+  it('drops spoofed completed artifact IDs when persistence cannot prove child ownership', async () => {
+    const persistence = createSpineRecorder()
+    const result = await spawnSubAgent(
+      { roleId: 'canvas-planner', task: 'Verify IDs.' }, parentContext,
+      { registry, runSpine: persistence.spine, idFactory: () => 'child-spoof-completed',
+        runChild: () => ({ output: 'done', status: 'completed', turnsUsed: 1, artifactIds: ['artifact-unrelated'] }) }
+    )
+
+    expect(result.artifactIds).toEqual([])
+    expect(persistence.events.at(-1)).toMatchObject({ type: 'child.completed', payload: { artifactIds: [] } })
+  })
+
+  it('saves deterministic child artifact drafts before linking the terminal task and event', async () => {
+    const persistence = createSpineRecorder()
+    const order: string[] = []
+    const saved: Array<{ id: string; runId: string; kind: string }> = []
+    const originalUpsert = persistence.spine.upsertChildTask
+    const runSpine = {
+      ...persistence.spine,
+      saveArtifact(record: { id: string; runId: string; kind: 'canvasPlan'; title: string; summary: string; payload: unknown; createdAt: number }) {
+        order.push(`artifact:${record.id}`)
+        saved.push(record)
+        return record
+      },
+      upsertChildTask(record: Parameters<AgentRunSpine['upsertChildTask']>[0]) {
+        if (record.status === 'completed') order.push(`task:${record.artifactIds.join(',')}`)
+        return originalUpsert(record)
+      }
+    }
+
+    const result = await spawnSubAgent(
+      { roleId: 'canvas-planner', task: 'Plan.' }, parentContext,
+      {
+        registry, runSpine, listTools: () => toolDescriptors, idFactory: () => 'child-artifacts', clock: () => 50,
+        runChild: () => ({ output: 'planned', status: 'completed', turnsUsed: 1, artifactDrafts: [{
+          kind: 'canvasPlan', title: 'Child CanvasPlan', summary: 'planned', payload: {
+            kind: 'plan', summary: 'planned', question: null, nodes: [], edges: [], runSteps: [], dropped: []
+          }
+        }] })
+      }
+    )
+
+    expect(saved).toEqual([expect.objectContaining({
+      id: 'child-artifacts:artifact:canvasPlan', runId: 'child-artifacts', kind: 'canvasPlan'
+    })])
+    expect(result.artifactIds).toEqual(['child-artifacts:artifact:canvasPlan'])
+    expect(order).toEqual(['artifact:child-artifacts:artifact:canvasPlan', 'task:child-artifacts:artifact:canvasPlan'])
+    expect(persistence.events.at(-1)).toMatchObject({
+      type: 'child.completed', payload: { artifactIds: ['child-artifacts:artifact:canvasPlan'] }
+    })
+  })
+
+  it.each(['failed', 'approval_required'] as const)('does not publish draft artifacts for a %s child run', async (status) => {
+    const persistence = createSpineRecorder()
+    const saveArtifact = vi.fn()
+    const result = await spawnSubAgent(
+      { roleId: 'canvas-planner', task: 'Draft without publishing.' }, parentContext,
+      {
+        registry, runSpine: { ...persistence.spine, saveArtifact }, idFactory: () => `child-${status}`,
+        runChild: () => ({
+          output: status, status, turnsUsed: 1,
+          ...(status === 'approval_required' ? {
+            pausedState: { runId: `child-${status}`, turn: 1, messages: [], toolResults: [] },
+            pendingApproval: {
+              callId: 'call-approval', toolId: 'canvas.proposePlan', reason: 'Approve.',
+              requiredPermissions: [{ kind: 'canvas.write', reason: 'Write.' }]
+            }
+          } : {}),
+          artifactDrafts: [{
+            kind: 'canvasPlan', title: 'Premature plan', summary: 'must not persist',
+            payload: { kind: 'plan', summary: 'draft', question: null, nodes: [], edges: [], runSteps: [], dropped: [] }
+          }]
+        } as unknown as ChildAgentRunResult)
+      }
+    )
+
+    expect(result.artifactIds).toEqual([])
+    expect(saveArtifact).not.toHaveBeenCalled()
+    expect(persistence.events.some((event) => event.type === 'artifact.created')).toBe(false)
+  })
+
+  it.each([
+    { kind: 'unknown', title: 'Unknown', summary: 'Unknown', payload: {} },
+    { kind: 'canvasPlan', title: 'Plan', summary: 'Plan', payload: { kind: 'plan', nodes: 'invalid' } },
+    { kind: 'draftGraph', title: 'Graph', summary: 'Graph', payload: { graph: { nodes: [], edges: 'invalid' } } }
+  ])('fails closed without persistence for malformed $kind artifact drafts', async (artifactDraft) => {
+    const persistence = createSpineRecorder()
+    const saveArtifact = vi.fn()
+    const result = await spawnSubAgent(
+      { roleId: 'canvas-planner', task: 'Return malformed draft.' }, parentContext,
+      {
+        registry, runSpine: { ...persistence.spine, saveArtifact }, idFactory: () => `child-malformed-${artifactDraft.kind}`,
+        runChild: () => ({
+          output: 'bad draft', status: 'completed', turnsUsed: 1, artifactDrafts: [artifactDraft]
+        } as unknown as ChildAgentRunResult)
+      }
+    )
+
+    expect(result).toMatchObject({ status: 'failed', error: { errorClass: 'agent_child_run_failed' } })
+    expect(saveArtifact).not.toHaveBeenCalled()
+    expect(persistence.records.some((record) => record.status === 'completed')).toBe(false)
+  })
+
+  it.each([
+    {
+      kind: 'canvasPlan',
+      payload: {
+        kind: 'plan', summary: 'Unsafe action.', question: null,
+        nodes: [{ ref: 'text-1', type: 'text', title: 'Prompt', data: { content: 'safe' } }],
+        edges: [], runSteps: [{ ref: 'text-1', action: 'shell' }], dropped: []
+      }
+    },
+    {
+      kind: 'draftGraph',
+      payload: {
+        graph: {
+          nodes: [{ id: 'text-1', type: 'text', position: { x: 0, y: 0 }, data: { label: 'Prompt', content: 'safe' } }],
+          edges: [], viewport: { x: 0, y: 0, zoom: Number.POSITIVE_INFINITY }
+        },
+        lineage: { parentRunId: 'spoofed-parent', childRunId: 'spoofed-child', traceId: 'spoofed-trace' }, warnings: []
+      }
+    }
+  ])('rejects structurally invalid $kind child artifacts instead of repairing and publishing them', async (draft) => {
+    const persistence = createSpineRecorder()
+    const saveArtifact = vi.fn()
+    const result = await spawnSubAgent(
+      { roleId: 'canvas-planner', task: 'Return invalid proposal.' }, parentContext,
+      {
+        registry, runSpine: { ...persistence.spine, saveArtifact }, idFactory: () => `child-invalid-${draft.kind}`,
+        runChild: () => ({
+          output: 'invalid proposal', status: 'completed', turnsUsed: 1,
+          artifactDrafts: [{ ...draft, title: 'Invalid proposal', summary: 'Must fail closed.' }]
+        } as unknown as ChildAgentRunResult)
+      }
+    )
+
+    expect(result).toMatchObject({ status: 'failed', error: { errorClass: 'agent_child_run_failed' } })
+    expect(saveArtifact).not.toHaveBeenCalled()
+    expect(persistence.records.some((record) => record.status === 'completed')).toBe(false)
+  })
+
   it('resolves a canonical built-in role and derives child instructions and policy from the registry', async () => {
     const persistence = createSpineRecorder()
     const clock = vi.fn()
@@ -140,7 +357,7 @@ describe('Task 23 spawnSubAgent', () => {
       status: 'completed',
       turnsUsed: 2,
       effectiveTools: ['canvas.queryGraph'],
-      artifactIds: ['artifact-1']
+      artifactIds: []
     })
     expect(persistence.records[0]?.inputSummary).toMatch(/^sha256:[a-f0-9]{64}$/u)
     expect(persistence.records[0]?.inputSummary).not.toContain('sk-123456789012345678901234')
@@ -164,7 +381,7 @@ describe('Task 23 spawnSubAgent', () => {
         effectiveTools: ['canvas.queryGraph'],
         status: 'completed',
         outputSummary: 'Found one node.',
-        artifactIds: ['artifact-1'],
+        artifactIds: [],
         createdAt: 100,
         updatedAt: 150
       }
@@ -173,7 +390,7 @@ describe('Task 23 spawnSubAgent', () => {
     expect(persistence.events[0]).toMatchObject({ runId: 'run-parent', type: 'child.started' })
     expect(persistence.events[0]?.payload).toMatchObject({ childTaskId: 'child-1', roleId: 'canvas-planner' })
     expect(persistence.events[1]).toMatchObject({ runId: 'run-parent', type: 'child.completed' })
-    expect(persistence.events[1]?.payload).toMatchObject({ childTaskId: 'child-1', artifactIds: ['artifact-1'] })
+    expect(persistence.events[1]?.payload).toMatchObject({ childTaskId: 'child-1', artifactIds: [] })
   })
 
   it.each([

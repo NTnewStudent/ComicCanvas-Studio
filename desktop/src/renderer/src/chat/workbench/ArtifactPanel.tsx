@@ -41,6 +41,7 @@ const ARTIFACT_ICONS: Record<AgentArtifactViewModel['viewType'], LucideIcon> = {
   answer: FileText,
   clarification: CircleHelp,
   canvasPlan: Network,
+  draftGraph: GitBranch,
   canvasPatchDraft: GitBranch,
   searchSummary: Search,
   memorySuggestion: Brain,
@@ -498,6 +499,19 @@ function FallbackView({
   )
 }
 
+function DraftGraphView({
+  artifact
+}: {
+  artifact: Extract<AgentArtifactViewModel, { viewType: 'draftGraph' }>
+}): JSX.Element {
+  return (
+    <div className="min-w-0 space-y-3 text-[10px] text-text-secondary">
+      <p className="m-0">{artifact.nodes.length} 个节点 · {artifact.edges.length} 条连线</p>
+      {artifact.warnings.map((warning) => <p key={warning} className="m-0 text-semantic-warning">{warning}</p>)}
+    </div>
+  )
+}
+
 function ArtifactBody({ artifact }: { artifact: AgentArtifactViewModel }): JSX.Element {
   switch (artifact.viewType) {
     case 'answer':
@@ -506,6 +520,8 @@ function ArtifactBody({ artifact }: { artifact: AgentArtifactViewModel }): JSX.E
       return <ClarificationView artifact={artifact} />
     case 'canvasPlan':
       return <CanvasPlanView artifact={artifact} />
+    case 'draftGraph':
+      return <DraftGraphView artifact={artifact} />
     case 'canvasPatchDraft':
       return <CanvasPatchDraftView artifact={artifact} />
     case 'searchSummary':

@@ -6,6 +6,7 @@
 import { canConnect } from '../../../../shared/connection-matrix'
 import type { EdgeType, ImageRole, NodeType } from '../../../../shared/nodes'
 import type { CanvasPlan, PlanEdge, PlanNode, PlanRunStep, RunAction } from '../../../../shared/plan'
+import { redactSensitiveText } from '../security/redaction'
 
 const NODE_TYPES = new Set<NodeType>([
   'text',
@@ -28,6 +29,8 @@ const RUN_ACTIONS = new Set<RunAction>([
   'textPolish'
 ])
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+const SENSITIVE_KEY = /(?:token|secret|password|apiKey|authorization|cookie|credential|privateKey)/iu
+const BINARY_DATA = /^(?:data:[^;,]+;base64,[A-Za-z0-9+/]*={0,2}$|[A-Za-z0-9+/]{256,}={0,2}$)/u
 const DROP = Symbol('drop')
 
 type DroppedRecords = string[]
@@ -54,7 +57,7 @@ function normalizeText(value: string): string {
 }
 
 function stripExecutableText(value: string, location: string, dropped: DroppedRecords): string {
-  let next = value
+  let next = redactSensitiveText(value)
 
   for (const pattern of executablePatterns) {
     next = next.replace(pattern, '')
@@ -79,6 +82,10 @@ function sanitizeJsonValue(value: unknown, location: string, dropped: DroppedRec
   }
 
   if (typeof value === 'string') {
+    if (BINARY_DATA.test(value)) {
+      dropped.push(`${location}:binary_data_dropped`)
+      return DROP
+    }
     return stripExecutableText(value, location, dropped)
   }
 
@@ -120,6 +127,11 @@ function sanitizeJsonValue(value: unknown, location: string, dropped: DroppedRec
 
       if (/^on[A-Z]/u.test(key)) {
         dropped.push(`${location}.${key}:executable_string_stripped`)
+        continue
+      }
+
+      if (SENSITIVE_KEY.test(key)) {
+        dropped.push(`${location}.${key}:sensitive_key_dropped`)
         continue
       }
 
@@ -405,4 +417,51 @@ export function sanitizePlan(input: unknown): CanvasPlan {
     question,
     dropped: [...inheritedDropped, ...dropped]
   }
+}
+
+/**
+ * Sanitizes a child proposal only when its declarative structure is already valid.
+ * Unlike the general planner sanitizer, this boundary refuses partial repairs before
+ * a child artifact may be persisted and later applied to a parent workflow.
+ */
+export function sanitizeStrictChildCanvasPlan(input: unknown): CanvasPlan | null {
+  if (!isRecord(input) || (input.kind !== 'plan' && input.kind !== 'clarify') || typeof input.summary !== 'string'
+    || !Array.isArray(input.nodes) || !Array.isArray(input.edges) || !Array.isArray(input.runSteps)) {
+    return null
+  }
+
+  const refs = new Map<string, NodeType>()
+  for (const node of input.nodes) {
+    if (!isRecord(node) || typeof node.ref !== 'string' || node.ref.trim().length === 0
+      || typeof node.title !== 'string' || !NODE_TYPES.has(node.type as NodeType)
+      || !isRecord(node.data) || refs.has(node.ref)) {
+      return null
+    }
+    refs.set(node.ref, node.type as NodeType)
+  }
+
+  for (const edge of input.edges) {
+    if (!isRecord(edge) || typeof edge.source !== 'string' || typeof edge.target !== 'string'
+      || !EDGE_TYPES.has(edge.edgeType as EdgeType)) {
+      return null
+    }
+    const sourceType = refs.get(edge.source)
+    const targetType = refs.get(edge.target)
+    if (!sourceType || !targetType || !canConnect(sourceType, targetType)
+      || (edge.imageRole !== undefined && (!IMAGE_ROLES.has(edge.imageRole as ImageRole)))) {
+      return null
+    }
+  }
+
+  for (const step of input.runSteps) {
+    if (!isRecord(step) || typeof step.ref !== 'string' || !refs.has(step.ref)
+      || !RUN_ACTIONS.has(step.action as RunAction)) {
+      return null
+    }
+  }
+
+  if (input.kind === 'clarify' && typeof input.question !== 'string') return null
+  if (input.kind === 'plan' && input.question !== null && input.question !== undefined && typeof input.question !== 'string') return null
+
+  return sanitizePlan(input)
 }

@@ -10,7 +10,7 @@ import type {
   ChildAgentTaskRecord,
   LocalPermissionGrant
 } from '../shared/agent-run-events'
-import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
+import { projectAgentArtifact, projectAgentRunSnapshot } from '../shared/agent-run-projector'
 import {
   applyAgentEvent,
   createAssistantTurn,
@@ -69,6 +69,41 @@ const snapshot: AgentRunSnapshot = {
   permissionGrants: [],
   childTasks: []
 }
+
+describe('Task 25 draft graph artifact projection', () => {
+  it('projects only safe graph fields with lineage, warnings, and dropped metadata', () => {
+    const view = projectAgentArtifact({
+      id: 'artifact-draft', runId: 'run-child', kind: 'draftGraph', title: 'Draft', summary: 'Two nodes', createdAt: 10,
+      payload: {
+        graph: {
+          nodes: [{ id: 'text-1', type: 'text', position: { x: 10, y: 20 }, data: { label: 'Prompt', content: 'secret detail' } }],
+          edges: [{ id: 'edge-1', source: 'text-1', target: 'image-1', type: 'default', data: { hidden: true } }],
+          viewport: { x: 1, y: 2, zoom: 1 }
+        },
+        lineage: { parentRunId: 'run-parent', childRunId: 'run-child', traceId: 'trace/child' },
+        warnings: ['Dropped unsafe node data'], dropped: ['node.data.content']
+      }
+    })
+
+    expect(view).toEqual(expect.objectContaining({
+      viewType: 'draftGraph',
+      nodes: [{ id: 'text-1', type: 'text', label: 'Prompt', position: { x: 10, y: 20 } }],
+      edges: [{ id: 'edge-1', source: 'text-1', target: 'image-1', edgeType: 'default' }],
+      lineage: { parentRunId: 'run-parent', childRunId: 'run-child', traceId: 'trace/child' },
+      warnings: ['Dropped unsafe node data'], dropped: ['node.data.content']
+    }))
+    expect(JSON.stringify(view)).not.toContain('secret detail')
+    expect(JSON.stringify(view)).not.toContain('hidden')
+  })
+
+  it('falls back for malformed draft graph payloads', () => {
+    const view = projectAgentArtifact({
+      id: 'artifact-bad', runId: 'run-child', kind: 'draftGraph', title: 'Bad', summary: 'Bad', createdAt: 10,
+      payload: { graph: { nodes: [], edges: 'bad' }, lineage: {} }
+    })
+    expect(view.viewType).toBe('fallback')
+  })
+})
 
 function eventRecord<Type extends AgentRunEventType>(
   sequence: number,

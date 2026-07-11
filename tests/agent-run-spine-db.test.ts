@@ -4,7 +4,11 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { spawnSubAgent, type ChildAgentRunInput } from '../desktop/src/main/agent/spawn-sub-agent'
+import {
+  spawnSubAgent,
+  type ChildAgentRunInput,
+  type ChildAgentRunResult
+} from '../desktop/src/main/agent/spawn-sub-agent'
 import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createAgentArtifactRepository } from '../desktop/src/main/db/repositories/agent-artifact.repo'
@@ -863,12 +867,14 @@ describe('Agent Run Spine SQLite schema', () => {
       let eventSequence = 0
       const runs = createAgentRunRepository(db)
       const events = createAgentRunEventRepository(db)
+      const artifacts = createAgentArtifactRepository(db)
+      const children = createChildAgentTaskRepository(db)
       const spine = createAgentRunSpine({
         runs,
         events,
-        artifacts: createAgentArtifactRepository(db),
+        artifacts,
         grants: createAgentPermissionGrantRepository(db),
-        childTasks: createChildAgentTaskRepository(db),
+        childTasks: children,
         transaction: (operation) => db.transaction(operation)(),
         idFactory: (prefix) => `${prefix}-retry-${++eventSequence}`,
         clock: (() => {
@@ -899,11 +905,27 @@ describe('Agent Run Spine SQLite schema', () => {
         enabled: true
       }
       const registry = { get: (roleId: string) => roleId === role.id ? role : null }
-      const runChild = vi.fn(() => ({
+      const runChild = vi.fn((): ChildAgentRunResult => ({
         output: 'Durable verification result.',
         status: 'completed' as const,
         turnsUsed: 1,
-        artifactIds: ['artifact-retry']
+        artifactDrafts: [
+          {
+            kind: 'canvasPlan' as const, title: 'Child CanvasPlan', summary: 'Plan one scene.',
+            payload: { kind: 'plan', summary: 'Plan one scene.', question: null, nodes: [], edges: [], runSteps: [], dropped: [] }
+          },
+          {
+            kind: 'draftGraph' as const, title: 'Child draft graph', summary: 'One isolated node.',
+            payload: {
+              graph: {
+                nodes: [{ id: 'text-1', type: 'text', position: { x: 10, y: 20 }, data: { label: 'Prompt', content: 'Scene' } }],
+                edges: [], viewport: { x: 0, y: 0, zoom: 1 }
+              },
+              lineage: { parentRunId: 'run-retry-parent', childRunId: 'run-retry-child', traceId: 'trace-retry-parent/run-retry-child' },
+              warnings: []
+            }
+          }
+        ]
       }))
 
       spine.createRun({
@@ -926,6 +948,7 @@ describe('Agent Run Spine SQLite schema', () => {
       const options = { registry, runSpine: spine, idFactory: () => 'run-retry-child', runChild }
 
       const first = await spawnSubAgent({ roleId: role.id, task: 'Verify persistence.' }, parent, options)
+      const persistedArtifacts = artifacts.listByRunId('run-retry-child')
       const childEventsAfterFirst = events.listByRunId('run-retry-child').length
       const parentEventsAfterFirst = events.listByRunId('run-retry-parent').length
       const retry = await spawnSubAgent({ roleId: role.id, task: 'Verify persistence.' }, parent, options)
@@ -935,12 +958,80 @@ describe('Agent Run Spine SQLite schema', () => {
         roleId: role.id,
         status: 'completed',
         output: 'Durable verification result.',
-        artifactIds: ['artifact-retry'],
+        artifactIds: [
+          'run-retry-child:artifact:canvasPlan',
+          'run-retry-child:artifact:draftGraph'
+        ],
         trace: { runId: 'run-retry-child', parentRunId: 'run-retry-parent' }
       })
+      expect(persistedArtifacts.map(({ id, kind }) => ({ id, kind }))).toEqual([
+        { id: 'run-retry-child:artifact:canvasPlan', kind: 'canvasPlan' },
+        { id: 'run-retry-child:artifact:draftGraph', kind: 'draftGraph' }
+      ])
+      expect(persistedArtifacts[1]?.payload).toMatchObject({ lineage: {
+        parentRunId: 'run-retry-parent', childRunId: 'run-retry-child', traceId: 'trace-retry-parent/run-retry-child'
+      } })
+      expect(children.listByParentRunId('run-retry-parent')).toEqual([
+        expect.objectContaining({ id: 'run-retry-child', status: 'completed', artifactIds: first.artifactIds })
+      ])
+      expect(events.listByRunId('run-retry-parent').find((event) => event.type === 'child.completed')?.payload)
+        .toMatchObject({ childTaskId: 'run-retry-child', artifactIds: first.artifactIds })
       expect(runChild).toHaveBeenCalledTimes(1)
+      expect(artifacts.listByRunId('run-retry-child')).toHaveLength(2)
+      expect(events.listByRunId('run-retry-child').filter((event) => event.type === 'artifact.created')).toHaveLength(2)
       expect(events.listByRunId('run-retry-child')).toHaveLength(childEventsAfterFirst)
       expect(events.listByRunId('run-retry-parent')).toHaveLength(parentEventsAfterFirst)
+    })
+  })
+
+  it('rolls back child artifacts when completed-task linkage fails', async () => {
+    await withTempDbAsync(async (db) => {
+      const runs = createAgentRunRepository(db)
+      const events = createAgentRunEventRepository(db)
+      const artifacts = createAgentArtifactRepository(db)
+      const children = createChildAgentTaskRepository(db)
+      const spine = createAgentRunSpine({
+        runs, events, artifacts, grants: createAgentPermissionGrantRepository(db),
+        childTasks: {
+          ...children,
+          upsert(record) {
+            if (record.status === 'completed') throw new Error('Simulated terminal linkage failure')
+            return children.upsert(record)
+          }
+        },
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-rollback`, clock: () => 1200
+      })
+      const role: AgentDefinition = {
+        id: 'qa-verifier', source: 'builtin', name: 'QA Verifier', description: 'Verifies.', instructions: 'Verify.',
+        allowedTools: [], allowedSkills: [], gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: { includeCanvasGraph: false, includeSelectedAssets: false, includeRecentMessages: true,
+          includeKnowledge: false, maxContextTokens: 2000 },
+        permissionPolicy: { allowedPermissionKinds: ['diagnostics'], requireAskForDestructive: true },
+        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'manual', autoRun: false },
+        maxTurns: 2, effort: 'low', enabled: true
+      }
+      spine.createRun({ runId: 'run-rollback-parent', threadId: 'thread-rollback', workflowId: 'workflow-rollback',
+        messageId: 'message-rollback', agentId: 'general-assistant', trigger: 'manual', policyProfileId: 'local-default' })
+      spine.updateRun({ runId: 'run-rollback-parent', status: 'running', lastCheckpoint: 'run.started' })
+
+      const result = await spawnSubAgent(
+        { roleId: role.id, task: 'Verify rollback.' },
+        { parentRunId: 'run-rollback-parent', parentTraceId: 'trace-rollback', allowedTools: [], allowedSkills: [], depth: 0 },
+        {
+          registry: { get: (roleId) => roleId === role.id ? role : null }, runSpine: spine,
+          idFactory: () => 'run-rollback-child',
+          runChild: () => ({ output: 'done', status: 'completed', turnsUsed: 1, artifactDrafts: [{
+            kind: 'canvasPlan', title: 'Plan', summary: 'Plan',
+            payload: { kind: 'plan', summary: 'Plan', question: null, nodes: [], edges: [], runSteps: [], dropped: [] }
+          }] })
+        }
+      )
+
+      expect(result.status).toBe('failed')
+      expect(artifacts.listByRunId('run-rollback-child')).toEqual([])
+      expect(events.listByRunId('run-rollback-child').some((event) => event.type === 'artifact.created')).toBe(false)
+      expect(children.listByParentRunId('run-rollback-parent')).toEqual([])
     })
   })
 

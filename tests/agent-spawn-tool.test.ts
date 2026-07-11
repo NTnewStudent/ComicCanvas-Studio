@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import type { AgentDefinition } from '../shared/agents'
+import type { CanvasGraphSnapshot } from '../shared/graph'
 import type { ToolDescriptor } from '../shared/tools'
 import type { AgentRepository } from '../desktop/src/main/db/repositories/agent.repo'
 import { filterAgentTools, type AgentContextLoopState } from '../desktop/src/main/agent/context-loop'
@@ -27,6 +28,62 @@ const role: AgentDefinition = {
 }
 
 describe('Task 23 agent.spawnChild tool', () => {
+  it('routes canvas operator writes to an isolated parent-seeded draft and returns a draft artifact', async () => {
+    const liveGraph: CanvasGraphSnapshot = {
+      nodes: [{ id: 'text-live', type: 'text', position: { x: 0, y: 0 }, data: { label: 'Live', content: 'seed' } }],
+      edges: [], viewport: { x: 0, y: 0, zoom: 1 }
+    }
+    const liveBytes = JSON.stringify(liveGraph)
+    const runner = createChildAgentRunner({
+      toolRuntime: { invoke: vi.fn(() => { throw new Error('canvas tool reached global runtime') }) },
+      listTools: () => [], getParentGraph: () => liveGraph,
+      stepModel: { step: vi.fn()
+        .mockResolvedValueOnce({ type: 'toolCalls', calls: [{ id: 'create', toolId: 'canvas.createNode', input: {
+          type: 'text', position: { x: 200, y: 0 }, data: { label: 'Draft', content: 'child' }
+        } }] })
+        .mockResolvedValueOnce({ type: 'response', response: { type: 'answer', summary: 'done', text: 'done', dropped: [] } }) }
+    })
+
+    const result = await runner({
+      runId: 'run-child-draft', parentRunId: 'run-parent', role: registry.get('canvas-operator')!, task: 'Add text.',
+      allowedTools: ['canvas.createNode'], allowedSkills: [], traceId: 'trace/run-child-draft', parentTraceId: 'trace', depth: 1
+    })
+
+    expect(JSON.stringify(liveGraph)).toBe(liveBytes)
+    const draftArtifact = result.artifactDrafts?.[0]
+    expect(draftArtifact?.kind).toBe('draftGraph')
+    if (draftArtifact?.kind !== 'draftGraph') throw new Error('Expected a draft graph artifact')
+    expect(draftArtifact.payload.graph.nodes.some((node) => node.data.label === 'Draft')).toBe(true)
+  })
+
+  it('does not create a graph artifact for non-canvas children', async () => {
+    const runner = createChildAgentRunner({
+      toolRuntime: { invoke: vi.fn() }, listTools: () => [],
+      getParentGraph: () => ({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }),
+      stepModel: { step: () => ({ type: 'response', response: { type: 'answer', summary: 'ok', text: 'ok', dropped: [] } }) }
+    })
+    const result = await runner({ runId: 'run-child-qa', parentRunId: 'run-parent', role, task: 'Verify.', allowedTools: [],
+      allowedSkills: [], traceId: 'trace/run-child-qa', parentTraceId: 'trace', depth: 1 })
+    expect(result.artifactDrafts).toBeUndefined()
+  })
+
+  it('returns a sanitized CanvasPlan artifact draft owned by the child response', async () => {
+    const runner = createChildAgentRunner({
+      toolRuntime: { invoke: vi.fn() }, listTools: () => [],
+      getParentGraph: () => ({ nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }),
+      stepModel: { step: () => ({ type: 'response', response: { type: 'canvasPlan', plan: {
+        kind: 'plan', summary: 'Create scene', question: null,
+        nodes: [{ ref: 'text-1', type: 'text', title: 'Prompt', data: { content: 'safe' } }],
+        edges: [], runSteps: [], dropped: []
+      } } }) }
+    })
+    const result = await runner({ runId: 'run-child-plan', parentRunId: 'run-parent', role: registry.get('canvas-planner')!,
+      task: 'Plan.', allowedTools: [], allowedSkills: [], traceId: 'trace/run-child-plan', parentTraceId: 'trace', depth: 1 })
+    const planArtifact = result.artifactDrafts?.[0]
+    expect(planArtifact?.kind).toBe('canvasPlan')
+    if (planArtifact?.kind !== 'canvasPlan') throw new Error('Expected a CanvasPlan artifact')
+    expect(planArtifact.payload).toMatchObject({ kind: 'plan', summary: 'Create scene' })
+  })
   it('exposes spawnChild through runtime filtering only to canonical delegating roles', () => {
     const spawnTool = createAgentSpawnTool({ registry, runChild: vi.fn() })
     const roles = registry.list({ includeDisabled: true })

@@ -11,14 +11,18 @@
 import { z } from 'zod'
 
 import { CANONICAL_AGENT_ROLE_IDS, type AgentDefinition } from '../../../../../shared/agents'
+import type { CanvasGraphSnapshot } from '../../../../../shared/graph'
 import type { ToolActor, ToolDescriptor, ToolPermission } from '../../../../../shared/tools'
-import { defineTool, type ToolDefinition } from '../runtime'
+import { createToolRuntime, defineTool, type ToolDefinition, type ToolInvocationInput } from '../runtime'
 import type { ToolRuntime } from '../runtime'
 import { spawnSubAgent, type SpawnParentContext, type SpawnSubAgentOptions } from '../../agent/spawn-sub-agent'
 import type { AgentLoopModel } from '../../agent/context-loop'
 import { AgentLoopTerminalError, createAgentContextLoop, runAgentContextLoop } from '../../agent/context-loop'
 import type { AgentRegistry } from '../../agent/registry'
 import type { AgentRunSpine } from '../../agent/run-spine'
+import { createCanvasTools } from '../canvas'
+import { createDraftGraphArtifactDraft, createIsolatedSubAgentDraft } from '../../agent/sub-agent-isolation'
+import { sanitizePlan } from '../../agent/sanitize-plan'
 
 export interface AgentSpawnToolOptions {
   /** Run a child agent synchronously and return its output. */
@@ -28,7 +32,10 @@ export interface AgentSpawnToolOptions {
   /** Current descriptors used to fail closed during child permission narrowing. */
   listTools?: () => ToolDescriptor[]
   /** Optional durable run spine for child task lifecycle facts. */
-  runSpine?: Pick<AgentRunSpine, 'appendEvent' | 'upsertChildTask'>
+  runSpine?: Pick<AgentRunSpine, 'appendEvent' | 'upsertChildTask'> & Partial<Pick<
+    AgentRunSpine,
+    'transaction' | 'createRun' | 'updateRun' | 'getSnapshot' | 'saveArtifact'
+  >>
   /** Optional deterministic ID factory (tests). */
   idFactory?: () => string
   /** Optional clock (tests). */
@@ -174,6 +181,8 @@ export function createChildAgentRunner(options: {
   stepModel?: AgentLoopModel
   /** Lazily resolves a model bound to the effective child role and run identity. */
   resolveStepModel?: (input: { agent: AgentDefinition; runId: string }) => AgentLoopModel | null
+  /** Actual parent workflow graph used to seed canvas-role draft execution. */
+  getParentGraph?: (parentRunId: string) => CanvasGraphSnapshot
 }): SpawnSubAgentOptions['runChild'] {
   return async (childInput) => {
     const childAgent: AgentDefinition = {
@@ -182,7 +191,40 @@ export function createChildAgentRunner(options: {
       allowedSkills: childInput.allowedSkills
     }
 
-    const availableTools = options.listTools().filter((t) => childInput.allowedTools.includes(t.id))
+    const isCanvasWriter = childInput.role.id === 'canvas-planner' || childInput.role.id === 'canvas-operator'
+    const parentGraph = isCanvasWriter && options.getParentGraph
+      ? structuredClone(options.getParentGraph(childInput.parentRunId))
+      : null
+    const draft = parentGraph ? createIsolatedSubAgentDraft({
+      parentGraph,
+      parentRunId: childInput.parentRunId,
+      childRunId: childInput.runId,
+      traceId: childInput.traceId
+    }) : null
+    const draftRuntime = draft ? createToolRuntime({ tools: createCanvasTools({ graphStore: draft.graphStore }) }) : null
+    const globalDescriptors = options.listTools()
+    const draftDescriptors = draftRuntime?.list().filter((tool) => tool.id !== 'canvas.runNode') ?? []
+    const descriptorById = new Map([...globalDescriptors, ...draftDescriptors].map((tool) => [tool.id, tool]))
+    const availableTools = childInput.allowedTools.flatMap((toolId) => {
+      const tool = descriptorById.get(toolId)
+      return tool ? [tool] : []
+    })
+    const scopedTools: Pick<ToolRuntime, 'invoke'> = {
+      invoke(input: ToolInvocationInput) {
+        if (draftRuntime && input.toolId.startsWith('canvas.')) {
+          if (input.toolId === 'canvas.runNode') {
+            return Promise.resolve({
+              record: { invocationId: `draft-denied:${childInput.runId}`, toolId: input.toolId, actor: input.actor,
+                traceId: input.traceId, status: 'failed', createdAt: Date.now() },
+              error: { errorClass: 'tool_not_allowed', message: 'Provider jobs cannot run in child draft execution.', retryable: false },
+              progress: []
+            })
+          }
+          return draftRuntime.invoke(input)
+        }
+        return options.toolRuntime.invoke(input)
+      }
+    }
     const actor: ToolActor = { type: 'agent', id: childInput.role.id }
     const initialState = createAgentContextLoop({
       agent: childAgent,
@@ -215,7 +257,7 @@ export function createChildAgentRunner(options: {
         trigger: 'manual',
         availableTools,
         model,
-        tools: options.toolRuntime,
+        tools: scopedTools,
         traceId: childInput.traceId,
         execution: {
           runId: childInput.runId,
@@ -242,7 +284,26 @@ export function createChildAgentRunner(options: {
       else if (resp.type === 'clarification') output = resp.question
       else if (resp.type === 'canvasPlan') output = resp.plan.summary
 
-      return { output, status: 'completed', turnsUsed }
+      const artifactDrafts = []
+      if (resp.type === 'canvasPlan') {
+        const plan = sanitizePlan(resp.plan)
+        artifactDrafts.push({
+          kind: 'canvasPlan' as const,
+          title: 'Child CanvasPlan',
+          summary: plan.summary,
+          payload: plan
+        })
+      }
+      if (draft && parentGraph && JSON.stringify(draft.getDraftGraph()) !== JSON.stringify(parentGraph)) {
+        artifactDrafts.push(createDraftGraphArtifactDraft(draft))
+      }
+
+      return {
+        output,
+        status: 'completed',
+        turnsUsed,
+        ...(artifactDrafts.length > 0 ? { artifactDrafts } : {})
+      }
     } catch (err) {
       if (err instanceof AgentLoopTerminalError
         && err.errorClass === 'agent_tool_approval_required'

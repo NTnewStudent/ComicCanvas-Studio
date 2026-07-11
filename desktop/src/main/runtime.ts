@@ -321,6 +321,10 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const childRunner = options.childAgentRunner ?? createChildAgentRunner({
     toolRuntime,
     listTools: () => toolRuntime.list(),
+    getParentGraph: (parentRunId) => {
+      const workflowId = runSpine.getSnapshot(parentRunId)?.run.workflowId ?? 'default'
+      return graphStore.getGraph(workflowId)
+    },
     resolveStepModel: (input) => createGatewayChildLoopModel({
       gateways,
       resolveDefaultModel: resolveDefaultTextModel,

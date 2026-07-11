@@ -532,6 +532,22 @@ describe('Agent Workbench', () => {
     expect(screen.getByRole('tab', { name: '回答' })).toHaveAttribute('aria-selected', 'true')
   })
 
+  it('renders the dedicated draft graph artifact view', () => {
+    const draftGraph: AgentArtifactViewModel = {
+      id: 'artifact-draft-graph', runId: 'run-child', kind: 'draftGraph', title: '子画布草稿',
+      summary: '隔离提案', createdAt: 30, viewType: 'draftGraph',
+      nodes: [{ id: 'text-1', type: 'text', label: 'Prompt', position: { x: 0, y: 0 } }],
+      edges: [{ id: 'edge-1', source: 'text-1', target: 'image-1', edgeType: 'default' }],
+      lineage: { parentRunId: 'run-parent', childRunId: 'run-child', traceId: 'trace/child' },
+      warnings: ['已移除不安全字段'], dropped: []
+    }
+
+    render(<ArtifactPanel artifacts={[draftGraph]} />)
+
+    expect(screen.getByRole('tabpanel', { name: '子画布草稿' })).toHaveTextContent('1 个节点 · 1 条连线')
+    expect(screen.getByRole('tabpanel', { name: '子画布草稿' })).toHaveTextContent('已移除不安全字段')
+  })
+
   it('keeps artifact tabs in one horizontal row and constrains long citations', () => {
     const longCitation = `[${'very-long-citation'.repeat(20)}]`
     const longCitationSnapshot: AgentRunSnapshot = {

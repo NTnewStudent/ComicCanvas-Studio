@@ -253,6 +253,39 @@ export interface AgentCanvasPlanArtifactView extends AgentArtifactViewBase {
   dropped: string[]
 }
 
+/** Draft graph node metadata safe for renderer display. */
+export interface AgentDraftGraphNodeView {
+  id: string
+  type: string
+  label?: string | undefined
+  position: { x: number; y: number }
+}
+
+/** Draft graph edge metadata safe for renderer display. */
+export interface AgentDraftGraphEdgeView {
+  id: string
+  source: string
+  target: string
+  edgeType?: string | undefined
+}
+
+/** Child-run lineage retained on an isolated graph proposal. */
+export interface AgentDraftGraphLineageView {
+  parentRunId: string
+  childRunId: string
+  traceId: string
+}
+
+/** Read-only isolated graph proposal; node and edge payload data is intentionally omitted. */
+export interface AgentDraftGraphArtifactView extends AgentArtifactViewBase {
+  viewType: 'draftGraph'
+  nodes: AgentDraftGraphNodeView[]
+  edges: AgentDraftGraphEdgeView[]
+  lineage: AgentDraftGraphLineageView
+  warnings: string[]
+  dropped: string[]
+}
+
 /** Supported operation labels in a canvas patch draft preview. */
 export type AgentCanvasPatchAction = 'add' | 'update' | 'remove'
 
@@ -341,6 +374,7 @@ export type AgentArtifactViewModel =
   | AgentAnswerArtifactView
   | AgentClarificationArtifactView
   | AgentCanvasPlanArtifactView
+  | AgentDraftGraphArtifactView
   | AgentCanvasPatchDraftArtifactView
   | AgentSearchSummaryArtifactView
   | AgentMemorySuggestionArtifactView

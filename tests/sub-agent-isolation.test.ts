@@ -9,7 +9,7 @@ import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/d
 import { createWorkflowRepository } from '../desktop/src/main/db/repositories/workflow.repo'
 import { createCanvasTools } from '../desktop/src/main/tools/canvas'
 import { createToolRuntime } from '../desktop/src/main/tools/runtime'
-import { applySubAgentResult, createIsolatedSubAgentDraft } from '../desktop/src/main/agent/sub-agent-isolation'
+import { applySubAgentResult, createDraftGraphArtifactDraft, createIsolatedSubAgentDraft } from '../desktop/src/main/agent/sub-agent-isolation'
 
 const actor = { type: 'agent' as const, id: 'child-agent' }
 
@@ -51,6 +51,41 @@ async function withWorkflowRepository(run: (dependencies: ReturnType<typeof crea
 }
 
 describe('M5 sub-agent isolation and merge', () => {
+  it('creates a safe child-owned draftGraph artifact with lineage and dropped warnings', () => {
+    const draft = createIsolatedSubAgentDraft({ parentGraph, parentRunId: 'run-parent', childRunId: 'run-child', traceId: 'trace-parent/run-child' })
+    draft.graphStore.setGraph({
+      ...parentGraph,
+      nodes: [...parentGraph.nodes, {
+        id: 'video-child', type: 'video', position: { x: 640, y: 0 },
+        data: {
+          label: 'Child <script>alert(1)</script>', promptOverride: '/Users/test/private.mov',
+          modelId: 'stub-video', orientation: 'landscape', durationSeconds: 5,
+          firstFrameAssetId: null, lastFrameAssetId: null, assetId: 'data:image/png;base64,AAAA',
+          status: 'idle', apiToken: 'sk-123456789012345678901234'
+        }
+      }],
+      edges: [...parentGraph.edges, { id: 'edge-illegal', source: 'video-child', target: 'text-1', data: { edgeType: 'default', createdAt: 20 } }]
+    } as CanvasGraphSnapshot)
+
+    const artifact = createDraftGraphArtifactDraft(draft)
+
+    expect(artifact.kind).toBe('draftGraph')
+    expect(artifact.payload.lineage).toEqual({
+      parentRunId: 'run-parent', childRunId: 'run-child', traceId: 'trace-parent/run-child'
+    })
+    expect(artifact.payload.graph.edges).toEqual(parentGraph.edges)
+    expect(artifact.payload.warnings).toEqual(expect.arrayContaining([
+      'node:video-child:data.label:executable_string_stripped',
+      'node:video-child:data.promptOverride:absolute_path_dropped',
+      'node:video-child:data.assetId:binary_data_dropped',
+      'node:video-child:data.apiToken:sensitive_key_dropped',
+      'edge:video-child->text-1:connection_rejected'
+    ]))
+    expect(JSON.stringify(artifact)).not.toContain('/Users/test')
+    expect(JSON.stringify(artifact)).not.toContain('base64')
+    expect(JSON.stringify(artifact)).not.toContain('sk-123')
+  })
+
   it('lets a child mutate an isolated draft without changing the persisted graph before merge', async () => {
     await withWorkflowRepository(async (workflows) => {
       workflows.addVersion({ id: 'version-parent', workflowId: 'project-1', graph: parentGraph, createdAt: 110, createdBy: 'parent' })

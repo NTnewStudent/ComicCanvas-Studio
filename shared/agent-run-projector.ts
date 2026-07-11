@@ -16,6 +16,8 @@ import type {
   AgentCanvasPlanRunStepView,
   AgentDiagnosticEntryView,
   AgentDiagnosticSeverity,
+  AgentDraftGraphEdgeView,
+  AgentDraftGraphNodeView,
   AgentMemorySuggestionScope,
   AgentRunEventRecord,
   AgentRunProjection,
@@ -296,6 +298,63 @@ function projectCanvasPlanArtifact(artifact: AgentArtifactRecord): AgentArtifact
   }
 }
 
+function draftGraphNodes(value: unknown): AgentDraftGraphNodeView[] | null {
+  if (!Array.isArray(value)) return null
+  const nodes: AgentDraftGraphNodeView[] = []
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.id !== 'string' || typeof entry.type !== 'string'
+      || !isRecord(entry.position) || typeof entry.position.x !== 'number' || !Number.isFinite(entry.position.x)
+      || typeof entry.position.y !== 'number' || !Number.isFinite(entry.position.y)
+      || !isRecord(entry.data) || (entry.data.label !== undefined && typeof entry.data.label !== 'string')) {
+      return null
+    }
+    nodes.push({
+      id: entry.id, type: entry.type, position: { x: entry.position.x, y: entry.position.y },
+      ...(typeof entry.data.label === 'string' ? { label: entry.data.label } : {})
+    })
+  }
+  return nodes
+}
+
+function draftGraphEdges(value: unknown): AgentDraftGraphEdgeView[] | null {
+  if (!Array.isArray(value)) return null
+  const edges: AgentDraftGraphEdgeView[] = []
+  for (const entry of value) {
+    if (!isRecord(entry) || typeof entry.id !== 'string' || typeof entry.source !== 'string'
+      || typeof entry.target !== 'string' || (entry.type !== undefined && typeof entry.type !== 'string')) {
+      return null
+    }
+    edges.push({
+      id: entry.id, source: entry.source, target: entry.target,
+      ...(typeof entry.type === 'string' ? { edgeType: entry.type } : {})
+    })
+  }
+  return edges
+}
+
+function projectDraftGraphArtifact(artifact: AgentArtifactRecord): AgentArtifactViewModel {
+  const data = artifact.payload
+  if (!isRecord(data) || !isRecord(data.graph) || !isRecord(data.lineage)
+    || typeof data.lineage.parentRunId !== 'string' || typeof data.lineage.childRunId !== 'string'
+    || typeof data.lineage.traceId !== 'string') {
+    return malformedArtifact(artifact)
+  }
+  const nodes = draftGraphNodes(data.graph.nodes)
+  const edges = draftGraphEdges(data.graph.edges)
+  const warnings = optionalStringArray(data.warnings)
+  const dropped = optionalStringArray(data.dropped)
+  if (!nodes || !edges || !warnings || !dropped) return malformedArtifact(artifact)
+  return {
+    ...artifactBase(artifact), viewType: 'draftGraph', nodes, edges,
+    lineage: {
+      parentRunId: data.lineage.parentRunId,
+      childRunId: data.lineage.childRunId,
+      traceId: data.lineage.traceId
+    },
+    warnings, dropped
+  }
+}
+
 function canvasPatchAction(value: unknown): AgentCanvasPatchAction | null {
   if (value === 'add' || value === 'added' || value === 'create') {
     return 'add'
@@ -569,6 +628,7 @@ export function projectAgentArtifact(artifact: AgentArtifactRecord): AgentArtifa
     case 'diagnosticReport':
       return projectDiagnosticArtifact(artifact)
     case 'draftGraph':
+      return projectDraftGraphArtifact(artifact)
     case 'assetReference':
     case 'runExport':
       return fallbackArtifact(artifact, `${artifact.kind} 暂无专用只读视图`)

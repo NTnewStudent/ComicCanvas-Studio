@@ -183,6 +183,38 @@ Rules:
 - 启动恢复 SHALL 只重放尚未跨过副作用边界的初始 Agent Job，或停留在 `permission.resolved` 且仍持有暂停上下文的批准续跑 Job。已开始执行、缺少 Run、或检查点不安全的 Job SHALL fail closed，不得盲目重放。
 - 本地专业版不包含 organization/team/cloud policy server、team memory、cloud sync、multi-user workspace 或 centralized admin policy。
 
+#### Child Canvas Draft Artifacts
+
+Canvas 子 Agent 只生成隔离提案，不直接修改父工作流。`canvas-operator` 的写工具 SHALL 操作由父图快照初始化的内存 draft；`canvas-planner` 的 `canvasPlan` 响应 SHALL 作为 artifact draft 返回。只有 child Run 达到 `completed` 后，spawn 边界才会校验并持久化这些 drafts；`failed`、`aborted` 或 `approval_required` SHALL NOT 发布 draft artifact。Task 25 不包含合并或应用语义，父图保持不变；父级 apply gate 属于 Task 26。
+
+允许的 child artifact draft kind 与 payload：
+
+```ts
+type ChildCanvasArtifactDraft =
+  | {
+      kind: 'canvasPlan'
+      payload: CanvasPlan
+    }
+  | {
+      kind: 'draftGraph'
+      payload: {
+        graph: CanvasGraphSnapshot
+        lineage: {
+          parentRunId: string
+          childRunId: string
+          traceId: string
+        }
+        warnings: string[]
+      }
+    }
+```
+
+- Spawn 边界 SHALL 对 unknown runtime values 执行严格 kind 与 payload 归一化。未知 kind、重复 kind、错误字段类型、非有限坐标/viewport、非法 CanvasPlan action 或结构错误 SHALL fail closed，且不得写入 artifact row、`artifact.created` 或 completed child linkage。
+- 持久化 ID SHALL 为 `${childRunId}:artifact:${kind}`。artifact row 归属 child Run；对应 ChildAgentTask 的 `artifactIds` 与父 Run 的 `child.completed.artifactIds` SHALL 引用同一组 ID。
+- `lineage.parentRunId` 标识提案来源父 Run，`lineage.childRunId` SHALL 等于 artifact `runId`，`traceId` 保留 child trace。该 lineage 只表达来源，不授予修改父图的能力。
+- `draftGraph.graph` SHALL 在离开 child isolation boundary 前经过 graph sanitization。`warnings` 记录 sanitization 丢弃项；共享 projector 仅公开安全的 node id/type/label/position、edge id/source/target/type、lineage、warnings 与可选 dropped metadata，不向 renderer 透传 node/edge data。
+- 相同请求指纹的 terminal retry SHALL 从持久化 ChildAgentTask 返回缓存 artifact IDs，不得重新运行 child、重复 artifact rows，或追加 `artifact.created` / child lifecycle events。
+
 Events:
 
 ```ts
