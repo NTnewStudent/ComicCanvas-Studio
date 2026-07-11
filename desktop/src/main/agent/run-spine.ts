@@ -65,6 +65,7 @@ export interface DenyAgentToolRunInput {
 
 /** Durable service boundary for Agent lifecycle facts and replay snapshots. */
 export interface AgentRunSpine {
+  transaction<T>(operation: () => T): T
   createRun(input: CreateAgentRunSpineInput): AgentRunRecord
   updateRun(input: UpdateAgentRunInput): AgentRunRecord
   denyTool(input: DenyAgentToolRunInput): AgentRunRecord
@@ -144,6 +145,9 @@ export function createAgentRunSpine(options: AgentRunSpineOptions): AgentRunSpin
   }
 
   return {
+    transaction(operation) {
+      return options.transaction(operation)
+    },
     createRun(input) {
       if (options.runs.getById(input.runId)) {
         // A second run.created fact for one run ID would violate lifecycle uniqueness.

@@ -89,6 +89,37 @@ function eventDescriptor(type: AgentRunEventType): EventDescriptor {
           summary: '读取完成'
         }
       }
+    case 'child.started':
+      return {
+        type,
+        payload: {
+          childTaskId: 'child-1',
+          roleId: 'qa-verifier',
+          inputSummary: 'Verify the run',
+          effectiveTools: ['canvas.queryGraph']
+        }
+      }
+    case 'child.completed':
+      return {
+        type,
+        payload: {
+          childTaskId: 'child-1',
+          roleId: 'qa-verifier',
+          outputSummary: 'Run verified',
+          artifactIds: ['artifact-1']
+        }
+      }
+    case 'child.failed':
+      return {
+        type,
+        payload: {
+          childTaskId: 'child-1',
+          roleId: 'qa-verifier',
+          errorClass: 'agent_child_run_failed',
+          outputSummary: 'Verification failed',
+          artifactIds: []
+        }
+      }
     case 'permission.requested':
       return {
         type,

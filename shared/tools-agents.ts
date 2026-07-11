@@ -41,8 +41,7 @@ export type {
   AgentSource as AgentType,
   SpawnSubAgentInput,
   SpawnSubAgentResult,
-  SubAgentRunTrace,
-  SubAgentSpec
+  SubAgentRunTrace
 } from './agents'
 
 export { MAX_SPAWN_DEPTH } from './agents'

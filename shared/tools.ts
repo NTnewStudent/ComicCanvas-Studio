@@ -46,6 +46,18 @@ export interface ToolActor {
   id: string
 }
 
+/** Explicit identity and nesting metadata for agent-owned tool execution. */
+export interface AgentToolExecutionMetadata {
+  runId: string
+  roleId: string
+  depth: number
+  parentTraceId?: string
+  /** Tools still effective for this exact run after all policy filtering. */
+  effectiveTools: string[]
+  /** Skills still effective for this exact run after all policy filtering. */
+  effectiveSkills: string[]
+}
+
 export interface ToolPermissionResult {
   decision: PermissionDecision
   decisionReason: string

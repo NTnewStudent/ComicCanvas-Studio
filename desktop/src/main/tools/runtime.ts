@@ -9,6 +9,7 @@ import type { z } from 'zod'
 
 import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
 import type {
+  AgentToolExecutionMetadata,
   PermissionDecision,
   ToolActor,
   ToolDescriptor,
@@ -24,6 +25,7 @@ export interface ToolInvocationInput {
   input: unknown
   actor: ToolActor
   traceId: string
+  execution?: AgentToolExecutionMetadata
   approvedInvocation?: {
     toolId: string
     input: unknown
@@ -43,6 +45,7 @@ export interface ToolExecutionContext {
   actor: ToolActor
   traceId: string
   invocationId: string
+  execution?: AgentToolExecutionMetadata
 }
 
 export type ToolCallResult<TOutput> = AsyncGenerator<ToolProgress, TOutput> | Promise<TOutput> | TOutput
@@ -247,7 +250,12 @@ export function createToolRuntime(options: ToolRuntimeOptions = {}): ToolRuntime
       }
     }
 
-    const ctx: ToolExecutionContext = { actor: input.actor, traceId: input.traceId, invocationId }
+    const ctx: ToolExecutionContext = {
+      actor: input.actor,
+      traceId: input.traceId,
+      invocationId,
+      ...(input.execution ? { execution: input.execution } : {})
+    }
     const parsed = tool.inputSchema.safeParse(input.input)
 
     if (!parsed.success) {

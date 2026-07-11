@@ -4,19 +4,21 @@
  * @see docs/api-contracts/canvas-plan.md
  */
 
-import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
+import type { AgentRunSnapshot, PermissionGrantScope } from '../../../../shared/agent-run-events'
 import { projectAgentRunSnapshot } from '../../../../shared/agent-run-projector'
-import type {
-  AgentDefinition,
-  AgentResponse,
-  AgentRunRequest,
-  AgentRunStatus,
-  AgentRunTicket,
-  AgentRunViewResponse,
-  AgentToolApprovalInput,
-  AgentToolDenialInput,
-  AgentToolDenialResponse,
-  AgentTriggerKind
+import {
+  CANONICAL_AGENT_ROLE_IDS,
+  type CanonicalAgentRoleId,
+  type AgentDefinition,
+  type AgentResponse,
+  type AgentRunRequest,
+  type AgentRunStatus,
+  type AgentRunTicket,
+  type AgentRunViewResponse,
+  type AgentToolApprovalInput,
+  type AgentToolDenialInput,
+  type AgentToolDenialResponse,
+  type AgentTriggerKind
 } from '../../../../shared/agents'
 import type { JobResult } from '../../../../shared/jobs'
 import type { CanvasPlan } from '../../../../shared/plan'
@@ -49,6 +51,25 @@ import type { AgentRunSpine } from './run-spine'
 
 const DEFAULT_CHAT_AGENT_ID = 'general-purpose'
 const CANVAS_ORCHESTRATOR_AGENT_ID = 'canvas-orchestrator'
+
+/** Selects a nonempty, persistence-safe summary for a reconciled approval child. */
+export function approvalChildOutputSummary(child: Pick<AgentRunSnapshot, 'artifacts' | 'events'>, existingSummary: string): string {
+  const artifactSummary = child.artifacts.at(-1)?.summary.trim()
+  if (artifactSummary) return artifactSummary
+
+  for (let index = child.events.length - 1; index >= 0; index -= 1) {
+    const event = child.events[index]
+    if (event?.type !== 'response.ready') continue
+    const response = event.payload.response
+    const candidates = response.type === 'answer'
+      ? [response.summary, response.text]
+      : [response.summary, response.question]
+    const summary = candidates.find((candidate) => candidate.trim().length > 0)?.trim()
+    if (summary) return summary
+  }
+
+  return existingSummary.trim().length > 0 ? existingSummary : ''
+}
 
 export interface OrchestratorProgressDraft {
   type: 'progress'
@@ -228,9 +249,14 @@ interface StoredRun {
 }
 
 function fallbackOrchestratorAgent(agentId: string): AgentDefinition {
+  const canonicalAgentId = agentId === 'general-purpose'
+    ? 'general-assistant'
+    : agentId === 'canvas-orchestrator' || agentId === 'orchestrator'
+      ? 'canvas-planner'
+      : agentId
   if (agentId === DEFAULT_CHAT_AGENT_ID) {
     return {
-      id: DEFAULT_CHAT_AGENT_ID,
+      id: canonicalAgentId,
       source: 'builtin',
       name: 'General Purpose',
       description: 'Default conversation agent that understands, decomposes, clarifies, and delegates to local capabilities.',
@@ -254,7 +280,7 @@ function fallbackOrchestratorAgent(agentId: string): AgentDefinition {
   }
 
   return {
-    id: agentId,
+    id: canonicalAgentId,
     source: 'builtin',
     name: agentId === CANVAS_ORCHESTRATOR_AGENT_ID || agentId === 'orchestrator' ? 'Canvas Orchestrator' : agentId,
     description: 'Fallback Agent definition for isolated orchestrator tests.',
@@ -287,6 +313,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isAgentTriggerKind(value: unknown): value is AgentTriggerKind {
   return value === 'manual' || value === 'mention' || value === 'canvasChat' || value === 'workflowEvent'
+}
+
+function canonicalAgentRoleId(agentId: string): CanonicalAgentRoleId | null {
+  if (CANONICAL_AGENT_ROLE_IDS.includes(agentId as CanonicalAgentRoleId)) {
+    return agentId as CanonicalAgentRoleId
+  }
+
+  const roleAliases: Readonly<Record<string, CanonicalAgentRoleId>> = {
+    'general-purpose': 'general-assistant',
+    'canvas-orchestrator': 'canvas-planner',
+    orchestrator: 'canvas-planner',
+    canvas: 'canvas-operator',
+    tooling: 'tooling-agent',
+    pm: 'pm-agent'
+  }
+  return roleAliases[agentId] ?? null
 }
 
 function isToolPermissionKind(value: unknown): value is ToolPermissionKind {
@@ -403,7 +445,11 @@ function persistedLoopMessage(value: unknown): AgentLoopMessage | null {
   }
 }
 
-function persistedContextLoopState(value: unknown): AgentContextLoopState | null {
+/** Parses a durable context-loop checkpoint, rejecting partially malformed execution identity. */
+export function parseAgentContextLoopState(
+  value: unknown,
+  enclosing?: { runId: string; agentId: string }
+): AgentContextLoopState | null {
   if (
     !isRecord(value)
     || typeof value.agentId !== 'string'
@@ -429,10 +475,28 @@ function persistedContextLoopState(value: unknown): AgentContextLoopState | null
   const allowedTools = value.allowedTools.map(persistedToolDescriptor)
   const messages = value.messages.map(persistedLoopMessage)
   const pendingToolCalls = (value.pendingToolCalls ?? []).map(persistedToolCall)
+  const execution = value.execution
+  const canonicalRoles = new Set<string>(CANONICAL_AGENT_ROLE_IDS)
+  const enclosingRoleId = enclosing ? canonicalAgentRoleId(enclosing.agentId) : null
   if (
     allowedTools.some((tool) => tool === null)
     || messages.some((message) => message === null)
     || pendingToolCalls.some((call) => call === null)
+    || !(execution === undefined || (
+      isRecord(execution)
+      && typeof execution.runId === 'string' && execution.runId.length > 0
+      && typeof execution.roleId === 'string' && canonicalRoles.has(execution.roleId)
+      && Number.isInteger(execution.depth) && Number(execution.depth) >= 0
+      && (execution.parentTraceId === undefined || (typeof execution.parentTraceId === 'string' && execution.parentTraceId.length > 0))
+      && Array.isArray(execution.effectiveTools) && execution.effectiveTools.every((entry) => typeof entry === 'string')
+      && Array.isArray(execution.effectiveSkills) && execution.effectiveSkills.every((entry) => typeof entry === 'string')
+    ))
+    || (execution !== undefined && enclosing !== undefined && (
+      !isRecord(execution)
+      || execution.runId !== enclosing.runId
+      || enclosingRoleId === null
+      || execution.roleId !== enclosingRoleId
+    ))
   ) {
     return null
   }
@@ -452,7 +516,17 @@ function persistedContextLoopState(value: unknown): AgentContextLoopState | null
     compactionSummary: value.compactionSummary,
     omittedMessages: value.omittedMessages,
     pendingToolCalls: pendingToolCalls as AgentToolCall[],
-    additionalContext: value.additionalContext ?? ''
+    additionalContext: value.additionalContext ?? '',
+    ...(isRecord(execution) ? {
+      execution: {
+        runId: execution.runId as string,
+        roleId: execution.roleId as CanonicalAgentRoleId,
+        depth: execution.depth as number,
+        ...(typeof execution.parentTraceId === 'string' ? { parentTraceId: execution.parentTraceId } : {}),
+        effectiveTools: [...execution.effectiveTools as string[]],
+        effectiveSkills: [...execution.effectiveSkills as string[]]
+      }
+    } : {})
   }
 }
 
@@ -487,7 +561,6 @@ function restorePausedRun(record: AgentRunRecord): StoredRun | null {
   }
 
   const pendingApproval = persistedApprovalRequest(record.trace.pendingApproval)
-  const pausedState = persistedContextLoopState(record.pausedState)
   const traceMessageId = typeof record.trace.messageId === 'string' ? record.trace.messageId : ''
   const traceAgentId = typeof record.trace.agentId === 'string' ? record.trace.agentId : ''
   const traceJobId = typeof record.trace.jobId === 'string' ? record.trace.jobId : undefined
@@ -496,9 +569,24 @@ function restorePausedRun(record: AgentRunRecord): StoredRun | null {
   const agentId = record.agentId || traceAgentId
   const trigger = isAgentTriggerKind(record.trigger) ? record.trigger : traceTrigger
   const jobId = record.jobId ?? traceJobId
+  const pausedState = agentId
+    ? parseAgentContextLoopState(record.pausedState, { runId: record.id, agentId })
+    : null
 
   if (!pendingApproval || !pausedState || !messageId || !agentId || !trigger) {
     return null
+  }
+
+  if (!pausedState.execution) {
+    const canonicalRoleId = canonicalAgentRoleId(agentId)
+    if (!canonicalRoleId) return null
+    pausedState.execution = {
+      runId: record.id,
+      roleId: canonicalRoleId,
+      depth: 0,
+      effectiveTools: pausedState.allowedTools.map((tool) => tool.id),
+      effectiveSkills: []
+    }
   }
 
   return {
@@ -950,13 +1038,34 @@ function revalidateApprovalLoop(input: {
     throw approvalPolicyError(pausedState, 'The tool now requires permissions that were not included in the user approval.')
   }
 
+  const currentById = new Map(current.allowedTools.map((tool) => [tool.id, tool]))
+  const allowedTools = pausedState.allowedTools.flatMap((pausedTool) => {
+    const currentTool = currentById.get(pausedTool.id)
+    if (!currentTool) return []
+    const pausedPermissionKinds = new Set(pausedTool.permissions.map((permission) => permission.kind))
+    return currentTool.permissions.every((permission) => pausedPermissionKinds.has(permission.kind))
+      ? [currentTool]
+      : []
+  })
+  const resumedToolIds = new Set(allowedTools.map((tool) => tool.id))
+  const execution = pausedState.execution
+    ? {
+        ...pausedState.execution,
+        effectiveTools: pausedState.execution.effectiveTools.filter((toolId) => resumedToolIds.has(toolId)),
+        effectiveSkills: input.agent.allowedSkills === '*'
+          ? [...pausedState.execution.effectiveSkills]
+          : pausedState.execution.effectiveSkills.filter((skillId) => input.agent.allowedSkills.includes(skillId))
+      }
+    : undefined
+
   return {
     ...pausedState,
     agentId: input.agent.id,
     trigger,
     maxTurns: input.agent.maxTurns,
     systemPrompt: current.systemPrompt,
-    allowedTools: current.allowedTools,
+    allowedTools,
+    ...(execution ? { execution } : {}),
     droppedTools: [...new Set([...pausedState.droppedTools, ...current.droppedTools])],
     messages: pausedState.messages.map((message, index) => {
       return index === 0 && message.role === 'system'
@@ -1698,6 +1807,59 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     runsById.set(run.runId, run)
   }
 
+  function reconcileApprovalChild(runId: string, status?: 'pending' | 'running' | 'completed' | 'failed' | 'aborted', errorClass?: string): void {
+    const child = options.runSpine?.getSnapshot(runId)
+    const parentRunId = child?.run.trace.parentRunId
+    if (!child || typeof parentRunId !== 'string') return
+    const parent = options.runSpine?.getSnapshot(parentRunId)
+    const task = parent?.childTasks.find((candidate) => candidate.id === runId)
+    if (!parent || !task || parent.run.trace.standaloneApprovalProxy !== true
+      || parent.run.trace.approvalTargetRunId !== runId) return
+    const childStatus = status ?? child.run.status
+    if (childStatus === 'approval_required') return
+    const artifactIds = child.artifacts.map((artifact) => artifact.id)
+    const outputSummary = approvalChildOutputSummary(child, task.outputSummary ?? '')
+    const completed = childStatus === 'completed'
+    const terminal = completed || childStatus === 'failed' || childStatus === 'aborted'
+    const resolved = child.events.find((event) => event.type === 'permission.resolved')
+    const hasRootEvent = (type: 'permission.resolved' | 'child.completed' | 'child.failed' | 'run.completed' | 'run.failed'): boolean => {
+      return parent.events.some((event) => event.type === type)
+    }
+    const nextErrorClass = errorClass ?? child.run.errorClass ?? 'agent_child_run_failed'
+    transaction(() => {
+      if (resolved && !hasRootEvent('permission.resolved')) {
+        options.runSpine?.appendEvent(parentRunId, 'permission.resolved', resolved.payload)
+      }
+      if (task.status === 'approval_required' || (terminal && task.status !== childStatus)) {
+        options.runSpine?.upsertChildTask({
+          ...task, status: terminal ? childStatus : 'running', outputSummary, artifactIds,
+          ...(terminal && !completed ? { errorClass: nextErrorClass } : {}), updatedAt: clock()
+        })
+      }
+      if (terminal && !hasRootEvent(completed ? 'child.completed' : 'child.failed')) {
+        options.runSpine?.appendEvent(parentRunId, completed ? 'child.completed' : 'child.failed', completed ? {
+          childTaskId: runId, roleId: task.roleId, outputSummary, artifactIds
+        } : {
+          childTaskId: runId, roleId: task.roleId, errorClass: nextErrorClass,
+          ...(outputSummary ? { outputSummary } : {}), artifactIds
+        })
+      }
+      if (terminal) {
+        options.runSpine?.updateRun({
+          runId: parentRunId, status: childStatus, errorClass: completed ? null : nextErrorClass,
+          trace: { pendingApproval: null }, lastCheckpoint: completed ? 'run.completed' : 'run.failed'
+        })
+        if (!hasRootEvent(completed ? 'run.completed' : 'run.failed')) {
+          options.runSpine?.appendEvent(parentRunId, completed ? 'run.completed' : 'run.failed', completed
+            ? { status: 'completed' }
+            : { errorClass: nextErrorClass, message: 'Child agent run failed.', retryable: false, checkpoint: 'run.failed' })
+        }
+      } else {
+        options.runSpine?.updateRun({ runId: parentRunId, status: 'running', lastCheckpoint: 'permission.resolved' })
+      }
+    })
+  }
+
   function setRun(run: StoredRun): void {
     persistRun(run)
     rememberRun(run)
@@ -1900,6 +2062,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       })
     })
     rememberRun(failedRun)
+    reconcileApprovalChild(runId, failedRun.status === 'aborted' ? 'aborted' : 'failed', failedRun.errorClass)
 
     return failedRun
   }
@@ -1923,7 +2086,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
     }
   }
 
-  return {
+  const runtime: OrchestratorRuntime = {
     chatSend(input) {
       const agentId = input.agentId ?? DEFAULT_CHAT_AGENT_ID
       const trigger = input.trigger ?? 'canvasChat'
@@ -1959,6 +2122,22 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       return { runId: submitted.runId, jobId: submitted.jobId, status: 'pending' }
     },
     approveTool(input) {
+      const proxy = options.agentRuns?.getById(input.runId)
+      const targetRunId = proxy?.trace.standaloneApprovalProxy === true
+        && typeof proxy.trace.approvalTargetRunId === 'string' ? proxy.trace.approvalTargetRunId : null
+      if (targetRunId) {
+        const target = options.agentRuns?.getById(targetRunId)
+        const result = target?.status === 'approval_required'
+          ? runtime.approveTool({ ...input, runId: targetRunId })
+          : target?.status === 'pending' || target?.status === 'running'
+            ? { runId: targetRunId, jobId: target.jobId ?? '', status: 'pending' as const }
+            : approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
+        reconcileApprovalChild(targetRunId)
+        if (target?.status === 'completed' || target?.status === 'failed' || target?.status === 'aborted') {
+          return result
+        }
+        return result
+      }
       const run = loadRun(input.runId)
 
       if (!run) {
@@ -2052,6 +2231,19 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       return { runId: run.runId, jobId: committed.ticket.jobId, status: 'pending' }
     },
     denyTool(input) {
+      const proxy = options.agentRuns?.getById(input.runId)
+      const targetRunId = proxy?.trace.standaloneApprovalProxy === true
+        && typeof proxy.trace.approvalTargetRunId === 'string' ? proxy.trace.approvalTargetRunId : null
+      if (targetRunId) {
+        const target = options.agentRuns?.getById(targetRunId)
+        const result = target?.status === 'approval_required'
+          ? runtime.denyTool({ ...input, runId: targetRunId })
+          : target?.status === 'aborted'
+            ? { runId: targetRunId, status: 'aborted' as const, errorClass: 'agent_tool_denied' as const }
+            : approvalError('agent_approval_unavailable', 'Agent run is not waiting for this approval.')
+        reconcileApprovalChild(targetRunId)
+        return result
+      }
       const run = loadRun(input.runId)
 
       if (!run) {
@@ -2277,6 +2469,7 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
               ...(options.workflowId ? { workflowId: options.workflowId } : {}),
               clock
             })
+            reconcileApprovalChild(result.runId, 'completed')
 
             return {
               kind: 'agentRun',
@@ -2461,4 +2654,5 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
       }
     }
   }
+  return runtime
 }

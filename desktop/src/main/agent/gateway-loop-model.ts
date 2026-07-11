@@ -26,7 +26,7 @@ import { sanitizePlan } from './sanitize-plan'
 import { estimateCostUsd } from './cost'
 import { GatewayRetryExhaustedError, isContextOverflowError, withGatewayRetry } from './recovery'
 
-interface GatewayAgentLoopModelOptions {
+export interface GatewayAgentLoopModelOptions {
   gateways: Pick<GatewayRegistry, 'invoke'>
   agent: AgentDefinition
   runId: string
@@ -630,6 +630,40 @@ export function createGatewayAgentLoopModel(options: GatewayAgentLoopModelOption
   }
 }
 
+/**
+ * Resolves and creates a gateway loop model for one child Agent run.
+ * @param options - Parent-equivalent gateway, model-policy, and protocol dependencies.
+ * @param input - Effective child role and durable child run identity.
+ * @returns A configured loop model, or null when no real text model is available.
+ * @see docs/api-contracts/agents.md
+ */
+export function createGatewayChildLoopModel(
+  options: Omit<GatewayAgentPlannerOptions, 'tools' | 'listTools'>,
+  input: { agent: AgentDefinition; runId: string }
+): AgentLoopModel | null {
+  const resolvedDefault = resolvePlannerDefaultTextModel(options as GatewayAgentPlannerOptions)
+  const effectiveModel = resolveEffectiveTextModel(options, input.agent, resolvedDefault)
+  const gatewayId = effectiveModel.gatewayId
+
+  if (!gatewayId || isStubGateway(options, gatewayId)) {
+    return null
+  }
+
+  const modelOptions = createPlannerLoopModelOptions(
+    options as GatewayAgentPlannerOptions,
+    input.agent,
+    input.runId,
+    undefined
+  )
+  modelOptions.gatewayId = gatewayId
+  modelOptions.toolProtocol = resolveAgentToolProtocol(options.resolveGatewayType?.(gatewayId))
+  if (effectiveModel.modelId) {
+    modelOptions.modelId = effectiveModel.modelId
+  }
+
+  return createGatewayAgentLoopModel(modelOptions)
+}
+
 function summarizeToolInput(input: unknown): string {
   try {
     const text = JSON.stringify(input)
@@ -795,7 +829,8 @@ export function createGatewayAgentPlanner(options: GatewayAgentPlannerOptions): 
         model: createGatewayAgentLoopModel(modelOptions),
         tools: options.tools,
         traceId: input.runId,
-        actor: { type: 'agent', id: input.agent.id }
+        actor: { type: 'agent', id: input.agent.id },
+        ...(input.loop.execution ? { execution: input.loop.execution } : {})
       })
       let next = await loop.next()
 

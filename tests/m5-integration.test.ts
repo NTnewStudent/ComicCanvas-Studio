@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import { createAuditService } from '../desktop/src/main/audit/service'
 import { createKnowledgeRepository } from '../desktop/src/main/db/repositories/knowledge.repo'
 import { createKnowledgeStore } from '../desktop/src/main/knowledge/store'
 import { openDatabaseAtPath, applyMigrations } from '../desktop/src/main/db/migrate'
@@ -9,32 +8,28 @@ import { createSkillRegistry } from '../desktop/src/main/skills/registry'
 import { createToolRuntime } from '../desktop/src/main/tools/runtime'
 import { redactSensitiveText } from '../desktop/src/main/security/redaction'
 import { spawnSubAgent } from '../desktop/src/main/agent/spawn-sub-agent'
+import { createAgentRegistry } from '../desktop/src/main/agent/registry'
 
 describe('M5 integration anchors', () => {
   it('covers spawn depth guard, plugin quarantine signal, skill registry, and redaction', async () => {
     const depthExceeded = await spawnSubAgent(
-      {
-        spec: {
-          task: 'hello',
-          systemPrompt: 'test',
-          allowedTools: ['canvas.queryGraph'],
-          allowedSkills: [],
-          maxTurns: 1
-        },
-        depth: 2
-      },
+      { roleId: 'qa-verifier', task: 'hello' },
       {
         parentRunId: 'parent-run',
         parentTraceId: 'parent-trace',
         allowedTools: ['canvas.queryGraph'],
-        allowedSkills: []
+        allowedSkills: [],
+        depth: 2
       },
       {
-        runChild: async () => ({ status: 'completed', output: 'ok', turnsUsed: 1 })
+        registry: createAgentRegistry({
+          agents: { list: () => [], upsert: (value) => value, delete: () => false }
+        }),
+        runChild: () => Promise.resolve({ status: 'completed', output: 'ok', turnsUsed: 1 })
       }
     )
     expect(depthExceeded.status).toBe('failed')
-    expect(depthExceeded.error).toBe('agent_depth_exceeded')
+    expect(depthExceeded.error?.errorClass).toBe('agent_depth_exceeded')
 
     const runtime = createToolRuntime()
     const loader = createPluginLoader({ runtime })

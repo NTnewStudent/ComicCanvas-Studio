@@ -10,7 +10,7 @@
 import type { IpcRegistrar } from './ipc/types'
 import { join } from 'node:path'
 import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, type OrchestratorPlanner } from './agent/orchestrator'
-import { createGatewayAgentPlanner } from './agent/gateway-loop-model'
+import { createGatewayAgentPlanner, createGatewayChildLoopModel } from './agent/gateway-loop-model'
 import { createAgentPermissionService, createToolPermissionGrantStore } from './agent/permission-service'
 import { createAgentRegistry } from './agent/registry'
 import { createAgentRunSpine } from './agent/run-spine'
@@ -66,6 +66,7 @@ import { createCanvasTools, type CanvasGraphStore } from './tools/canvas'
 import { createFsTools } from './tools/fs'
 import { createWebSearchTools } from './tools/web-search'
 import { createAgentSpawnTool, createChildAgentRunner } from './tools/agent'
+import type { SpawnSubAgentOptions } from './agent/spawn-sub-agent'
 import { createSkillRegistry } from './skills/registry'
 import { createSkillService } from './skills/skill.service'
 import { createToolRuntime } from './tools/runtime'
@@ -89,6 +90,8 @@ export interface MainProcessRuntimeOptions {
   assetIdFactory?: () => string
   messageIdFactory?: (prefix: 'message' | 'run') => string
   planIdFactory?: () => string
+  /** Optional child runner injection for standalone spawn integration tests. */
+  childAgentRunner?: SpawnSubAgentOptions['runChild']
 }
 
 export interface MainProcessRuntime {
@@ -270,31 +273,6 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   })
   const pluginLoader = createPluginLoader({ runtime: toolRuntime })
   pluginLoader.loadFromDirectory(join(process.cwd(), 'plugins'))
-  // Lazily build the agent spawn tool once the planner and toolRuntime are both available.
-  // Registered after toolRuntime is created to avoid circular dependency during construction.
-  function registerAgentSpawnTool(plannerInstance: typeof planner): void {
-    void plannerInstance // planner is used by the child runner when a step model is provided
-    const childRunner = createChildAgentRunner({
-      toolRuntime,
-      listTools: () => toolRuntime.list()
-    })
-    toolRuntime.register(createAgentSpawnTool({
-      parentAgent: agentRegistry.get('general-purpose') ?? {
-        id: 'general-purpose', source: 'builtin', name: 'General Purpose', description: '',
-        instructions: '', allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search'],
-        allowedSkills: '*',
-        gatewayPolicy: { allowedChannels: ['text'] },
-        contextPolicy: { includeCanvasGraph: false, includeSelectedAssets: false, includeRecentMessages: false, includeKnowledge: false, maxContextTokens: 4000 },
-        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'], requireAskForDestructive: true },
-        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'manual', autoRun: false },
-        maxTurns: 4, effort: 'medium', enabled: true
-      },
-      parentRunId: 'runtime-spawn',
-      parentTraceId: 'runtime',
-      currentDepth: 0,
-      runChild: childRunner
-    }))
-  }
   // Prefer a configured real (non-stub) text model so general questions get real answers.
   // Resolved lazily so configuring a gateway takes effect without an app restart.
   function resolveDefaultTextModel(): { gatewayId: string; modelId: string } | null {
@@ -340,12 +318,23 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
     planIdFactory: options.planIdFactory ?? (() => `plan-${crypto.randomUUID()}`),
     clock
   })
-  const childRunner = createChildAgentRunner({
+  const childRunner = options.childAgentRunner ?? createChildAgentRunner({
     toolRuntime,
-    listTools: () => toolRuntime.list()
+    listTools: () => toolRuntime.list(),
+    resolveStepModel: (input) => createGatewayChildLoopModel({
+      gateways,
+      resolveDefaultModel: resolveDefaultTextModel,
+      resolveGatewayType: (gatewayId) => getGatewayConfig(gatewayId)?.type,
+      fallbackGatewayId: 'stub-main',
+      fallbackModelId: 'stub-text'
+    }, input)
   })
-  // Register the spawn tool now that the planner is available.
-  registerAgentSpawnTool(planner)
+  toolRuntime.register(createAgentSpawnTool({
+    registry: agentRegistry,
+    listTools: () => toolRuntime.list(),
+    runSpine,
+    runChild: childRunner
+  }))
   worker = createJobWorker({
     jobs,
     events: jobEvents,
@@ -429,17 +418,85 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerAgentHandlers(options.ipcMain, {
     registry: agentRegistry,
     runtime: orchestrator,
-    spawnSubAgent: (input) => {
-      const parentAgent = agentRegistry.get('general-purpose')
+    spawnSubAgent: async (input) => {
+      const parentRunId = `ipc-spawn-${crypto.randomUUID()}`
+      const parentTraceId = `ipc-spawn-trace-${crypto.randomUUID()}`
+      const parentAgent = agentRegistry.get('general-assistant')
       const allowedTools = parentAgent?.allowedTools ?? '*'
       const allowedSkills = parentAgent?.allowedSkills ?? '*'
+      const messageId = options.messageIdFactory?.('message') ?? `message-${crypto.randomUUID()}`
 
-      return spawnSubAgent(input, {
-        parentRunId: `ipc-spawn-${crypto.randomUUID()}`,
-        parentTraceId: 'ipc-spawn',
+      runSpine.transaction(() => {
+        runSpine.createRun({
+          runId: parentRunId,
+          threadId: `thread-${crypto.randomUUID()}`,
+          workflowId: 'default',
+          messageId,
+          agentId: 'general-assistant',
+          trigger: 'manual',
+          policyProfileId: 'local-default'
+        })
+        runSpine.updateRun({ runId: parentRunId, status: 'running', lastCheckpoint: 'run.started' })
+        runSpine.appendEvent(parentRunId, 'run.started', { status: 'running' })
+      })
+
+      const result = await spawnSubAgent(input, {
+        parentRunId,
+        parentTraceId,
         allowedTools,
-        allowedSkills
-      }, { runChild: childRunner })
+        allowedSkills,
+        depth: 0
+      }, { registry: agentRegistry, runSpine, listTools: () => toolRuntime.list(), runChild: childRunner })
+
+      runSpine.transaction(() => {
+        if (result.status === 'completed') {
+          runSpine.updateRun({ runId: parentRunId, status: 'completed', lastCheckpoint: 'run.completed' })
+          runSpine.appendEvent(parentRunId, 'run.completed', { status: 'completed' })
+          return
+        }
+
+        if (result.status === 'approval_required' && result.pendingApproval) {
+          runSpine.updateRun({
+            runId: parentRunId,
+            status: 'approval_required',
+            trace: {
+              childRunId: result.trace.runId,
+              approvalTargetRunId: result.trace.runId,
+              standaloneApprovalProxy: true,
+              pendingApproval: {
+                callId: result.pendingApproval.callId,
+                toolId: result.pendingApproval.toolId,
+                reason: result.pendingApproval.reason,
+                requiredPermissions: result.pendingApproval.requiredPermissions
+              }
+            },
+            lastCheckpoint: 'permission.requested'
+          })
+          runSpine.appendEvent(parentRunId, 'permission.requested', {
+            callId: result.pendingApproval.callId,
+            toolId: result.pendingApproval.toolId,
+            reason: result.pendingApproval.reason,
+            requiredPermissions: result.pendingApproval.requiredPermissions
+          })
+          return
+        }
+
+        const errorClass = result.error?.errorClass ?? 'agent_child_run_failed'
+        runSpine.updateRun({
+          runId: parentRunId,
+          status: 'failed',
+          errorClass,
+          lastCheckpoint: 'run.failed'
+        })
+        runSpine.appendEvent(parentRunId, 'run.failed', {
+          errorClass,
+          message: result.error?.message ?? 'Child agent run failed.',
+          retryable: false,
+          checkpoint: 'run.failed'
+        })
+      })
+
+      return result
     }
   })
   registerChatHandlers(options.ipcMain, { chatMessages })

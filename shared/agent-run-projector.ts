@@ -716,6 +716,10 @@ function toChatEvent(event: AgentRunEventRecord): AgentChatEvent | null {
             retryable: data.retryable === true
           }
         : null
+    case 'child.started':
+    case 'child.completed':
+    case 'child.failed':
+      return null
     default:
       return null
   }

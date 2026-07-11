@@ -1,19 +1,40 @@
 /**
- * Agent registry for built-in and custom user agents.
+ * Deterministic registry for canonical built-in roles and custom user agents.
  * @see docs/api-contracts/agents.md
  */
 
-import type { AgentDefinition, AgentEffort, AgentTriggerKind } from '../../../../shared/agents'
+import {
+  CANONICAL_AGENT_ROLE_IDS,
+  type AgentDefinition,
+  type AgentEffort,
+  type AgentTriggerKind,
+  type CanonicalAgentRoleId
+} from '../../../../shared/agents'
 import type { ToolPermissionKind } from '../../../../shared/tools'
 import type { AgentRepository } from '../db/repositories/agent.repo'
-import { CANVAS_ORCHESTRATOR_PROMPT, CANVAS_PROMPT, GENERAL_PURPOSE_PROMPT, PM_PROMPT, TOOLING_PROMPT } from './prompts'
+import {
+  ASSET_MEDIA_AGENT_PROMPT,
+  CANVAS_OPERATOR_PROMPT,
+  CANVAS_PLANNER_PROMPT,
+  GENERAL_ASSISTANT_PROMPT,
+  PM_AGENT_PROMPT,
+  QA_VERIFIER_PROMPT,
+  TOOLING_AGENT_PROMPT,
+  WORKFLOW_RUNNER_PROMPT
+} from './prompts'
 
+/** Canonical built-in role IDs in stable user-facing list order. */
+export { CANONICAL_AGENT_ROLE_IDS }
+export type { CanonicalAgentRoleId }
+
+/** Dependencies for an Agent role registry. */
 export interface AgentRegistryOptions {
   agents: AgentRepository
   clock?: () => number
 }
 
-export interface AgentRegistry {
+/** Read and settings operations for built-in roles and custom agents. */
+export interface AgentRoleRegistry {
   list(options?: { includeDisabled?: boolean }): AgentDefinition[]
   get(agentId: string): AgentDefinition | null
   save(agent: AgentDefinition): AgentDefinition | AgentRegistryError
@@ -21,6 +42,10 @@ export interface AgentRegistry {
   isBuiltin(agentId: string): boolean
 }
 
+/** Compatibility type retained for existing runtime dependencies. */
+export type AgentRegistry = AgentRoleRegistry
+
+/** Stable registry error returned by settings operations. */
 export interface AgentRegistryError {
   errorClass: 'agent_builtin_readonly' | 'agent_policy_invalid' | 'agent_not_found'
   message: string
@@ -29,19 +54,19 @@ export interface AgentRegistryError {
 
 const builtinAgents: AgentDefinition[] = [
   {
-    id: 'general-purpose',
+    id: 'general-assistant',
     source: 'builtin',
-    name: 'General Purpose',
-    description: 'Understands the user, answers directly, reads/searches the project, and delegates canvas work.',
-    instructions: GENERAL_PURPOSE_PROMPT,
-    allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search'],
-    allowedSkills: '*',
+    name: 'General Assistant',
+    description: 'Default conversation role for answers, local discovery, and safe specialist handoff.',
+    instructions: GENERAL_ASSISTANT_PROMPT,
+    allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search', 'agent.spawnChild'],
+    allowedSkills: [],
     gatewayPolicy: { allowedChannels: ['text'] },
     contextPolicy: {
       includeCanvasGraph: true,
       includeSelectedAssets: true,
       includeRecentMessages: true,
-      includeKnowledge: false,
+      includeKnowledge: true,
       maxContextTokens: 8000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'], requireAskForDestructive: true },
@@ -51,14 +76,36 @@ const builtinAgents: AgentDefinition[] = [
     enabled: true
   },
   {
-    id: 'canvas-orchestrator',
+    id: 'pm-agent',
     source: 'builtin',
-    name: 'Canvas Orchestrator',
-    description: 'Turns explicit canvas orchestration requirements into declarative CanvasPlan JSON.',
-    instructions: CANVAS_ORCHESTRATOR_PROMPT,
-    allowedTools: '*',
-    allowedSkills: '*',
-    gatewayPolicy: { allowedChannels: ['text', 'image', 'video'] },
+    name: 'PM Agent',
+    description: 'Turns product intent into requirements, acceptance criteria, contracts, and scoped tasks.',
+    instructions: PM_AGENT_PROMPT,
+    allowedTools: ['fs.read', 'fs.glob', 'fs.grep'],
+    allowedSkills: ['pm-req-planner'],
+    gatewayPolicy: { allowedChannels: ['text'] },
+    contextPolicy: {
+      includeCanvasGraph: false,
+      includeSelectedAssets: false,
+      includeRecentMessages: true,
+      includeKnowledge: true,
+      maxContextTokens: 7000
+    },
+    permissionPolicy: { allowedPermissionKinds: ['file.read', 'diagnostics'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
+    maxTurns: 7,
+    effort: 'high',
+    enabled: true
+  },
+  {
+    id: 'canvas-planner',
+    source: 'builtin',
+    name: 'Canvas Planner',
+    description: 'Produces validated declarative CanvasPlan drafts without mutating or running the graph.',
+    instructions: CANVAS_PLANNER_PROMPT,
+    allowedTools: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.validateGraph'],
+    allowedSkills: [],
+    gatewayPolicy: { allowedChannels: ['text'] },
     contextPolicy: {
       includeCanvasGraph: true,
       includeSelectedAssets: true,
@@ -66,42 +113,31 @@ const builtinAgents: AgentDefinition[] = [
       includeKnowledge: false,
       maxContextTokens: 8000
     },
-    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'file.read', 'network', 'provider.spend'], requireAskForDestructive: true },
-    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'mention', autoRun: false },
     maxTurns: 8,
     effort: 'high',
     enabled: true
   },
   {
-    id: 'orchestrator',
+    id: 'canvas-operator',
     source: 'builtin',
-    name: 'Orchestrator',
-    description: 'Compatibility alias for Canvas Orchestrator.',
-    instructions: CANVAS_ORCHESTRATOR_PROMPT,
-    allowedTools: '*',
-    allowedSkills: '*',
-    gatewayPolicy: { allowedChannels: ['text', 'image', 'video'] },
-    contextPolicy: {
-      includeCanvasGraph: true,
-      includeSelectedAssets: true,
-      includeRecentMessages: true,
-      includeKnowledge: false,
-      maxContextTokens: 8000
-    },
-    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write', 'file.read', 'network', 'provider.spend'], requireAskForDestructive: true },
-    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
-    maxTurns: 8,
-    effort: 'high',
-    enabled: true
-  },
-  {
-    id: 'canvas',
-    source: 'builtin',
-    name: 'Canvas',
-    description: 'Handles canvas nodes, edges, and graph edits.',
-    instructions: CANVAS_PROMPT,
-    allowedTools: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.createNode', 'canvas.connectNodes', 'canvas.updateNodeData'],
-    allowedSkills: ['canvas-node-designer'],
+    name: 'Canvas Operator',
+    description: 'Applies approved node and edge changes without running provider-backed work.',
+    instructions: CANVAS_OPERATOR_PROMPT,
+    allowedTools: [
+      'canvas.queryGraph',
+      'canvas.createNode',
+      'canvas.duplicateNode',
+      'canvas.renameNode',
+      'canvas.setNodePosition',
+      'canvas.connectNodes',
+      'canvas.connectToCreate',
+      'canvas.updateNodeData',
+      'canvas.extractSelection',
+      'canvas.layoutSelection'
+    ],
+    allowedSkills: [],
     gatewayPolicy: { allowedChannels: ['text'] },
     contextPolicy: {
       includeCanvasGraph: true,
@@ -111,56 +147,109 @@ const builtinAgents: AgentDefinition[] = [
       maxContextTokens: 6000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write'], requireAskForDestructive: true },
-    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'mention', autoRun: false },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
     maxTurns: 6,
-    effort: 'high',
+    effort: 'medium',
     enabled: true
   },
   {
-    id: 'tooling',
+    id: 'asset-media-agent',
     source: 'builtin',
-    name: 'Tooling',
-    description: 'Coordinates tools, providers, jobs, and persistence.',
-    instructions: TOOLING_PROMPT,
-    allowedTools: ['canvas.queryGraph', 'canvas.runNode'],
-    allowedSkills: ['systematic-debugging'],
+    name: 'Asset and Media Agent',
+    description: 'Prepares asset references and starts approved persistent media generation jobs.',
+    instructions: ASSET_MEDIA_AGENT_PROMPT,
+    allowedTools: ['canvas.queryGraph', 'asset.ensureCloudUrl', 'canvas.runNode'],
+    allowedSkills: [],
+    gatewayPolicy: { allowedChannels: ['text'] },
+    contextPolicy: {
+      includeCanvasGraph: true,
+      includeSelectedAssets: true,
+      includeRecentMessages: false,
+      includeKnowledge: false,
+      maxContextTokens: 6000
+    },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'network', 'provider.spend'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
+    maxTurns: 6,
+    effort: 'medium',
+    enabled: true
+  },
+  {
+    id: 'workflow-runner',
+    source: 'builtin',
+    name: 'Workflow Runner',
+    description: 'Validates and starts approved workflow nodes through the persistent job queue.',
+    instructions: WORKFLOW_RUNNER_PROMPT,
+    allowedTools: ['canvas.queryGraph', 'canvas.validateGraph', 'canvas.runNode'],
+    allowedSkills: [],
+    gatewayPolicy: { allowedChannels: ['text'] },
+    contextPolicy: {
+      includeCanvasGraph: true,
+      includeSelectedAssets: false,
+      includeRecentMessages: false,
+      includeKnowledge: false,
+      maxContextTokens: 6000
+    },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'provider.spend', 'diagnostics'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'workflowEvent'], defaultTrigger: 'manual', autoRun: false },
+    maxTurns: 6,
+    effort: 'medium',
+    enabled: true
+  },
+  {
+    id: 'tooling-agent',
+    source: 'builtin',
+    name: 'Tooling Agent',
+    description: 'Inspects local tools, providers, jobs, persistence, and diagnostics without side effects.',
+    instructions: TOOLING_AGENT_PROMPT,
+    allowedTools: ['fs.read', 'fs.glob', 'fs.grep', 'canvas.queryGraph'],
+    allowedSkills: [],
     gatewayPolicy: { allowedChannels: ['text'] },
     contextPolicy: {
       includeCanvasGraph: true,
       includeSelectedAssets: false,
       includeRecentMessages: true,
-      includeKnowledge: false,
-      maxContextTokens: 6000
+      includeKnowledge: true,
+      maxContextTokens: 7000
     },
-    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'provider.spend', 'diagnostics'], requireAskForDestructive: true },
-    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'workflowEvent'], defaultTrigger: 'manual', autoRun: false },
-    maxTurns: 6,
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
+    maxTurns: 7,
     effort: 'high',
     enabled: true
   },
   {
-    id: 'pm',
+    id: 'qa-verifier',
     source: 'builtin',
-    name: 'PM',
-    description: 'Keeps requirements, contracts, progress, and tests aligned.',
-    instructions: PM_PROMPT,
-    allowedTools: ['canvas.queryGraph'],
-    allowedSkills: ['pm-req-planner'],
+    name: 'QA Verifier',
+    description: 'Independently validates graph correctness and reports evidence without repairing it.',
+    instructions: QA_VERIFIER_PROMPT,
+    allowedTools: ['canvas.queryGraph', 'canvas.validateGraph'],
+    allowedSkills: [],
     gatewayPolicy: { allowedChannels: ['text'] },
     contextPolicy: {
-      includeCanvasGraph: false,
-      includeSelectedAssets: false,
-      includeRecentMessages: true,
+      includeCanvasGraph: true,
+      includeSelectedAssets: true,
+      includeRecentMessages: false,
       includeKnowledge: true,
       maxContextTokens: 6000
     },
-    permissionPolicy: { allowedPermissionKinds: ['diagnostics'], requireAskForDestructive: true },
-    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
+    permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'diagnostics'], requireAskForDestructive: true },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'workflowEvent'], defaultTrigger: 'manual', autoRun: false },
     maxTurns: 6,
     effort: 'high',
     enabled: true
   }
 ]
+
+const compatibilityAliases: Readonly<Record<string, CanonicalAgentRoleId>> = {
+  'general-purpose': 'general-assistant',
+  'canvas-orchestrator': 'canvas-planner',
+  orchestrator: 'canvas-planner',
+  canvas: 'canvas-operator',
+  tooling: 'tooling-agent',
+  pm: 'pm-agent'
+}
 
 const agentEfforts = new Set<AgentEffort>(['low', 'medium', 'high'])
 const agentTriggers = new Set<AgentTriggerKind>(['manual', 'mention', 'canvasChat', 'workflowEvent'])
@@ -169,6 +258,27 @@ const toolPermissionKinds = new Set<ToolPermissionKind>(['canvas.read', 'canvas.
 
 function registryError(errorClass: AgentRegistryError['errorClass'], message: string): AgentRegistryError {
   return { errorClass, message, retryable: false }
+}
+
+function cloneAgentDefinition(agent: AgentDefinition): AgentDefinition {
+  return {
+    ...agent,
+    allowedTools: agent.allowedTools === '*' ? '*' : [...agent.allowedTools],
+    allowedSkills: agent.allowedSkills === '*' ? '*' : [...agent.allowedSkills],
+    gatewayPolicy: {
+      ...agent.gatewayPolicy,
+      allowedChannels: [...agent.gatewayPolicy.allowedChannels]
+    },
+    contextPolicy: { ...agent.contextPolicy },
+    permissionPolicy: {
+      ...agent.permissionPolicy,
+      allowedPermissionKinds: [...agent.permissionPolicy.allowedPermissionKinds]
+    },
+    triggerPolicy: {
+      ...agent.triggerPolicy,
+      allowedTriggers: [...agent.triggerPolicy.allowedTriggers]
+    }
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -252,40 +362,27 @@ function isValidUserAgent(agent: AgentDefinition): boolean {
     && isBoolean(value.enabled)
 }
 
-function mergeBuiltinOverride(base: AgentDefinition, override?: AgentDefinition): AgentDefinition {
-  if (!override) {
-    return base
-  }
-
-  return {
-    ...base,
-    ...override,
-    id: base.id,
-    source: 'builtin'
-  }
-}
-
 /**
- * Creates an agent registry over built-in agents and persisted custom agents.
+ * Creates a deterministic registry of readonly built-in roles and persisted custom agents.
  * @param options - Agent repository and deterministic clock.
- * @returns Agent registry facade.
- * @throws Error never intentionally during construction; repository errors propagate from method calls.
+ * @returns Agent role registry facade.
  * @see docs/api-contracts/agents.md
  */
-export function createAgentRegistry(options: AgentRegistryOptions): AgentRegistry {
+export function createAgentRoleRegistry(options: AgentRegistryOptions): AgentRoleRegistry {
   const clock = options.clock ?? Date.now
   const builtinsById = new Map(builtinAgents.map((agent) => [agent.id, agent]))
+  const protectedIds = new Set([...builtinsById.keys(), ...Object.keys(compatibilityAliases)])
+
+  function canonicalId(agentId: string): string {
+    return compatibilityAliases[agentId] ?? agentId
+  }
 
   function listAgents(listOptions: { includeDisabled?: boolean } = {}): AgentDefinition[] {
-    const persistedAgents = options.agents.list({ includeDisabled: true })
-    const persistedById = new Map(persistedAgents.map((agent) => [agent.id, agent]))
-    const builtins = builtinAgents
-      .map((agent) => mergeBuiltinOverride(agent, persistedById.get(agent.id)))
+    const customAgents = options.agents.list({ includeDisabled: true })
+      .filter((agent) => !protectedIds.has(agent.id))
       .filter((agent) => listOptions.includeDisabled || agent.enabled)
-    const customAgents = persistedAgents
-      .filter((agent) => !builtinsById.has(agent.id))
-      .filter((agent) => listOptions.includeDisabled || agent.enabled)
-    return [...builtins, ...customAgents]
+    const builtins = builtinAgents.filter((agent) => listOptions.includeDisabled || agent.enabled)
+    return [...builtins, ...customAgents].map(cloneAgentDefinition)
   }
 
   return {
@@ -293,29 +390,42 @@ export function createAgentRegistry(options: AgentRegistryOptions): AgentRegistr
       return listAgents(listOptions)
     },
     get(agentId) {
-      return listAgents({ includeDisabled: true }).find((agent) => agent.id === agentId) ?? null
+      const builtin = builtinsById.get(canonicalId(agentId))
+      if (builtin) {
+        return cloneAgentDefinition(builtin)
+      }
+      const customAgent = options.agents.list({ includeDisabled: true }).find((agent) => agent.id === agentId)
+      return customAgent ? cloneAgentDefinition(customAgent) : null
     },
     save(agent) {
+      if (protectedIds.has(agent.id)) {
+        return registryError('agent_builtin_readonly', 'Built-in agents cannot be modified.')
+      }
       if (!isValidUserAgent(agent)) {
         return registryError('agent_policy_invalid', 'Agent configuration violates policy schema.')
       }
-
-      const source = builtinsById.has(agent.id) ? 'builtin' : 'user'
-      return options.agents.upsert({ ...agent, source }, clock())
+      return options.agents.upsert({ ...agent, source: 'user' }, clock())
     },
     delete(agentId) {
-      if (builtinsById.has(agentId)) {
+      if (protectedIds.has(agentId)) {
         return registryError('agent_builtin_readonly', 'Built-in agents cannot be deleted.')
       }
-
       if (!options.agents.delete(agentId)) {
         return registryError('agent_not_found', 'Agent ID does not exist or is disabled.')
       }
-
       return { agentId, deleted: true }
     },
     isBuiltin(agentId) {
-      return builtinsById.has(agentId)
+      return protectedIds.has(agentId)
     }
   }
+}
+
+/**
+ * Compatibility factory retained for existing runtime and IPC wiring.
+ * @param options - Agent repository and deterministic clock.
+ * @returns Agent role registry facade.
+ */
+export function createAgentRegistry(options: AgentRegistryOptions): AgentRegistry {
+  return createAgentRoleRegistry(options)
 }

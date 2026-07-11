@@ -153,22 +153,17 @@ describe('M1 IPC skeleton', () => {
         }
       },
       spawnSubAgent(input) {
-        expect(input).toEqual({
-          spec: {
-            task: 'Summarize graph',
-            systemPrompt: 'Read only.',
-            allowedTools: ['canvas.queryGraph'],
-            maxTurns: 2
-          },
-          depth: 0
-        })
+        expect(input).toEqual({ roleId: 'qa-verifier', task: 'Summarize graph' })
 
         return {
+          roleId: 'qa-verifier',
           output: 'Graph summary',
           status: 'completed',
           turnsUsed: 1,
           droppedTools: [],
           droppedSkills: [],
+          effectiveTools: ['canvas.queryGraph'],
+          artifactIds: [],
           trace: {
             runId: 'run-child-ipc',
             parentRunId: 'run-agent-ipc',
@@ -203,16 +198,24 @@ describe('M1 IPC skeleton', () => {
       status: 'aborted',
       errorClass: 'agent_tool_denied'
     })
-    expect(() => handlers.get('agent.denyTool')?.({}, {
+    expect(handlers.get('agent.denyTool')?.({}, {
       runId: ' ',
       callId: 'call-1',
       deniedBy: 'user-local'
-    })).toThrow()
-    expect(() => handlers.get('agent.denyTool')?.({}, {
+    })).toEqual({
+      errorClass: 'agent_invalid_request',
+      message: 'Invalid agent.denyTool request.',
+      retryable: false
+    })
+    expect(handlers.get('agent.denyTool')?.({}, {
       runId: 'run-agent-ipc',
       callId: 'x'.repeat(257),
       deniedBy: 'user-local'
-    })).toThrow()
+    })).toEqual({
+      errorClass: 'agent_invalid_request',
+      message: 'Invalid agent.denyTool request.',
+      retryable: false
+    })
     expect(denialCalls).toBe(1)
     expect(handlers.get('agent.getRun')?.({}, { runId: 'run-agent-ipc' })).toEqual({
       runId: 'run-agent-ipc',
@@ -220,13 +223,8 @@ describe('M1 IPC skeleton', () => {
       trace: { agentId: 'orchestrator' }
     })
     expect(handlers.get('agent.spawn')?.({}, {
-      spec: {
-        task: 'Summarize graph',
-        systemPrompt: 'Read only.',
-        allowedTools: ['canvas.queryGraph'],
-        maxTurns: 2
-      },
-      depth: 0
+      roleId: 'qa-verifier',
+      task: 'Summarize graph'
     })).toMatchObject({
       output: 'Graph summary',
       status: 'completed',

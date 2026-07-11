@@ -65,6 +65,9 @@ const EVENT_LABELS: Record<AgentRunEventType, string> = {
   'model.delta': '模型输出',
   'tool.started': '调用工具',
   'tool.completed': '工具完成',
+  'child.started': '子任务开始',
+  'child.completed': '子任务完成',
+  'child.failed': '子任务失败',
   'permission.requested': '请求授权',
   'permission.resolved': '授权完成',
   'artifact.created': '产物已保存',
@@ -270,6 +273,14 @@ function eventSummary(type: AgentRunEventType, payload: AgentRunEventPayload): s
     const toolId = payloadText(payload, 'toolId')
     const detail = payloadText(payload, 'summary') ?? payloadText(payload, 'inputSummary')
     return [toolId, detail].filter(Boolean).join(' · ') || undefined
+  }
+
+  if (type === 'child.started' || type === 'child.completed' || type === 'child.failed') {
+    const roleId = payloadText(payload, 'roleId')
+    const detail = payloadText(payload, 'outputSummary')
+      ?? payloadText(payload, 'inputSummary')
+      ?? payloadText(payload, 'errorClass')
+    return [roleId, detail].filter(Boolean).join(' · ') || undefined
   }
 
   if (type === 'permission.requested') {

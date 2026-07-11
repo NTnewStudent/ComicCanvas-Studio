@@ -6,6 +6,7 @@ import type { GatewayChatMessage, GatewayRequest, GatewayResult } from '../share
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
 import { createGatewayAgentPlanner } from '../desktop/src/main/agent/gateway-loop-model'
+import { createAgentContextLoop } from '../desktop/src/main/agent/context-loop'
 import type { OrchestratorPlannerDraft } from '../desktop/src/main/agent/orchestrator'
 import { createToolRuntime, defineTool } from '../desktop/src/main/tools/runtime'
 
@@ -119,6 +120,65 @@ function expectClosedNativeToolCalls(messages: readonly GatewayChatMessage[]): v
 }
 
 describe('Gateway-backed Agent loop planner', () => {
+  it('uses paused execution metadata when the gateway planner resumes an approved child tool', async () => {
+    const observedExecution: unknown[] = []
+    const runtime = createToolRuntime({
+      tools: [defineTool({
+        descriptor: queryGraphDescriptor,
+        inputSchema: z.object({ page: z.number() }),
+        outputSchema: z.object({ page: z.number() }),
+        renderToolUseMessage: () => 'Query graph',
+        call(input, context) {
+          observedExecution.push(context.execution)
+          return { page: input.page }
+        }
+      })]
+    })
+    const effectiveAgent = agent()
+    const loop = createAgentContextLoop({
+      agent: effectiveAgent, message: 'Inspect page 3.', trigger: 'canvasChat',
+      availableTools: [queryGraphDescriptor]
+    })
+    loop.transition = 'approval_required'
+    loop.turnCount = 1
+    loop.messages.push({
+      role: 'assistant', content: '',
+      toolCalls: [{ id: 'call-gateway-resume', toolId: 'canvas.queryGraph', input: { page: 3 } }]
+    })
+    Object.assign(loop, {
+      execution: {
+        runId: 'run-child-gateway', roleId: 'qa-verifier', depth: 2,
+        parentTraceId: 'trace-parent', effectiveTools: ['canvas.queryGraph'],
+        effectiveSkills: ['gateway-review']
+      }
+    })
+    const planner = createGatewayAgentPlanner({
+      gateways: { invoke: () => Promise.resolve(textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan }))) },
+      tools: runtime,
+      listTools: () => [queryGraphDescriptor]
+    })
+    const stream = planner.resumeApprovedTool?.({
+      runId: 'resume-wrapper-run', messageId: 'message-gateway-resume', message: 'Inspect page 3.',
+      agentId: effectiveAgent.id, agent: effectiveAgent, trigger: 'canvasChat', loop,
+      approval: {
+        callId: 'call-gateway-resume', toolId: 'canvas.queryGraph', input: { page: 3 },
+        reason: 'Read approval.', requiredPermissions: [{ kind: 'canvas.read', reason: 'Reads graph.' }]
+      },
+      approvedBy: 'user-local', approvalScope: 'run'
+    })
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_resume')
+    }
+    let next = await stream.next()
+    while (!next.done) next = await stream.next()
+
+    expect(observedExecution).toEqual([{
+      runId: 'run-child-gateway', roleId: 'qa-verifier', depth: 2,
+      parentTraceId: 'trace-parent', effectiveTools: ['canvas.queryGraph'],
+      effectiveSkills: ['gateway-review']
+    }])
+  })
+
   it('answers greetings locally when no text model is configured', async () => {
     const planner = createGatewayAgentPlanner({
       gateways: {

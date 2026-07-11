@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
+import type { AgentRunSnapshot } from '../shared/agent-run-events'
 import type { AgentDefinition, AgentResponse } from '../shared/agents'
 import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
 import type { ChatBlock } from '../shared/chat-blocks'
@@ -12,7 +13,7 @@ import type { GatewayChatMessage, GatewayRequest } from '../shared/gateway'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
 import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
-import { createAgentContextLoop } from '../desktop/src/main/agent/context-loop'
+import { createAgentContextLoop, type AgentContextLoopState } from '../desktop/src/main/agent/context-loop'
 import type { AgentRegistry } from '../desktop/src/main/agent/registry'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createAgentArtifactRepository } from '../desktop/src/main/db/repositories/agent-artifact.repo'
@@ -25,7 +26,7 @@ import { createJobRepository } from '../desktop/src/main/db/repositories/job.rep
 import { createJobEventBus } from '../desktop/src/main/jobs/events'
 import { createJobQueue } from '../desktop/src/main/jobs/queue'
 import { createJobWorker } from '../desktop/src/main/jobs/worker'
-import { createDefaultOrchestratorPlanner, createOrchestratorRuntime, runOrchestrator } from '../desktop/src/main/agent/orchestrator'
+import { approvalChildOutputSummary, createDefaultOrchestratorPlanner, createOrchestratorRuntime, parseAgentContextLoopState, runOrchestrator } from '../desktop/src/main/agent/orchestrator'
 import { createGatewayAgentPlanner } from '../desktop/src/main/agent/gateway-loop-model'
 import { createToolRuntime, defineTool } from '../desktop/src/main/tools/runtime'
 
@@ -84,8 +85,98 @@ const writeTool: ToolDescriptor = {
   enabled: true
 }
 
+describe('approval child terminal summary reconciliation', () => {
+  it('uses the latest durable textual response when no artifact exists', () => {
+    const child = {
+      artifacts: [],
+      events: [
+        {
+          id: 'event-answer', runId: 'run-child', sequence: 1, type: 'response.ready', createdAt: 1,
+          payload: {
+            messageId: 'message-child',
+            response: {
+              type: 'answer', summary: '',
+              text: 'Resumed safely with api_key=[REDACTED_SECRET]', dropped: []
+            }
+          }
+        }
+      ]
+    } as Pick<AgentRunSnapshot, 'artifacts' | 'events'>
+
+    const outputSummary = approvalChildOutputSummary(child, 'Existing child summary')
+
+    expect(outputSummary).toBe('Resumed safely with api_key=[REDACTED_SECRET]')
+    expect(outputSummary).not.toContain('sk-proj-')
+  })
+
+  it('never replaces a nonempty child summary with an empty value', () => {
+    const child = { artifacts: [], events: [] } as Pick<AgentRunSnapshot, 'artifacts' | 'events'>
+
+    expect(approvalChildOutputSummary(child, 'Existing child summary')).toBe('Existing child summary')
+  })
+})
+
 afterEach(() => {
   vi.useRealTimers()
+})
+
+function durableLoopCheckpoint(execution?: AgentContextLoopState['execution']): AgentContextLoopState {
+  return {
+    agentId: 'orchestrator',
+    trigger: 'manual',
+    turnCount: 1,
+    maxTurns: 4,
+    transition: 'approval_required',
+    systemPrompt: 'system',
+    userMessage: 'message',
+    allowedTools: [writeTool],
+    droppedTools: [],
+    messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'message' }],
+    tokenEstimate: 2,
+    compactionSummary: null,
+    omittedMessages: 0,
+    pendingToolCalls: [],
+    additionalContext: '',
+    ...(execution ? { execution } : {})
+  }
+}
+
+describe('durable context-loop execution identity', () => {
+  it('rejects an execution run ID that differs from the enclosing run', () => {
+    const checkpoint = durableLoopCheckpoint({
+      runId: 'run-other', roleId: 'canvas-planner', depth: 0,
+      effectiveTools: ['canvas.createNode'], effectiveSkills: []
+    })
+
+    expect(parseAgentContextLoopState(checkpoint, { runId: 'run-parent', agentId: 'orchestrator' })).toBeNull()
+  })
+
+  it('rejects a canonical execution role that differs from the enclosing agent alias', () => {
+    const checkpoint = durableLoopCheckpoint({
+      runId: 'run-parent', roleId: 'tooling-agent', depth: 0,
+      effectiveTools: ['canvas.createNode'], effectiveSkills: []
+    })
+
+    expect(parseAgentContextLoopState(checkpoint, { runId: 'run-parent', agentId: 'orchestrator' })).toBeNull()
+  })
+
+  it('accepts canonical execution roles matching an enclosing legacy alias', () => {
+    const checkpoint = durableLoopCheckpoint({
+      runId: 'run-parent', roleId: 'canvas-planner', depth: 0,
+      effectiveTools: ['canvas.createNode'], effectiveSkills: []
+    })
+
+    expect(parseAgentContextLoopState(checkpoint, { runId: 'run-parent', agentId: 'orchestrator' })?.execution).toEqual(checkpoint.execution)
+  })
+
+  it('preserves valid child execution metadata', () => {
+    const checkpoint = durableLoopCheckpoint({
+      runId: 'run-child', roleId: 'canvas-operator', depth: 2, parentTraceId: 'run-parent',
+      effectiveTools: ['canvas.createNode'], effectiveSkills: ['canvas-node-designer']
+    })
+
+    expect(parseAgentContextLoopState(checkpoint, { runId: 'run-child', agentId: 'canvas' })?.execution).toEqual(checkpoint.execution)
+  })
 })
 
 function createDeferredResponse(): { promise: Promise<AgentResponse>; resolve: (response: AgentResponse) => void } {
@@ -781,6 +872,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       let rememberedScope: string | undefined
       let executionCheckpoint: string | undefined
       let pausedStatePresentDuringExecution = false
+      let resumedAllowedToolIds: string[] = []
+      let resumedEffectiveToolIds: string[] = []
+      let resumedEffectiveSkillIds: string[] = []
       const toolRuntime = createToolRuntime({
         idFactory: (() => {
           let next = 0
@@ -819,8 +913,12 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
             renderToolUseMessage: () => 'Create node',
             call(input) {
               const executingRun = agentRuns.getById('run-approval-1')
+              const executingPausedState = executingRun?.pausedState as AgentContextLoopState | undefined
               executionCheckpoint = executingRun?.lastCheckpoint
-              pausedStatePresentDuringExecution = executingRun?.pausedState !== undefined
+              pausedStatePresentDuringExecution = executingPausedState !== undefined
+              resumedAllowedToolIds = executingPausedState?.allowedTools.map((tool) => tool.id) ?? []
+              resumedEffectiveToolIds = executingPausedState?.execution?.effectiveTools ?? []
+              resumedEffectiveSkillIds = executingPausedState?.execution?.effectiveSkills ?? []
               createNodeCalls += 1
               createdNodeTypes.push(input.type)
               return { nodeId: 'node-approved' }
@@ -957,7 +1055,13 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         messageId: 'message-approval-denied',
         jobId: 'job-agent-approval-denied',
         trace: { ...pausedRecord.trace },
-        pausedState: { ...pausedRecord.pausedState },
+        pausedState: {
+          ...pausedRecord.pausedState,
+          execution: {
+            runId: 'run-approval-denied', roleId: 'canvas-planner', depth: 0,
+            effectiveTools: ['canvas.createNode'], effectiveSkills: []
+          }
+        },
         createdAt: 1_782_700_002_003,
         updatedAt: 1_782_700_002_003
       })
@@ -967,7 +1071,13 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         messageId: 'message-approval-denial-failure',
         jobId: 'job-agent-approval-denial-failure',
         trace: { ...pausedRecord.trace },
-        pausedState: { ...pausedRecord.pausedState },
+        pausedState: {
+          ...pausedRecord.pausedState,
+          execution: {
+            runId: 'run-approval-denial-failure', roleId: 'canvas-planner', depth: 0,
+            effectiveTools: ['canvas.createNode'], effectiveSkills: []
+          }
+        },
         createdAt: 1_782_700_002_004,
         updatedAt: 1_782_700_002_004
       })
@@ -1105,12 +1215,57 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         scope: 'once'
       })).toMatchObject({ errorClass: 'agent_approval_unavailable' })
 
+      agentRuns.upsert({
+        ...pausedRecord,
+        pausedState: {
+          ...pausedRecord.pausedState,
+          execution: {
+            runId: ticket.runId,
+            roleId: 'canvas-planner',
+            depth: 1,
+            parentTraceId: 'run-parent',
+            effectiveTools: ['canvas.createNode', 'canvas.queryGraph'],
+            effectiveSkills: ['skill-kept', 'skill-removed']
+          }
+        }
+      })
+      const narrowedAgent: AgentDefinition = {
+        id: 'canvas-planner',
+        source: 'builtin',
+        name: 'Canvas Planner',
+        description: 'Approval revalidation fixture.',
+        instructions: 'Use approved canvas tools.',
+        allowedTools: ['canvas.createNode'],
+        allowedSkills: ['skill-kept'],
+        gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: {
+          includeCanvasGraph: true,
+          includeSelectedAssets: true,
+          includeRecentMessages: true,
+          includeKnowledge: false,
+          maxContextTokens: 8000
+        },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.write'], requireAskForDestructive: true },
+        triggerPolicy: { allowedTriggers: ['manual', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
+        maxTurns: 8,
+        effort: 'high',
+        enabled: true
+      }
+      const narrowedRegistry: AgentRegistry = {
+        list: () => [narrowedAgent],
+        get: () => narrowedAgent,
+        save: (agent) => agent,
+        delete: (agentId) => ({ agentId, deleted: true }),
+        isBuiltin: () => true
+      }
+
       const restartedEvents = createJobEventBus()
       const restartedRuntime = createOrchestratorRuntime({
         queue,
         events: restartedEvents,
         agentRuns,
         runSpine,
+        registry: narrowedRegistry,
         chatMessages,
         workflowId: 'workflow-approval',
         listTools: () => [writeTool],
@@ -1152,9 +1307,10 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         events: resumedEvents,
         agentRuns,
         runSpine,
+        registry: narrowedRegistry,
         chatMessages,
         workflowId: 'workflow-approval',
-        listTools: () => [writeTool],
+        listTools: () => [writeTool, queryGraphTool],
         idFactory: (prefix) => `${prefix}-approval-resumed`,
         planIdFactory: () => 'plan-approval-1',
         appSessionId: 'app-session-resumed',
@@ -1187,6 +1343,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       expect(rememberedScope).toBe('once')
       expect(executionCheckpoint).toBe('approval.execution_started')
       expect(pausedStatePresentDuringExecution).toBe(true)
+      expect(resumedAllowedToolIds).toEqual(['canvas.createNode'])
+      expect(resumedEffectiveToolIds).toEqual(['canvas.createNode'])
+      expect(resumedEffectiveSkillIds).toEqual(['skill-kept'])
       expect(resumedRuntime.getRun(ticket.runId)).toMatchObject({
         runId: 'run-approval-1',
         status: 'completed',

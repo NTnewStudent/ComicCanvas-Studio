@@ -10,26 +10,25 @@
 
 import { z } from 'zod'
 
-import type { AgentDefinition, AgentEffort } from '../../../../../shared/agents'
+import { CANONICAL_AGENT_ROLE_IDS, type AgentDefinition } from '../../../../../shared/agents'
 import type { ToolActor, ToolDescriptor, ToolPermission } from '../../../../../shared/tools'
-import { defineTool, ToolExecutionError, type ToolDefinition } from '../runtime'
+import { defineTool, type ToolDefinition } from '../runtime'
 import type { ToolRuntime } from '../runtime'
 import { spawnSubAgent, type SpawnParentContext, type SpawnSubAgentOptions } from '../../agent/spawn-sub-agent'
 import type { AgentLoopModel } from '../../agent/context-loop'
-import { createAgentContextLoop, runAgentContextLoop } from '../../agent/context-loop'
-import { GENERAL_PURPOSE_PROMPT } from '../../agent/prompts'
+import { AgentLoopTerminalError, createAgentContextLoop, runAgentContextLoop } from '../../agent/context-loop'
+import type { AgentRegistry } from '../../agent/registry'
+import type { AgentRunSpine } from '../../agent/run-spine'
 
 export interface AgentSpawnToolOptions {
   /** Run a child agent synchronously and return its output. */
   runChild: SpawnSubAgentOptions['runChild']
-  /** Current running agent definition used to derive the parent permission set. */
-  parentAgent: AgentDefinition
-  /** Current run ID for trace correlation. */
-  parentRunId: string
-  /** Current trace ID for hierarchical sub-agent tracing. */
-  parentTraceId: string
-  /** Monotonically narrowing max spawn depth guard. */
-  currentDepth: number
+  /** Resolves canonical child roles and the invoking parent role policy. */
+  registry: Pick<AgentRegistry, 'get'>
+  /** Current descriptors used to fail closed during child permission narrowing. */
+  listTools?: () => ToolDescriptor[]
+  /** Optional durable run spine for child task lifecycle facts. */
+  runSpine?: Pick<AgentRunSpine, 'appendEvent' | 'upsertChildTask'>
   /** Optional deterministic ID factory (tests). */
   idFactory?: () => string
   /** Optional clock (tests). */
@@ -50,6 +49,14 @@ function descriptor(input: Omit<ToolDescriptor, 'category' | 'owner' | 'enabled'
   }
 }
 
+function safeApprovalInputSummary(input: unknown): string {
+  if (Array.isArray(input)) return `Array with ${input.length} item(s)`
+  if (typeof input === 'object' && input !== null) {
+    return `Object fields: ${Object.keys(input).sort().join(', ') || '(none)'}`
+  }
+  return `Input type: ${input === null ? 'null' : typeof input}`
+}
+
 /**
  * Creates the agent.spawnChild tool for model-callable sub-agent execution.
  * @param options - Parent agent context, child runner, and trace metadata.
@@ -57,9 +64,6 @@ function descriptor(input: Omit<ToolDescriptor, 'category' | 'owner' | 'enabled'
  * @see docs/api-contracts/agents.md
  */
 export function createAgentSpawnTool(options: AgentSpawnToolOptions): ToolDefinition<unknown, unknown> {
-  const parentAllowedTools: string[] | '*' =
-    options.parentAgent.allowedTools === '*' ? '*' : [...options.parentAgent.allowedTools]
-
   return defineTool({
     descriptor: descriptor({
       id: 'agent.spawnChild',
@@ -73,65 +77,85 @@ export function createAgentSpawnTool(options: AgentSpawnToolOptions): ToolDefini
       inputSchemaRef: 'agent.spawnChild.input',
       outputSchemaRef: 'agent.spawnChild.output',
       permissions: [agentSpawnPermission],
-      concurrency: 'serial-write'
+      concurrency: 'readonly'
     }),
     inputSchema: z.object({
-      task: z.string().min(1).describe('What the child agent should accomplish.'),
-      systemPrompt: z.string().min(1).describe('System prompt for the child agent.'),
-      allowedTools: z.array(z.string()).describe('Tool IDs the child may use (subset of parent tools).'),
-      maxTurns: z.number().int().min(1).max(6).default(3),
-      effort: z.enum(['low', 'medium', 'high']).optional(),
-      modelId: z.string().optional()
-    }),
+      roleId: z.enum(CANONICAL_AGENT_ROLE_IDS),
+      task: z.string().trim().min(1).max(4000).describe('What the built-in role should accomplish.')
+    }).strict(),
     outputSchema: z.object({
+      roleId: z.string(),
       output: z.string(),
-      status: z.string(),
+      status: z.enum(['completed', 'failed', 'aborted', 'max_turns_exceeded', 'approval_required']),
       turnsUsed: z.number(),
+      effectiveTools: z.array(z.string()),
       droppedTools: z.array(z.string()),
-      error: z.string().optional()
+      droppedSkills: z.array(z.string()),
+      artifactIds: z.array(z.string()),
+      childRunId: z.string().optional(),
+      trace: z.object({
+        runId: z.string(), parentRunId: z.string(), parentTraceId: z.string(), depth: z.number(),
+        startedAt: z.number(), completedAt: z.number(), requestedTools: z.array(z.string()),
+        effectiveTools: z.array(z.string()), requestedSkills: z.array(z.string()),
+        effectiveSkills: z.array(z.string()), droppedTools: z.array(z.string()),
+        droppedSkills: z.array(z.string()),
+        status: z.enum(['completed', 'failed', 'aborted', 'max_turns_exceeded', 'approval_required']),
+        errorClass: z.string().optional()
+      }),
+      pendingApproval: z.object({
+        callId: z.string(), toolId: z.string(), reason: z.string(),
+        requiredPermissions: z.array(z.object({ kind: z.enum(['canvas.read', 'canvas.write', 'file.read', 'file.write', 'network', 'provider.spend', 'destructive', 'diagnostics']), reason: z.string() })),
+        inputSummary: z.string()
+      }).optional(),
+      error: z.object({ errorClass: z.string(), message: z.string(), retryable: z.boolean() }).optional()
     }),
     renderToolUseMessage: (input) => `Spawn child agent: ${typeof input.task === 'string' ? input.task.slice(0, 80) : ''}`,
-    async call(input) {
-      const parentContext: SpawnParentContext = {
-        parentRunId: options.parentRunId,
-        parentTraceId: options.parentTraceId,
-        allowedTools: parentAllowedTools,
-        allowedSkills: options.parentAgent.allowedSkills === '*' ? '*' : [...(options.parentAgent.allowedSkills ?? [])]
+    async call(input, ctx) {
+      const execution = ctx.execution ?? {
+        runId: ctx.traceId,
+        roleId: ctx.actor.id,
+        depth: 0,
+        effectiveTools: [],
+        effectiveSkills: []
       }
-
-      const spawnInput = {
-        spec: {
-          task: input.task,
-          systemPrompt: input.systemPrompt,
-          allowedTools: input.allowedTools,
-          maxTurns: input.maxTurns,
-          ...(input.effort ? { effort: input.effort as AgentEffort } : {}),
-          ...(input.modelId ? { modelId: input.modelId } : {})
-        },
-        depth: options.currentDepth
+      const parentContext: SpawnParentContext = {
+        parentRunId: execution.runId,
+        parentTraceId: ctx.traceId,
+        allowedTools: execution.effectiveTools,
+        allowedSkills: execution.effectiveSkills,
+        depth: execution.depth
       }
 
       const spawnOptions: SpawnSubAgentOptions = {
+        registry: options.registry,
+        ...(options.listTools ? { listTools: options.listTools } : {}),
         runChild: options.runChild,
+        ...(options.runSpine ? { runSpine: options.runSpine } : {}),
         ...(options.idFactory ? { idFactory: options.idFactory } : {}),
         ...(options.clock ? { clock: options.clock } : {})
       }
 
-      const result = await spawnSubAgent(spawnInput, parentContext, spawnOptions)
-
-      if (result.status === 'failed' && result.error === 'agent_depth_exceeded') {
-        throw new ToolExecutionError({
-          code: 'agent_depth_exceeded',
-          message: 'Maximum sub-agent nesting depth reached.',
-          retryable: false
-        })
-      }
-
+      const result = await spawnSubAgent(input, parentContext, spawnOptions)
       return {
+        roleId: result.roleId,
         output: result.output,
         status: result.status,
         turnsUsed: result.turnsUsed,
+        effectiveTools: result.effectiveTools,
         droppedTools: result.droppedTools,
+        droppedSkills: result.droppedSkills,
+        artifactIds: result.artifactIds,
+        childRunId: result.trace.runId,
+        trace: result.trace,
+        ...(result.pendingApproval ? {
+          pendingApproval: {
+            callId: result.pendingApproval.callId,
+            toolId: result.pendingApproval.toolId,
+            reason: result.pendingApproval.reason,
+            requiredPermissions: result.pendingApproval.requiredPermissions,
+            inputSummary: safeApprovalInputSummary(result.pendingApproval.input)
+          }
+        } : {}),
         ...(result.error ? { error: result.error } : {})
       }
     }
@@ -148,40 +172,18 @@ export function createChildAgentRunner(options: {
   listTools: () => ToolDescriptor[]
   /** Model used by child agents. When omitted the child loop returns a stub response. */
   stepModel?: AgentLoopModel
+  /** Lazily resolves a model bound to the effective child role and run identity. */
+  resolveStepModel?: (input: { agent: AgentDefinition; runId: string }) => AgentLoopModel | null
 }): SpawnSubAgentOptions['runChild'] {
   return async (childInput) => {
     const childAgent: AgentDefinition = {
-      id: `child-${childInput.runId}`,
-      source: 'builtin',
-      name: 'Child Agent',
-      description: 'Focused sub-agent run.',
-      instructions: childInput.systemPrompt || GENERAL_PURPOSE_PROMPT,
+      ...childInput.role,
       allowedTools: childInput.allowedTools,
-      allowedSkills: childInput.allowedSkills,
-      gatewayPolicy: { allowedChannels: ['text'] },
-      contextPolicy: {
-        includeCanvasGraph: false,
-        includeSelectedAssets: false,
-        includeRecentMessages: false,
-        includeKnowledge: false,
-        maxContextTokens: 4000
-      },
-      permissionPolicy: {
-        allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics'],
-        requireAskForDestructive: true
-      },
-      triggerPolicy: {
-        allowedTriggers: ['manual'],
-        defaultTrigger: 'manual',
-        autoRun: false
-      },
-      maxTurns: childInput.maxTurns,
-      effort: childInput.effort ?? 'medium',
-      enabled: true
+      allowedSkills: childInput.allowedSkills
     }
 
     const availableTools = options.listTools().filter((t) => childInput.allowedTools.includes(t.id))
-    const actor: ToolActor = { type: 'agent', id: childInput.runId }
+    const actor: ToolActor = { type: 'agent', id: childInput.role.id }
     const initialState = createAgentContextLoop({
       agent: childAgent,
       message: childInput.task,
@@ -190,8 +192,8 @@ export function createChildAgentRunner(options: {
     })
 
     // When no step model is provided (e.g. no gateway configured yet), return a graceful stub.
-    const model = options.stepModel ?? {
-      step: async () => ({
+    const model = options.resolveStepModel?.({ agent: childAgent, runId: childInput.runId }) ?? options.stepModel ?? {
+      step: () => Promise.resolve({
         type: 'response' as const,
         response: {
           type: 'answer' as const,
@@ -215,6 +217,14 @@ export function createChildAgentRunner(options: {
         model,
         tools: options.toolRuntime,
         traceId: childInput.traceId,
+        execution: {
+          runId: childInput.runId,
+          roleId: childInput.role.id,
+          depth: childInput.depth,
+          parentTraceId: childInput.parentTraceId,
+          effectiveTools: [...childInput.allowedTools],
+          effectiveSkills: [...childInput.allowedSkills]
+        },
         actor,
         initialState
       })
@@ -234,6 +244,16 @@ export function createChildAgentRunner(options: {
 
       return { output, status: 'completed', turnsUsed }
     } catch (err) {
+      if (err instanceof AgentLoopTerminalError
+        && err.errorClass === 'agent_tool_approval_required'
+        && err.pausedState
+        && err.pendingApproval) {
+        return {
+          output: '', status: 'approval_required', turnsUsed: err.turnsUsed,
+          pausedState: structuredClone(err.pausedState),
+          pendingApproval: structuredClone(err.pendingApproval)
+        }
+      }
       const error = err instanceof Error ? err.message : 'agent_run_failed'
       return { output: '', status: 'failed', turnsUsed, error, droppedTools }
     }

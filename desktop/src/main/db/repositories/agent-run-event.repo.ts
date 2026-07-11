@@ -115,6 +115,15 @@ const EVENT_PAYLOAD_SCHEMAS = {
     status: z.enum(['completed', 'failed', 'denied']),
     summary: z.string()
   }),
+  'child.started': z.object({
+    childTaskId: z.string(), roleId: z.string(), inputSummary: z.string(), effectiveTools: stringArraySchema
+  }),
+  'child.completed': z.object({
+    childTaskId: z.string(), roleId: z.string(), outputSummary: z.string(), artifactIds: stringArraySchema
+  }),
+  'child.failed': z.object({
+    childTaskId: z.string(), roleId: z.string(), errorClass: z.string(), outputSummary: z.string().optional(), artifactIds: stringArraySchema
+  }),
   'permission.requested': z.object({
     callId: z.string(),
     toolId: z.string(),
@@ -263,6 +272,18 @@ function rowToRecord(row: AgentRunEventRow): AgentRunEventRecord | null {
         toolId: 'unavailable',
         status: 'failed',
         summary: 'Event payload unavailable.'
+      })
+    case 'child.started':
+      return createRecord(row, row.type, EVENT_PAYLOAD_SCHEMAS[row.type], {
+        childTaskId: 'unavailable', roleId: 'unavailable', inputSummary: 'Event payload unavailable.', effectiveTools: []
+      })
+    case 'child.completed':
+      return createRecord(row, row.type, EVENT_PAYLOAD_SCHEMAS[row.type], {
+        childTaskId: 'unavailable', roleId: 'unavailable', outputSummary: 'Event payload unavailable.', artifactIds: []
+      })
+    case 'child.failed':
+      return createRecord(row, row.type, EVENT_PAYLOAD_SCHEMAS[row.type], {
+        childTaskId: 'unavailable', roleId: 'unavailable', errorClass: 'event_payload_unavailable', artifactIds: []
       })
     case 'permission.requested':
       return createRecord(row, row.type, EVENT_PAYLOAD_SCHEMAS[row.type], {

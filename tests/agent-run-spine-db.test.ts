@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { spawnSubAgent, type ChildAgentRunInput } from '../desktop/src/main/agent/spawn-sub-agent'
 import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createAgentArtifactRepository } from '../desktop/src/main/db/repositories/agent-artifact.repo'
@@ -12,6 +13,7 @@ import { createAgentRunEventRepository } from '../desktop/src/main/db/repositori
 import { createAgentRunRepository } from '../desktop/src/main/db/repositories/agent-run.repo'
 import { createChildAgentTaskRepository } from '../desktop/src/main/db/repositories/child-agent-task.repo'
 import { AGENT_RUN_EVENT_TYPES } from '../shared/agent-run-events'
+import type { AgentDefinition, SpawnSubAgentResult } from '../shared/agents'
 
 function withTempDb<T>(run: (db: ReturnType<typeof openDatabaseAtPath>) => T): T {
   const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-run-spine-db-'))
@@ -21,6 +23,20 @@ function withTempDb<T>(run: (db: ReturnType<typeof openDatabaseAtPath>) => T): T
 
   try {
     return run(db)
+  } finally {
+    db.close()
+    rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
+async function withTempDbAsync<T>(run: (db: ReturnType<typeof openDatabaseAtPath>) => Promise<T>): Promise<T> {
+  const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-run-spine-db-'))
+  const dbPath = join(tempDir, 'run-spine.sqlite')
+  migrateDatabaseAtPath(dbPath)
+  const db = openDatabaseAtPath(dbPath)
+
+  try {
+    return await run(db)
   } finally {
     db.close()
     rmSync(tempDir, { recursive: true, force: true })
@@ -231,6 +247,24 @@ describe('Agent Run Spine SQLite schema', () => {
           toolId: 'unavailable',
           status: 'failed',
           summary: 'Event payload unavailable.'
+        },
+        {
+          childTaskId: 'unavailable',
+          roleId: 'unavailable',
+          inputSummary: 'Event payload unavailable.',
+          effectiveTools: []
+        },
+        {
+          childTaskId: 'unavailable',
+          roleId: 'unavailable',
+          outputSummary: 'Event payload unavailable.',
+          artifactIds: []
+        },
+        {
+          childTaskId: 'unavailable',
+          roleId: 'unavailable',
+          errorClass: 'event_payload_unavailable',
+          artifactIds: []
         },
         {
           callId: 'unavailable',
@@ -692,6 +726,268 @@ describe('Agent Run Spine SQLite schema', () => {
         'run.created',
         'permission.requested'
       ])
+    })
+  })
+
+  it('persists nested child runs through depth two and rejects depth three without orphan rows', async () => {
+    await withTempDbAsync(async (db) => {
+      let eventSequence = 0
+      let runSequence = 0
+      const runs = createAgentRunRepository(db)
+      const children = createChildAgentTaskRepository(db)
+      const spine = createAgentRunSpine({
+        runs,
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: children,
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-nested-${++eventSequence}`,
+        clock: () => 500 + eventSequence
+      })
+      const role: AgentDefinition = {
+        id: 'general-assistant',
+        source: 'builtin',
+        name: 'General Assistant',
+        description: 'Delegates nested verification work.',
+        instructions: 'Delegate safely.',
+        allowedTools: ['agent.spawnChild'],
+        allowedSkills: [],
+        gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: {
+          includeCanvasGraph: false,
+          includeSelectedAssets: false,
+          includeRecentMessages: true,
+          includeKnowledge: false,
+          maxContextTokens: 4000
+        },
+        permissionPolicy: { allowedPermissionKinds: ['diagnostics'], requireAskForDestructive: true },
+        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'manual', autoRun: false },
+        maxTurns: 4,
+        effort: 'medium',
+        enabled: true
+      }
+      const registry = { get: (roleId: string) => roleId === role.id ? role : null }
+      const nestedResults: SpawnSubAgentResult[] = []
+
+      spine.createRun({
+        runId: 'run-root-nested',
+        threadId: 'thread-nested',
+        workflowId: 'workflow-nested',
+        messageId: 'message-nested',
+        agentId: 'general-assistant',
+        trigger: 'canvasChat',
+        policyProfileId: 'policy-nested',
+        gatewayId: 'gateway-nested',
+        modelId: 'model-nested'
+      })
+      spine.updateRun({ runId: 'run-root-nested', status: 'running', lastCheckpoint: 'run.started' })
+
+      const runChild = async (child: ChildAgentRunInput) => {
+        const nested = await spawnSubAgent(
+          { roleId: 'general-assistant', task: `Nested from depth ${child.depth}.` },
+          {
+            parentRunId: child.runId,
+            parentTraceId: child.traceId,
+            allowedTools: child.allowedTools,
+            allowedSkills: child.allowedSkills,
+            depth: child.depth
+          },
+          {
+            registry,
+            runSpine: spine,
+            idFactory: () => `run-child-depth-${++runSequence}`,
+            runChild
+          }
+        )
+        nestedResults.push(nested)
+        return { output: `Completed depth ${child.depth}.`, status: 'completed' as const, turnsUsed: 1 }
+      }
+
+      const rootResult = await spawnSubAgent(
+        { roleId: 'general-assistant', task: 'Start nested work.' },
+        {
+          parentRunId: 'run-root-nested',
+          parentTraceId: 'trace-root-nested',
+          allowedTools: ['agent.spawnChild'],
+          allowedSkills: [],
+          depth: 0
+        },
+        {
+          registry,
+          runSpine: spine,
+          idFactory: () => `run-child-depth-${++runSequence}`,
+          runChild
+        }
+      )
+
+      expect(rootResult.status).toBe('completed')
+      expect(nestedResults.map((result) => result.status)).toEqual(['failed', 'completed'])
+      expect(nestedResults[0]?.error?.errorClass).toBe('agent_depth_exceeded')
+      expect(runs.getById('run-child-depth-1')).toMatchObject({
+        threadId: 'thread-nested',
+        workflowId: 'workflow-nested',
+        messageId: 'message-nested',
+        policyProfileId: 'policy-nested',
+        gatewayId: 'gateway-nested',
+        modelId: 'model-nested',
+        agentId: 'general-assistant',
+        status: 'completed',
+        lastCheckpoint: 'run.completed'
+      })
+      expect(runs.getById('run-child-depth-2')).toMatchObject({
+        agentId: 'general-assistant',
+        status: 'completed',
+        lastCheckpoint: 'run.completed'
+      })
+      expect(runs.getById('run-child-depth-3')).toBeNull()
+      expect(children.listByParentRunId('run-root-nested')).toEqual([
+        expect.objectContaining({ id: 'run-child-depth-1', status: 'completed' })
+      ])
+      expect(children.listByParentRunId('run-child-depth-1')).toEqual([
+        expect.objectContaining({ id: 'run-child-depth-2', status: 'completed' })
+      ])
+      expect(children.listByParentRunId('run-child-depth-2')).toEqual([])
+      expect(spine.getSnapshot('run-child-depth-1')?.events.map((event) => event.type)).toEqual([
+        'run.created',
+        'run.started',
+        'child.started',
+        'child.completed',
+        'run.completed'
+      ])
+    })
+  })
+
+  it('replays terminal child retries without rerunning or appending lifecycle events', async () => {
+    await withTempDbAsync(async (db) => {
+      let eventSequence = 0
+      const runs = createAgentRunRepository(db)
+      const events = createAgentRunEventRepository(db)
+      const spine = createAgentRunSpine({
+        runs,
+        events,
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-retry-${++eventSequence}`,
+        clock: (() => {
+          let now = 900
+          return () => now++
+        })()
+      })
+      const role: AgentDefinition = {
+        id: 'qa-verifier',
+        source: 'builtin',
+        name: 'QA Verifier',
+        description: 'Verifies persisted results.',
+        instructions: 'Verify once.',
+        allowedTools: [],
+        allowedSkills: [],
+        gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: {
+          includeCanvasGraph: false,
+          includeSelectedAssets: false,
+          includeRecentMessages: true,
+          includeKnowledge: false,
+          maxContextTokens: 2000
+        },
+        permissionPolicy: { allowedPermissionKinds: ['diagnostics'], requireAskForDestructive: true },
+        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'manual', autoRun: false },
+        maxTurns: 2,
+        effort: 'low',
+        enabled: true
+      }
+      const registry = { get: (roleId: string) => roleId === role.id ? role : null }
+      const runChild = vi.fn(() => ({
+        output: 'Durable verification result.',
+        status: 'completed' as const,
+        turnsUsed: 1,
+        artifactIds: ['artifact-retry']
+      }))
+
+      spine.createRun({
+        runId: 'run-retry-parent',
+        threadId: 'thread-retry',
+        workflowId: 'workflow-retry',
+        messageId: 'message-retry',
+        agentId: 'general-assistant',
+        trigger: 'manual',
+        policyProfileId: 'local-default'
+      })
+      spine.updateRun({ runId: 'run-retry-parent', status: 'running', lastCheckpoint: 'run.started' })
+      const parent = {
+        parentRunId: 'run-retry-parent',
+        parentTraceId: 'trace-retry-parent',
+        allowedTools: [] as string[],
+        allowedSkills: [] as string[],
+        depth: 0
+      }
+      const options = { registry, runSpine: spine, idFactory: () => 'run-retry-child', runChild }
+
+      const first = await spawnSubAgent({ roleId: role.id, task: 'Verify persistence.' }, parent, options)
+      const childEventsAfterFirst = events.listByRunId('run-retry-child').length
+      const parentEventsAfterFirst = events.listByRunId('run-retry-parent').length
+      const retry = await spawnSubAgent({ roleId: role.id, task: 'Verify persistence.' }, parent, options)
+
+      expect(first).toMatchObject({ status: 'completed', output: 'Durable verification result.' })
+      expect(retry).toMatchObject({
+        roleId: role.id,
+        status: 'completed',
+        output: 'Durable verification result.',
+        artifactIds: ['artifact-retry'],
+        trace: { runId: 'run-retry-child', parentRunId: 'run-retry-parent' }
+      })
+      expect(runChild).toHaveBeenCalledTimes(1)
+      expect(events.listByRunId('run-retry-child')).toHaveLength(childEventsAfterFirst)
+      expect(events.listByRunId('run-retry-parent')).toHaveLength(parentEventsAfterFirst)
+    })
+  })
+
+  it('returns a stable failure for nonterminal child retries without mutating SQLite', async () => {
+    await withTempDbAsync(async (db) => {
+      let eventSequence = 0
+      const runs = createAgentRunRepository(db)
+      const events = createAgentRunEventRepository(db)
+      const children = createChildAgentTaskRepository(db)
+      const spine = createAgentRunSpine({
+        runs,
+        events,
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: children,
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-conflict-${++eventSequence}`,
+        clock: () => 1000
+      })
+      const role: AgentDefinition = {
+        id: 'qa-verifier', source: 'builtin', name: 'QA Verifier', description: 'Verifies.', instructions: 'Verify.',
+        allowedTools: [], allowedSkills: [], gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: { includeCanvasGraph: false, includeSelectedAssets: false, includeRecentMessages: true, includeKnowledge: false, maxContextTokens: 2000 },
+        permissionPolicy: { allowedPermissionKinds: ['diagnostics'], requireAskForDestructive: true },
+        triggerPolicy: { allowedTriggers: ['manual'], defaultTrigger: 'manual', autoRun: false },
+        maxTurns: 2, effort: 'low', enabled: true
+      }
+      spine.createRun({ runId: 'run-conflict-parent', threadId: 'thread-conflict', workflowId: 'workflow-conflict', messageId: 'message-conflict', agentId: 'general-assistant', trigger: 'manual', policyProfileId: 'local-default' })
+      spine.createRun({ runId: 'run-conflict-child', threadId: 'thread-conflict', workflowId: 'workflow-conflict', messageId: 'message-conflict', agentId: role.id, trigger: 'manual', policyProfileId: 'local-default' })
+      spine.updateRun({ runId: 'run-conflict-child', status: 'running', trace: { parentRunId: 'run-conflict-parent', parentTraceId: 'trace-conflict-parent', depth: 1 }, lastCheckpoint: 'run.started' })
+      spine.appendEvent('run-conflict-child', 'run.started', { status: 'running' })
+      children.upsert({ id: 'run-conflict-child', parentRunId: 'run-conflict-parent', roleId: role.id, inputSummary: 'Verify persistence.', effectiveTools: [], status: 'running', artifactIds: [], createdAt: 1000, updatedAt: 1000 })
+      const runChild = vi.fn()
+      const childEventsBefore = events.listByRunId('run-conflict-child').length
+      const parentEventsBefore = events.listByRunId('run-conflict-parent').length
+
+      const result = await spawnSubAgent(
+        { roleId: role.id, task: 'Verify persistence.' },
+        { parentRunId: 'run-conflict-parent', parentTraceId: 'trace-conflict-parent', allowedTools: [], allowedSkills: [], depth: 0 },
+        { registry: { get: () => role }, runSpine: spine, idFactory: () => 'run-conflict-child', runChild }
+      )
+
+      expect(result).toMatchObject({ status: 'failed', error: { errorClass: 'agent_child_run_failed' } })
+      expect(runChild).not.toHaveBeenCalled()
+      expect(runs.getById('run-conflict-child')).toMatchObject({ status: 'running' })
+      expect(events.listByRunId('run-conflict-child')).toHaveLength(childEventsBefore)
+      expect(events.listByRunId('run-conflict-parent')).toHaveLength(parentEventsBefore)
     })
   })
 })

@@ -3,7 +3,7 @@
  * @see docs/api-contracts/agents.md
  */
 
-import type { ToolPermissionKind } from './tools'
+import type { ToolPermission, ToolPermissionKind } from './tools'
 import type { CanvasPlan } from './plan'
 import type { AgentRunProjection, AgentRunSnapshot, PermissionGrantScope } from './agent-run-events'
 
@@ -33,6 +33,21 @@ export interface AgentPermissionPolicy {
 }
 
 export type AgentTriggerKind = 'manual' | 'mention' | 'canvasChat' | 'workflowEvent'
+
+/** Canonical built-in role IDs accepted by first-MVP child spawning. */
+export const CANONICAL_AGENT_ROLE_IDS = [
+  'general-assistant',
+  'pm-agent',
+  'canvas-planner',
+  'canvas-operator',
+  'asset-media-agent',
+  'workflow-runner',
+  'tooling-agent',
+  'qa-verifier'
+] as const
+
+/** Stable identifier for a canonical built-in Agent role. */
+export type CanonicalAgentRoleId = (typeof CANONICAL_AGENT_ROLE_IDS)[number]
 
 export interface AgentTriggerPolicy {
   allowedTriggers: AgentTriggerKind[]
@@ -127,19 +142,29 @@ export interface AgentRunViewResponse {
   projection?: AgentRunProjection
 }
 
-export interface SubAgentSpec {
+export interface SpawnSubAgentInput {
+  roleId: string
   task: string
-  systemPrompt: string
-  allowedTools: string[]
-  allowedSkills?: string[]
-  modelId?: string
-  maxTurns: number
-  effort?: AgentEffort
 }
 
-export interface SpawnSubAgentInput {
-  spec: SubAgentSpec
-  depth?: number
+/** Stable IPC response returned when an Agent boundary request is malformed. */
+export interface AgentIpcValidationError {
+  errorClass: 'agent_invalid_request'
+  message: string
+  retryable: false
+}
+
+/** Stable IPC response returned when the local Agent runtime dependency is absent. */
+export interface AgentRuntimeUnavailableError {
+  errorClass: 'agent_runtime_unavailable'
+  message: string
+  retryable: false
+}
+
+export interface SpawnSubAgentError {
+  errorClass: 'agent_role_not_spawnable' | 'agent_depth_exceeded' | 'agent_child_run_failed'
+  message: string
+  retryable: false
 }
 
 export interface SubAgentRunTrace {
@@ -156,17 +181,28 @@ export interface SubAgentRunTrace {
   droppedTools: string[]
   droppedSkills: string[]
   status: Exclude<AgentRunStatus, 'pending' | 'running'>
-  error?: string
+  errorClass?: SpawnSubAgentError['errorClass']
 }
 
 export interface SpawnSubAgentResult {
+  roleId: string
   output: string
   status: Exclude<AgentRunStatus, 'pending' | 'running'>
   turnsUsed: number
+  effectiveTools: string[]
   droppedTools: string[]
   droppedSkills: string[]
+  artifactIds: string[]
   trace: SubAgentRunTrace
-  error?: string
+  error?: SpawnSubAgentError
+  pausedState?: unknown
+  pendingApproval?: {
+    callId: string
+    toolId: string
+    input: unknown
+    reason: string
+    requiredPermissions: ToolPermission[]
+  }
 }
 
 /** Maximum spawn depth for child agents. Root agent depth is 0. */

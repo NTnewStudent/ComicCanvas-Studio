@@ -35,9 +35,9 @@
 
 ## Phase 4 - Built-In Agent Team
 
-- [ ] 22. Implement `AgentRoleRegistry` for General Assistant, PM, Canvas Planner, Canvas Operator, Asset/Media, Workflow Runner, Tooling, and QA/Verifier. _(R5)_
-- [ ] 23. Update child-agent spawning so first MVP only uses built-in roles and persists ChildAgentTask records/events. _(R5)_
-- [ ] 24. Enforce child permission narrowing by parent policy, role policy, and tool permissions. _(R5, INV-3)_
+- [x] 22. Implement `AgentRoleRegistry` for General Assistant, PM, Canvas Planner, Canvas Operator, Asset/Media, Workflow Runner, Tooling, and QA/Verifier. _(R5)_
+- [x] 23. Update child-agent spawning so first MVP only uses built-in roles and persists ChildAgentTask records/events. _(R5)_
+- [x] 24. Enforce child permission narrowing by parent policy, role policy, and tool permissions. _(R5, INV-3)_
 - [ ] 25. Add draft graph / draft CanvasPlan artifacts for child canvas proposals. _(R4, R5, INV-4)_
 - [ ] 26. Add parent merge/apply gate for child canvas artifacts. _(R4, R5)_
 - [ ] 27. Add task tree UI rows with role, status, summaries, effective tools, artifacts, and errors. _(R5, R8)_

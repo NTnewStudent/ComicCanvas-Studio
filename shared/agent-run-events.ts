@@ -16,6 +16,9 @@ export const AGENT_RUN_EVENT_TYPES = [
   'model.delta',
   'tool.started',
   'tool.completed',
+  'child.started',
+  'child.completed',
+  'child.failed',
   'permission.requested',
   'permission.resolved',
   'artifact.created',
@@ -99,6 +102,25 @@ export interface AgentRunEventPayloadMap {
     invocationId?: string
     status: 'completed' | 'failed' | 'denied'
     summary: string
+  }
+  'child.started': {
+    childTaskId: string
+    roleId: string
+    inputSummary: string
+    effectiveTools: string[]
+  }
+  'child.completed': {
+    childTaskId: string
+    roleId: string
+    outputSummary: string
+    artifactIds: string[]
+  }
+  'child.failed': {
+    childTaskId: string
+    roleId: string
+    errorClass: string
+    outputSummary?: string
+    artifactIds: string[]
   }
   'permission.requested': {
     callId: string

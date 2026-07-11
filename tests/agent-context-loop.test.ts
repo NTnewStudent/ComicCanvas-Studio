@@ -5,6 +5,7 @@ import type { AgentDefinition } from '../shared/agents'
 import type { ToolDescriptor } from '../shared/tools'
 import { AgentLoopTerminalError, compactAgentMessages, createAgentContextLoop, filterAgentTools, resumeAgentContextLoopWithApproval, runAgentContextLoop } from '../desktop/src/main/agent/context-loop'
 import type { AgentLoopMessage } from '../desktop/src/main/agent/context-loop'
+import { parseAgentContextLoopState } from '../desktop/src/main/agent/orchestrator'
 import { createToolRuntime, defineTool } from '../desktop/src/main/tools/runtime'
 import type { CanvasPlan } from '../shared/plan'
 
@@ -55,6 +56,24 @@ const finalPlan: CanvasPlan = {
   question: null,
   dropped: []
 }
+
+it('restores complete execution metadata and fails closed when execution metadata is malformed', () => {
+  const state = createAgentContextLoop({ agent: agent(), message: 'Resume safely.', trigger: 'manual', availableTools: [readTool] })
+  state.execution = {
+    runId: 'run-child-restore', roleId: 'qa-verifier', depth: 2, parentTraceId: 'trace-parent',
+    effectiveTools: ['canvas.queryGraph'], effectiveSkills: ['approval-review']
+  }
+
+  expect(parseAgentContextLoopState(structuredClone(state))?.execution).toEqual(state.execution)
+  for (const malformed of [
+    { ...state.execution, runId: '' }, { ...state.execution, roleId: 'not-canonical' },
+    { ...state.execution, depth: -1 }, { ...state.execution, parentTraceId: 42 },
+    { ...state.execution, effectiveTools: ['canvas.queryGraph', 42] },
+    { ...state.execution, effectiveSkills: 'approval-review' }
+  ]) {
+    expect(parseAgentContextLoopState({ ...state, execution: malformed })).toBeNull()
+  }
+})
 
 function agent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
   return {
@@ -513,6 +532,7 @@ describe('Agent context loop policy', () => {
   it('executes remaining tool calls after an approved call before continuing the model loop', async () => {
     let rememberedScope: string | undefined
     const invokedToolIds: string[] = []
+    const executionMetadata: unknown[] = []
     let initialModelCalls = 0
     const runtime = createToolRuntime({
       idFactory: (() => {
@@ -562,8 +582,21 @@ describe('Agent context loop policy', () => {
       message: '读取两页画布',
       trigger: 'manual',
       availableTools: [readTool],
-      tools: runtime,
+      tools: {
+        invoke(input) {
+          executionMetadata.push(input.execution)
+          return runtime.invoke(input)
+        }
+      },
       traceId: 'trace-loop-approval-batch',
+      execution: {
+        runId: 'run-child-approval-batch',
+        roleId: 'qa-verifier',
+        depth: 2,
+        parentTraceId: 'trace-parent',
+        effectiveTools: ['canvas.queryGraph'],
+        effectiveSkills: ['approval-review']
+      },
       model: {
         step() {
           initialModelCalls += 1
@@ -601,7 +634,12 @@ describe('Agent context loop policy', () => {
       message: '读取两页画布',
       trigger: 'manual',
       availableTools: [readTool],
-      tools: runtime,
+      tools: {
+        invoke(input) {
+          executionMetadata.push(input.execution)
+          return runtime.invoke(input)
+        }
+      },
       traceId: 'trace-loop-approval-batch-resume',
       initialState: caught.pausedState,
       approval: caught.pendingApproval,
@@ -629,6 +667,23 @@ describe('Agent context loop policy', () => {
     expect(next.value.response).toEqual({ type: 'canvasPlan', plan: finalPlan })
     expect(rememberedScope).toBe('run')
     expect(invokedToolIds).toEqual(['canvas.queryGraph:1', 'canvas.queryGraph:2'])
+    expect(executionMetadata).toEqual([
+      {
+        runId: 'run-child-approval-batch', roleId: 'qa-verifier', depth: 2,
+        parentTraceId: 'trace-parent', effectiveTools: ['canvas.queryGraph'],
+        effectiveSkills: ['approval-review']
+      },
+      {
+        runId: 'run-child-approval-batch', roleId: 'qa-verifier', depth: 2,
+        parentTraceId: 'trace-parent', effectiveTools: ['canvas.queryGraph'],
+        effectiveSkills: ['approval-review']
+      },
+      {
+        runId: 'run-child-approval-batch', roleId: 'qa-verifier', depth: 2,
+        parentTraceId: 'trace-parent', effectiveTools: ['canvas.queryGraph'],
+        effectiveSkills: ['approval-review']
+      }
+    ])
     expect(resumedModelCalls).toBe(1)
   })
 

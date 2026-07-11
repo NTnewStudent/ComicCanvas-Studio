@@ -6,7 +6,7 @@
 import type { PermissionGrantScope } from '../../../../shared/agent-run-events'
 import type { AgentDefinition, AgentResponse, AgentTriggerKind } from '../../../../shared/agents'
 import type { CanvasPlan } from '../../../../shared/plan'
-import type { ToolActor, ToolDescriptor, ToolInvocationRecord, ToolPermission } from '../../../../shared/tools'
+import type { AgentToolExecutionMetadata, ToolActor, ToolDescriptor, ToolInvocationRecord, ToolPermission } from '../../../../shared/tools'
 import type { ToolInvocationResult, ToolRuntime } from '../tools/runtime'
 import { foldHistory, groupAgentMessagesAtomically, trimToolResult } from './compaction'
 import { CompactionFailedError, createToolFailureGuard, isContextOverflowError } from './recovery'
@@ -48,6 +48,8 @@ export interface AgentContextLoopState {
    * injected once after the system prompt. Empty string means no additional context.
    */
   additionalContext: string
+  /** Durable capability identity used unchanged by tool calls after approval resume. */
+  execution?: AgentToolExecutionMetadata
 }
 
 export type AgentLoopMessage =
@@ -85,7 +87,24 @@ export interface RunAgentContextLoopInput extends AgentContextLoopInput {
   tools: Pick<ToolRuntime, 'invoke'>
   traceId: string
   actor?: ToolActor
+  execution?: AgentToolExecutionMetadata
   initialState?: AgentContextLoopState
+}
+
+function effectiveExecutionMetadata(
+  input: RunAgentContextLoopInput,
+  state: AgentContextLoopState
+): AgentToolExecutionMetadata {
+  if (state.execution) return state.execution
+  if (input.execution) return input.execution
+
+  return {
+    runId: input.traceId,
+    roleId: input.agent.id,
+    depth: 0,
+    effectiveTools: state.allowedTools.map((tool) => tool.id),
+    effectiveSkills: input.agent.allowedSkills === '*' ? [] : [...input.agent.allowedSkills]
+  }
 }
 
 export interface AgentContextLoopResult {
@@ -402,7 +421,14 @@ function cloneAgentContextLoopState(state: AgentContextLoopState): AgentContextL
     allowedTools: state.allowedTools.map((tool) => ({ ...tool, permissions: tool.permissions.map((permission) => ({ ...permission })) })),
     droppedTools: [...state.droppedTools],
     messages: state.messages.map(cloneAgentLoopMessage),
-    pendingToolCalls: state.pendingToolCalls.map((call) => ({ ...call }))
+    pendingToolCalls: state.pendingToolCalls.map((call) => ({ ...call })),
+    ...(state.execution ? {
+      execution: {
+        ...state.execution,
+        effectiveTools: [...state.execution.effectiveTools],
+        effectiveSkills: [...state.execution.effectiveSkills]
+      }
+    } : {})
   }
 }
 
@@ -426,7 +452,8 @@ async function* executeAgentToolCall(
     toolId: call.toolId,
     input: call.input,
     actor,
-    traceId: input.traceId
+    traceId: input.traceId,
+    execution: effectiveExecutionMetadata(input, state)
   })
 
   yield { type: 'tool', call, result }
@@ -498,7 +525,8 @@ async function* executeAgentToolCalls(
           toolId: candidate.toolId,
           input: candidate.input,
           actor,
-          traceId: input.traceId
+          traceId: input.traceId,
+          execution: effectiveExecutionMetadata(input, state)
         })))
 
         for (let resultIndex = 0; resultIndex < batch.length; resultIndex += 1) {
@@ -538,6 +566,14 @@ async function* executeAgentToolCalls(
  */
 export async function* runAgentContextLoop(input: RunAgentContextLoopInput): AsyncGenerator<AgentLoopEvent, AgentContextLoopResult> {
   const state = input.initialState ? cloneAgentContextLoopState(input.initialState) : createAgentContextLoop(input)
+  if (!state.execution) {
+    const execution = effectiveExecutionMetadata(input, state)
+    state.execution = {
+      ...execution,
+      effectiveTools: [...execution.effectiveTools],
+      effectiveSkills: [...execution.effectiveSkills]
+    }
+  }
   const allowedToolIds = new Set(state.allowedTools.map((tool) => tool.id))
   const actor = input.actor ?? { type: 'agent', id: input.agent.id }
   const accUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
@@ -686,6 +722,7 @@ export async function* resumeAgentContextLoopWithApproval(input: ResumeAgentCont
     input: call.input,
     actor: input.actor ?? { type: 'agent', id: input.agent.id },
     traceId: input.traceId,
+    execution: effectiveExecutionMetadata(input, state),
     approvedInvocation: {
       toolId: call.toolId,
       input: call.input,

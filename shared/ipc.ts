@@ -35,7 +35,9 @@ import type { JobCreateInput, JobListFilter, JobProgressEvent, JobRecord, JobRec
 import type { CanvasPlan, PlanRunStep } from './plan'
 import type {
   AgentDefinition,
+  AgentIpcValidationError,
   AgentNonCanvasResponse,
+  AgentRuntimeUnavailableError,
   AgentRunRequest,
   AgentRunTicket,
   AgentRunViewResponse,
@@ -500,9 +502,9 @@ export interface IpcResponseMap {
   'agent.delete': { agentId: string; deleted: true }
   'agent.run': AgentRunTicket
   'agent.getRun': AgentRunViewResponse
-  'agent.approveTool': AgentRunTicket | { errorClass: string; message: string; retryable: false }
-  'agent.denyTool': AgentToolDenialResponse
-  'agent.spawn': SpawnSubAgentResult
+  'agent.approveTool': AgentRunTicket | AgentIpcValidationError | { errorClass: string; message: string; retryable: false }
+  'agent.denyTool': AgentToolDenialResponse | AgentIpcValidationError
+  'agent.spawn': SpawnSubAgentResult | AgentIpcValidationError | AgentRuntimeUnavailableError
   'chat.history': ChatTurn[]
   'skill.list': SkillDefinition[]
   'skill.reload': { reloadedSkillIds: string[] }

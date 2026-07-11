@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import type { AgentDefinition } from '../shared/agents'
 import { migrateDatabaseAtPath, openDatabaseAtPath } from '../desktop/src/main/db/migrate'
 import { createAgentRepository } from '../desktop/src/main/db/repositories/agent.repo'
-import { createAgentRegistry } from '../desktop/src/main/agent/registry'
+import { createAgentRegistry, type AgentRegistry } from '../desktop/src/main/agent/registry'
 import { registerAgentHandlers } from '../desktop/src/main/ipc/agent.handler'
 
 type Handler = (_event: unknown, request: unknown) => unknown
@@ -51,7 +51,22 @@ function customAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition 
   }
 }
 
-async function withAgents(run: (dependencies: { handlers: Map<string, Handler>; repo: ReturnType<typeof createAgentRepository> }) => Promise<void> | void): Promise<void> {
+const CANONICAL_ROLE_IDS = [
+  'general-assistant',
+  'pm-agent',
+  'canvas-planner',
+  'canvas-operator',
+  'asset-media-agent',
+  'workflow-runner',
+  'tooling-agent',
+  'qa-verifier'
+] as const
+
+async function withAgents(run: (dependencies: {
+  handlers: Map<string, Handler>
+  registry: AgentRegistry
+  repo: ReturnType<typeof createAgentRepository>
+}) => Promise<void> | void): Promise<void> {
   const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-agents-'))
   const dbPath = join(tempDir, 'agents.sqlite')
   migrateDatabaseAtPath(dbPath)
@@ -62,40 +77,129 @@ async function withAgents(run: (dependencies: { handlers: Map<string, Handler>; 
     const registry = createAgentRegistry({ agents: repo, clock: () => 1_782_920_000_000 })
     const { ipcMain, handlers } = createFakeIpcMain()
     registerAgentHandlers(ipcMain, { registry })
-    await run({ handlers, repo })
+    await run({ handlers, registry, repo })
   } finally {
     db.close()
     rmSync(tempDir, { recursive: true, force: true })
   }
 }
 
-describe('M5 custom Agent settings IPC', () => {
-  it('provides a cc-haha style general-purpose agent as the default conversation entry', async () => {
+describe('local Agent role registry and settings IPC', () => {
+  it('lists every canonical built-in role once with General Assistant first', async () => {
     await withAgents(async ({ handlers }) => {
       const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: false })) as AgentDefinition[]
-      const general = listed.find((agent) => agent.id === 'general-purpose')
-      const canvasOrchestrator = listed.find((agent) => agent.id === 'canvas-orchestrator')
+      const ids = listed.map((agent) => agent.id)
 
-      expect(general).toMatchObject({
-        id: 'general-purpose',
+      expect(ids).toEqual(CANONICAL_ROLE_IDS)
+      expect(new Set(ids)).toHaveProperty('size', CANONICAL_ROLE_IDS.length)
+      expect(listed[0]).toMatchObject({
+        id: 'general-assistant',
         source: 'builtin',
-        name: 'General Purpose',
-        allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search'],
+        name: 'General Assistant',
+        allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search', 'agent.spawnChild'],
         gatewayPolicy: { allowedChannels: ['text'] },
         permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'], requireAskForDestructive: true },
         triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
       })
-      expect(general?.instructions).toContain('general-purpose agent')
-      expect(general?.instructions).toContain('fs.read, fs.glob, fs.grep')
-      expect(general?.instructions).toContain('web.search')
-      expect(canvasOrchestrator).toMatchObject({
-        id: 'canvas-orchestrator',
-        source: 'builtin',
-        name: 'Canvas Orchestrator',
+      expect(listed.every((agent) => agent.instructions.length > 80)).toBe(true)
+      expect(listed.every((agent) => agent.maxTurns > 0 && agent.maxTurns <= 8)).toBe(true)
+    })
+  })
+
+  it('keeps canonical role capabilities explicit and least-privilege', async () => {
+    await withAgents(({ registry }) => {
+      const roles = registry.list({ includeDisabled: true })
+      const byId = new Map(roles.map((role) => [role.id, role]))
+
+      expect(roles.every((role) => role.allowedTools !== '*' && role.allowedSkills !== '*')).toBe(true)
+      expect(byId.get('general-assistant')).toMatchObject({
+        allowedTools: ['canvas.queryGraph', 'fs.read', 'fs.glob', 'fs.grep', 'web.search', 'agent.spawnChild'],
+        permissionPolicy: {
+          allowedPermissionKinds: ['canvas.read', 'file.read', 'diagnostics', 'network'],
+          requireAskForDestructive: true
+        }
       })
-      expect(listed.find((agent) => agent.id === 'orchestrator')).toMatchObject({
-        description: 'Compatibility alias for Canvas Orchestrator.',
+      expect(byId.get('pm-agent')?.permissionPolicy.allowedPermissionKinds).not.toContain('canvas.write')
+      expect(byId.get('canvas-planner')).toMatchObject({
+        allowedTools: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.validateGraph'],
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true }
       })
+      expect(byId.get('canvas-operator')).toMatchObject({
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write'], requireAskForDestructive: true },
+        triggerPolicy: { autoRun: false }
+      })
+      expect(byId.get('canvas-operator')?.allowedTools).not.toContain('canvas.runNode')
+      expect(byId.get('asset-media-agent')).toMatchObject({
+        allowedTools: ['canvas.queryGraph', 'asset.ensureCloudUrl', 'canvas.runNode'],
+        permissionPolicy: {
+          allowedPermissionKinds: ['canvas.read', 'file.read', 'network', 'provider.spend'],
+          requireAskForDestructive: true
+        }
+      })
+      expect(byId.get('workflow-runner')?.allowedTools).toContain('canvas.runNode')
+      expect(byId.get('qa-verifier')).toMatchObject({
+        allowedTools: ['canvas.queryGraph', 'canvas.validateGraph'],
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'diagnostics'], requireAskForDestructive: true }
+      })
+      expect(roles.filter((role) => role.allowedTools.includes('canvas.runNode')).every((role) => (
+        role.permissionPolicy.allowedPermissionKinds.includes('provider.spend')
+        && role.permissionPolicy.requireAskForDestructive
+        && !role.triggerPolicy.autoRun
+      ))).toBe(true)
+      expect(roles.filter((role) => role.allowedTools.includes('agent.spawnChild')).map((role) => role.id)).toEqual([
+        'general-assistant'
+      ])
+    })
+  })
+
+  it('resolves compatibility aliases without listing duplicate roles', async () => {
+    await withAgents(({ registry }) => {
+      const aliases = {
+        'general-purpose': 'general-assistant',
+        'canvas-orchestrator': 'canvas-planner',
+        orchestrator: 'canvas-planner',
+        canvas: 'canvas-operator',
+        tooling: 'tooling-agent',
+        pm: 'pm-agent'
+      } as const
+
+      for (const [alias, canonicalId] of Object.entries(aliases)) {
+        expect(registry.get(alias)).toMatchObject({ id: canonicalId, source: 'builtin' })
+        expect(registry.isBuiltin(alias)).toBe(true)
+      }
+      expect(registry.list({ includeDisabled: true }).map((agent) => agent.id)).toEqual(CANONICAL_ROLE_IDS)
+    })
+  })
+
+  it('returns defensive deep clones for built-in roles and aliases', async () => {
+    await withAgents(({ registry }) => {
+      const returned = registry.list({ includeDisabled: true }).find((agent) => agent.id === 'canvas-planner')
+      expect(returned).toBeDefined()
+
+      if (!returned || returned.allowedTools === '*' || returned.allowedSkills === '*') {
+        throw new Error('Expected the Canvas Planner built-in role with explicit capabilities.')
+      }
+
+      returned.allowedTools.push('canvas.runNode')
+      returned.allowedSkills.push('mutated-skill')
+      returned.gatewayPolicy.allowedChannels.push('video')
+      returned.contextPolicy.includeCanvasGraph = false
+      returned.permissionPolicy.allowedPermissionKinds.push('provider.spend')
+      returned.triggerPolicy.allowedTriggers.push('workflowEvent')
+
+      const expected = {
+        id: 'canvas-planner',
+        allowedTools: ['canvas.queryGraph', 'canvas.proposePlan', 'canvas.validateGraph'],
+        allowedSkills: [],
+        gatewayPolicy: { allowedChannels: ['text'] },
+        contextPolicy: { includeCanvasGraph: true },
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'] },
+        triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'] }
+      }
+
+      expect(registry.get('canvas-planner')).toMatchObject(expected)
+      expect(registry.get('canvas-orchestrator')).toMatchObject(expected)
+      expect(registry.list({ includeDisabled: true }).find((agent) => agent.id === 'canvas-planner')).toMatchObject(expected)
     })
   })
 
@@ -105,8 +209,8 @@ describe('M5 custom Agent settings IPC', () => {
       expect(saved).toMatchObject({ id: 'agent-storyboard', source: 'user', enabled: true })
 
       const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: false })) as AgentDefinition[]
-      expect(listed.map((agent) => agent.id)).toEqual(['general-purpose', 'canvas-orchestrator', 'orchestrator', 'canvas', 'tooling', 'pm', 'agent-storyboard'])
-      expect(listed.find((agent) => agent.id === 'general-purpose')).toMatchObject({ source: 'builtin', name: 'General Purpose' })
+      expect(listed.map((agent) => agent.id)).toEqual([...CANONICAL_ROLE_IDS, 'agent-storyboard'])
+      expect(listed.find((agent) => agent.id === 'general-assistant')).toMatchObject({ source: 'builtin', name: 'General Assistant' })
     })
   })
 
@@ -159,23 +263,22 @@ describe('M5 custom Agent settings IPC', () => {
     })
   })
 
-  it('persists built-in agent edits as overrides while still blocking delete', async () => {
-    await withAgents(async ({ handlers }) => {
-      const editResult = await handlers.get('agent.save')?.({}, customAgent({ id: 'canvas-orchestrator', source: 'builtin', name: 'Mutated canvas orchestrator' }))
-      expect(editResult).toMatchObject({
-        id: 'canvas-orchestrator',
-        source: 'builtin',
-        name: 'Mutated canvas orchestrator'
-      })
+  it('keeps canonical built-ins and compatibility aliases readonly', async () => {
+    await withAgents(async ({ handlers, repo }) => {
+      for (const agentId of ['canvas-planner', 'canvas-orchestrator']) {
+        const editResult = await handlers.get('agent.save')?.({}, customAgent({ id: agentId, source: 'builtin' }))
+        expect(editResult).toMatchObject({
+          errorClass: 'agent_builtin_readonly',
+          message: 'Built-in agents cannot be modified.'
+        })
 
-      const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: true })) as AgentDefinition[]
-      expect(listed.find((agent) => agent.id === 'canvas-orchestrator')).toMatchObject({ name: 'Mutated canvas orchestrator' })
-
-      const deleteResult = await handlers.get('agent.delete')?.({}, { agentId: 'canvas-orchestrator' })
-      expect(deleteResult).toMatchObject({
-        errorClass: 'agent_builtin_readonly',
-        message: 'Built-in agents cannot be deleted.'
-      })
+        const deleteResult = await handlers.get('agent.delete')?.({}, { agentId })
+        expect(deleteResult).toMatchObject({
+          errorClass: 'agent_builtin_readonly',
+          message: 'Built-in agents cannot be deleted.'
+        })
+      }
+      expect(repo.list({ includeDisabled: true })).toEqual([])
     })
   })
 
@@ -189,7 +292,7 @@ describe('M5 custom Agent settings IPC', () => {
       })
 
       const listed = (await handlers.get('agent.list')?.({}, { includeDisabled: true })) as AgentDefinition[]
-      expect(listed.map((agent) => agent.id)).toEqual(['general-purpose', 'canvas-orchestrator', 'orchestrator', 'canvas', 'tooling', 'pm'])
+      expect(listed.map((agent) => agent.id)).toEqual(CANONICAL_ROLE_IDS)
     })
   })
 })
