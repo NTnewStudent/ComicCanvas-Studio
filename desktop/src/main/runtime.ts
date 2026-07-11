@@ -33,9 +33,11 @@ import { createJobRepository } from './db/repositories/job.repo'
 import { createStorageConfigRepository } from './db/repositories/storage.repo'
 import { createStyleRepository } from './db/repositories/style.repo'
 import { createKnowledgeRepository } from './db/repositories/knowledge.repo'
+import { createLocalMemoryRepository } from './db/repositories/local-memory.repo'
 import { createSkillRepository } from './db/repositories/skill.repo'
 import { registerAuditHandlers } from './ipc/audit.handler'
 import { registerKnowledgeHandlers } from './ipc/knowledge.handler'
+import { registerLocalMemoryHandlers } from './ipc/local-memory.handler'
 import { createAuditService } from './audit/service'
 import { createKnowledgeStore } from './knowledge/store'
 import { createPluginLoader } from './tools/plugin-loader'
@@ -197,6 +199,7 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   const skillRegistry = createSkillRegistry({ repo: skillRepo, clock })
   const skillService = createSkillService({ registry: skillRegistry, repo: skillRepo, clock })
   const knowledgeRepo = createKnowledgeRepository(db)
+  const localMemories = createLocalMemoryRepository(db)
   const knowledgeStore = createKnowledgeStore({ repo: knowledgeRepo, clock })
   const auditService = createAuditService({ clock })
   const assetCloudUrls = createAssetCloudUrlService({
@@ -514,6 +517,14 @@ export function createMainProcessRuntime(options: MainProcessRuntimeOptions): Ma
   registerChatHandlers(options.ipcMain, { chatMessages })
   registerSkillHandlers(options.ipcMain, { registry: skillRegistry, service: skillService, agents: agentRegistry })
   registerKnowledgeHandlers(options.ipcMain, { store: knowledgeStore, repo: knowledgeRepo })
+  registerLocalMemoryHandlers(options.ipcMain, {
+    memories: localMemories,
+    artifacts: agentArtifacts,
+    runs: agentRuns,
+    currentUserId: options.currentUserId ?? 'user-local',
+    clock,
+    idFactory: () => `memory-${crypto.randomUUID()}`
+  })
   registerAuditHandlers(options.ipcMain, {
     audit: auditService,
     dbReady: () => true,

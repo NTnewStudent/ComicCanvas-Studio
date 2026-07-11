@@ -1,19 +1,9 @@
 /** Local-only scoped memory persistence boundary. */
 
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
+import type { LocalMemoryRecord, LocalMemoryScope } from '../../../../../shared/memory'
 
-export type LocalMemoryScope = 'user' | 'workflow' | 'agentRole'
-
-export interface LocalMemoryRecord {
-  id: string
-  scope: LocalMemoryScope
-  userId?: string
-  workflowId?: string
-  agentRoleId?: string
-  content: string
-  createdAt: number
-  updatedAt: number
-}
+export type { LocalMemoryRecord, LocalMemoryScope } from '../../../../../shared/memory'
 
 export interface LocalMemoryRepository {
   save(record: LocalMemoryRecord): LocalMemoryRecord

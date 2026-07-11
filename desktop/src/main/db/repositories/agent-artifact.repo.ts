@@ -21,6 +21,7 @@ interface AgentArtifactRow {
 /** Persistence operations for durable run artifacts. */
 export interface AgentArtifactRepository {
   create(record: AgentArtifactRecord): AgentArtifactRecord
+  getById(id: string): AgentArtifactRecord | null
   listByRunId(runId: string): AgentArtifactRecord[]
 }
 
@@ -51,6 +52,7 @@ export function createAgentArtifactRepository(db: BetterSqliteDatabase): AgentAr
   const selectByRun = db.prepare(`
     SELECT * FROM agent_artifacts WHERE run_id = ? ORDER BY created_at ASC, id ASC
   `)
+  const selectById = db.prepare('SELECT * FROM agent_artifacts WHERE id = ?')
 
   return {
     create(record) {
@@ -65,6 +67,10 @@ export function createAgentArtifactRepository(db: BetterSqliteDatabase): AgentAr
       })
 
       return record
+    },
+    getById(id) {
+      const row = selectById.get(id) as AgentArtifactRow | undefined
+      return row ? rowToRecord(row) : null
     },
     listByRunId(runId) {
       return (selectByRun.all(runId) as AgentArtifactRow[]).map(rowToRecord)

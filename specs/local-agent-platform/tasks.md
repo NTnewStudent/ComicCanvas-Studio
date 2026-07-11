@@ -48,7 +48,7 @@
 - [x] 29. Extend ContextPack builder to persist source refs, omissions, warnings, redactions, and token estimates. _(R7, INV-6)_
 - [x] 30. Add Run Inspector view for ContextPack sources and omissions. _(R7, R8)_
 - [x] 31. Add local memory model for user, workflow, and optional agent-role memory. _(R7)_
-- [ ] 32. Add manual memory save and Agent-suggested memory with user confirmation. _(R7)_
+- [x] 32. Add manual memory save and Agent-suggested memory with user confirmation. _(R7)_
 - [ ] 33. Ensure web.search results are treated as cited evidence and not hidden instructions. _(R7)_
 - [ ] 34. Add tests for context priority, redaction, search citations, search failure visibility, and memory-write confirmation. _(R7, INV-6)_
 

@@ -23,6 +23,8 @@ export interface ComicCanvasApi {
   denyAgentTool(input: IpcRequestMap['agent.denyTool']): Promise<IpcResponseMap['agent.denyTool']>
   applyAgentArtifact(input: IpcRequestMap['agent.applyArtifact']): Promise<IpcResponseMap['agent.applyArtifact']>
   spawnSubAgent(input: IpcRequestMap['agent.spawn']): Promise<IpcResponseMap['agent.spawn']>
+  saveLocalMemory(input: IpcRequestMap['memory.save']): Promise<IpcResponseMap['memory.save']>
+  confirmMemorySuggestion(input: IpcRequestMap['memory.confirmSuggestion']): Promise<IpcResponseMap['memory.confirmSuggestion']>
   getChatHistory(input: IpcRequestMap['chat.history']): Promise<IpcResponseMap['chat.history']>
   listSkills(input?: IpcRequestMap['skill.list']): Promise<IpcResponseMap['skill.list']>
   getSkillMetadata(input: IpcRequestMap['skill.getMetadata']): Promise<IpcResponseMap['skill.getMetadata']>
@@ -122,6 +124,8 @@ function invokeMain<TChannel extends 'agent.approveTool'>(channel: TChannel, req
 function invokeMain<TChannel extends 'agent.denyTool'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.applyArtifact'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'agent.spawn'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'memory.save'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
+function invokeMain<TChannel extends 'memory.confirmSuggestion'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'chat.history'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.list'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
 function invokeMain<TChannel extends 'skill.getMetadata'>(channel: TChannel, request: IpcRequestMap[TChannel]): Promise<IpcResponseMap[TChannel]>
@@ -312,6 +316,8 @@ const api: ComicCanvasApi = {
    * @see docs/api-contracts/agents.md
    */
   spawnSubAgent: (input) => invokeMain('agent.spawn', input),
+  saveLocalMemory: (input) => invokeMain('memory.save', input),
+  confirmMemorySuggestion: (input) => invokeMain('memory.confirmSuggestion', input),
   /**
    * Loads persisted chat turns for a workflow session restore.
    * @param input - Workflow scope.

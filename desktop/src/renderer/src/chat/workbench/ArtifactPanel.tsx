@@ -35,6 +35,7 @@ import { cn } from '../../lib/cn'
 /** Inputs for the typed read-only artifact tab panel. */
 export interface ArtifactPanelProps {
   artifacts: AgentArtifactViewModel[]
+  onConfirmMemorySuggestion?: (artifactId: string) => void
 }
 
 const ARTIFACT_ICONS: Record<AgentArtifactViewModel['viewType'], LucideIcon> = {
@@ -404,9 +405,11 @@ function SearchSummaryView({
 }
 
 function MemorySuggestionView({
-  artifact
+  artifact,
+  onConfirm
 }: {
   artifact: Extract<AgentArtifactViewModel, { viewType: 'memorySuggestion' }>
+  onConfirm?: (() => void) | undefined
 }): JSX.Element {
   return (
     <div className="min-w-0 space-y-4">
@@ -427,6 +430,7 @@ function MemorySuggestionView({
           <p className="m-0 break-words text-[10px] leading-relaxed text-text-secondary">{artifact.rationale}</p>
         </DetailSection>
       )}
+      {onConfirm && <button type="button" onClick={onConfirm} className="h-8 rounded-md border border-border-secondary px-3 text-[11px] font-semibold text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base">保存</button>}
     </div>
   )
 }
@@ -512,7 +516,7 @@ function DraftGraphView({
   )
 }
 
-function ArtifactBody({ artifact }: { artifact: AgentArtifactViewModel }): JSX.Element {
+function ArtifactBody({ artifact, onConfirmMemorySuggestion }: { artifact: AgentArtifactViewModel; onConfirmMemorySuggestion?: ((artifactId: string) => void) | undefined }): JSX.Element {
   switch (artifact.viewType) {
     case 'answer':
       return <AnswerView artifact={artifact} />
@@ -527,7 +531,7 @@ function ArtifactBody({ artifact }: { artifact: AgentArtifactViewModel }): JSX.E
     case 'searchSummary':
       return <SearchSummaryView artifact={artifact} />
     case 'memorySuggestion':
-      return <MemorySuggestionView artifact={artifact} />
+      return <MemorySuggestionView artifact={artifact} onConfirm={onConfirmMemorySuggestion ? () => onConfirmMemorySuggestion(artifact.id) : undefined} />
     case 'diagnostics':
       return <DiagnosticsView artifact={artifact} />
     case 'fallback':
@@ -540,7 +544,7 @@ function ArtifactBody({ artifact }: { artifact: AgentArtifactViewModel }): JSX.E
  * @param props - Projected artifact view models.
  * @returns Artifact tablist and selected detail panel.
  */
-export function ArtifactPanel({ artifacts }: ArtifactPanelProps): JSX.Element {
+export function ArtifactPanel({ artifacts, onConfirmMemorySuggestion }: ArtifactPanelProps): JSX.Element {
   const instanceId = useId()
   const selectionKeys = useMemo(
     () => new Set(artifacts.map((artifact) => `${artifact.runId}:${artifact.id}`)),
@@ -653,7 +657,7 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps): JSX.Element {
                 {artifact.summary}
               </p>
             </div>
-            <ArtifactBody artifact={artifact} />
+            <ArtifactBody artifact={artifact} onConfirmMemorySuggestion={onConfirmMemorySuggestion} />
           </article>
         )
       })}

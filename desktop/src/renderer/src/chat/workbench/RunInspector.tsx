@@ -564,7 +564,12 @@ export function RunInspector({ runView, className }: RunInspectorProps): JSX.Ele
               hidden={tab !== 'artifacts'}
               className="outline-none focus-visible:ring-1 focus-visible:ring-brand"
             >
-              <ArtifactPanel artifacts={artifacts} />
+              <ArtifactPanel
+                artifacts={artifacts}
+                onConfirmMemorySuggestion={(artifactId) => {
+                  void window.comicCanvas.confirmMemorySuggestion({ artifactId, confirmed: true })
+                }}
+              />
             </div>
           </div>
         </>

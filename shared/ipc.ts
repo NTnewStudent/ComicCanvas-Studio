@@ -56,6 +56,7 @@ import type { ToolDescriptor, ToolInvocationRecord, ToolPermission } from './too
 import type { StylePresetSaveInput, StylePresetView, StyleProjectDefaultRequest } from './styles'
 import type { CanvasSnippetDeleteRequest, CanvasSnippetDeleteResponse, CanvasSnippetGetRequest, CanvasSnippetListRequest, CanvasSnippetSaveInput, CanvasSnippetSaveResponse, CanvasSnippetView } from './snippets'
 import type { WorkflowModelCatalog } from './workflow-node-definitions'
+import type { LocalMemoryResponse, MemoryConfirmSuggestionRequest, MemorySaveRequest } from './memory'
 
 export type CanvasIpcChannel =
   | 'canvas.chatSend'
@@ -161,6 +162,10 @@ export type AgentIpcChannel =
   | 'agent.completed'
   | 'agent.failed'
 
+export type MemoryIpcChannel =
+  | 'memory.save'
+  | 'memory.confirmSuggestion'
+
 export type SkillIpcChannel =
   | 'skill.list'
   | 'skill.reload'
@@ -197,6 +202,7 @@ export type IpcChannel =
   | CanvasSnippetIpcChannel
   | ToolIpcChannel
   | AgentIpcChannel
+  | MemoryIpcChannel
   | SkillIpcChannel
   | KnowledgeIpcChannel
   | AuditIpcChannel
@@ -423,6 +429,8 @@ export interface IpcRequestMap {
   'agent.denyTool': AgentToolDenialInput
   'agent.applyArtifact': AgentApplyArtifactInput
   'agent.spawn': SpawnSubAgentInput
+  'memory.save': MemorySaveRequest
+  'memory.confirmSuggestion': MemoryConfirmSuggestionRequest
   'chat.history': { workflowId: string }
   'skill.list': SkillListRequest
   'skill.reload': { skillId?: string }
@@ -510,6 +518,8 @@ export interface IpcResponseMap {
   'agent.denyTool': AgentToolDenialResponse | AgentIpcValidationError
   'agent.applyArtifact': AgentApplyArtifactResponse
   'agent.spawn': SpawnSubAgentResult | AgentIpcValidationError | AgentRuntimeUnavailableError
+  'memory.save': LocalMemoryResponse
+  'memory.confirmSuggestion': LocalMemoryResponse
   'chat.history': ChatTurn[]
   'skill.list': SkillDefinition[]
   'skill.reload': { reloadedSkillIds: string[] }
