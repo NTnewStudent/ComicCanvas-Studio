@@ -7,6 +7,7 @@ import type { ToolPermission, ToolPermissionKind } from './tools'
 import type { CanvasPlan } from './plan'
 import type { CanvasGraphSnapshot } from './graph'
 import type { AgentRunProjection, AgentRunSnapshot, PermissionGrantScope } from './agent-run-events'
+import type { ContextPack } from './knowledge'
 
 export type AgentSource = 'builtin' | 'user'
 
@@ -160,6 +161,7 @@ export interface AgentRunViewResponse {
   trace?: Record<string, unknown>
   snapshot?: AgentRunSnapshot
   projection?: AgentRunProjection
+  contextPack?: ContextPack
 }
 
 export interface SpawnSubAgentInput {

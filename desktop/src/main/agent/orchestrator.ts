@@ -2069,16 +2069,20 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
 
   function projectedRunFields(
     runId: string
-  ): Partial<Pick<AgentRunViewResponse, 'snapshot' | 'projection'>> {
+  ): Partial<Pick<AgentRunViewResponse, 'snapshot' | 'projection' | 'contextPack'>> {
     try {
       const snapshot = options.runSpine?.getSnapshot(runId)
       if (!snapshot) {
         return {}
       }
 
+      const contextPack = snapshot.run.contextPackId
+        ? options.knowledgeStore?.getContextPack(snapshot.run.contextPackId)
+        : null
       return {
         snapshot,
-        projection: projectAgentRunSnapshot(snapshot)
+        projection: projectAgentRunSnapshot(snapshot),
+        ...(contextPack ? { contextPack } : {})
       }
     } catch {
       // Legacy or corrupt replay rows must not hide the basic run status response.

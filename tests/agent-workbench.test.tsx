@@ -440,6 +440,24 @@ describe('Agent Workbench', () => {
     expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('agent_child_run_failed')
   })
 
+  it('renders persisted ContextPack sources and omissions in the run inspector', () => {
+    const contextRunView = {
+      ...runView,
+      contextPack: {
+        id: 'ctx-1', agentId: 'run-1', sources: [{ kind: 'knowledge', refId: 'story.md', priority: 5 }],
+        omissions: ['message:m3:token_budget_exceeded'], warnings: ['token_budget_exhausted'],
+        redactions: ['knowledge:credential'], tokenEstimate: 321, createdAt: 12
+      }
+    } as unknown as AgentRunViewResponse
+
+    render(<RunInspector runView={contextRunView} />)
+
+    expect(screen.getByRole('region', { name: '上下文' })).toHaveTextContent('story.md')
+    expect(screen.getByRole('region', { name: '上下文' })).toHaveTextContent('message:m3:token_budget_exceeded')
+    expect(screen.getByRole('region', { name: '上下文' })).toHaveTextContent('321')
+    expect(screen.getByRole('region', { name: '上下文' })).toHaveTextContent('knowledge:credential')
+  })
+
   it('renders accessible typed artifact tabs with detailed read-only views and malformed fallback', () => {
     render(<RunInspector runView={artifactRunView} />)
 

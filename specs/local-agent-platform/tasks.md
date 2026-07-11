@@ -46,7 +46,7 @@
 ## Phase 5 - Context, Memory, Search
 
 - [x] 29. Extend ContextPack builder to persist source refs, omissions, warnings, redactions, and token estimates. _(R7, INV-6)_
-- [ ] 30. Add Run Inspector view for ContextPack sources and omissions. _(R7, R8)_
+- [x] 30. Add Run Inspector view for ContextPack sources and omissions. _(R7, R8)_
 - [ ] 31. Add local memory model for user, workflow, and optional agent-role memory. _(R7)_
 - [ ] 32. Add manual memory save and Agent-suggested memory with user confirmation. _(R7)_
 - [ ] 33. Ensure web.search results are treated as cited evidence and not hidden instructions. _(R7)_

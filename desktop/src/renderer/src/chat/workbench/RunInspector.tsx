@@ -523,6 +523,19 @@ export function RunInspector({ runView, className }: RunInspectorProps): JSX.Ele
                   />
                 )}
 
+                {runView.contextPack && (
+                  <section aria-label="上下文">
+                    <h4 className="m-0 text-[10px] font-semibold uppercase text-text-muted">上下文</h4>
+                    <p className="mb-0 mt-2 font-mono text-[9px] text-text-muted">{runView.contextPack.tokenEstimate} tokens</p>
+                    <div className="mt-2 space-y-1 text-[10px] text-text-secondary">
+                      {runView.contextPack.sources.map((source) => <p key={`${source.kind}:${source.refId}`} className="m-0 break-all">{source.kind}: {source.refId}</p>)}
+                      {runView.contextPack.omissions.map((entry) => <p key={`omission:${entry}`} className="m-0 break-all text-semantic-warning">{entry}</p>)}
+                      {runView.contextPack.warnings.map((entry) => <p key={`warning:${entry}`} className="m-0 break-all text-semantic-warning">{entry}</p>)}
+                      {runView.contextPack.redactions.map((entry) => <p key={`redaction:${entry}`} className="m-0 break-all text-text-muted">{entry}</p>)}
+                    </div>
+                  </section>
+                )}
+
                 {projection.taskTree.length > 0 && (
                   <InspectorRows
                     icon={<GitBranch className="h-3.5 w-3.5" aria-hidden="true" />}
