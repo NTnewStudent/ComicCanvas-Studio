@@ -3,7 +3,7 @@
  * @see docs/api-contracts/agents.md
  */
 
-import type { AgentResponse, AgentRunStatus, AgentTriggerKind } from './agents'
+import type { AgentNonCanvasResponse, AgentRunStatus, AgentTriggerKind } from './agents'
 import type { ChatTurn } from './chat-blocks'
 import type { ToolPermission, ToolPermissionKind } from './tools'
 
@@ -56,15 +56,58 @@ export interface AgentRunCreatedPayload {
   modelId?: string
 }
 
-export type AgentRunEventPayload =
-  | AgentRunCreatedPayload
-  | { status: AgentRunStatus; jobId?: string }
-  | { message: string; progress: number }
-  | { delta: string }
-  | { callId: string; toolId: string; inputSummary?: string }
-  | { callId: string; toolId: string; invocationId?: string; status: 'completed' | 'failed' | 'denied'; summary: string }
-  | { callId: string; toolId: string; reason: string; requiredPermissions: ToolPermission[]; inputSummary?: string }
-  | {
+/** Strong payload contract for every durable Agent Run event discriminator. */
+export interface AgentRunEventPayloadMap {
+  'run.created': AgentRunCreatedPayload
+  'run.started': {
+    status: 'running'
+    jobId?: string
+    resumedFromApproval?: boolean
+  }
+  'intent.analyzed': {
+    kind: 'smallTalk' | 'generalChat' | 'searchSummary' | 'requirementPlanning' | 'canvasOperation' | 'clarify'
+    summary: string
+    requirements: string[]
+    missing: string[]
+    localCapabilities: string[]
+    recommendedAgentId: 'general-purpose' | 'canvas-orchestrator'
+    executionMode: 'clarify' | 'plan' | 'direct'
+    complexity: 'low' | 'medium' | 'high'
+  }
+  'context.built': {
+    contextPackId: string
+    tokenEstimate: number
+    messagesIncluded: number
+    sourceCount: number
+    redactionCount: number
+  }
+  progress: {
+    message: string
+    progress: number
+  }
+  'model.delta': {
+    delta: string
+  }
+  'tool.started': {
+    callId: string
+    toolId: string
+    inputSummary?: string
+  }
+  'tool.completed': {
+    callId: string
+    toolId: string
+    invocationId?: string
+    status: 'completed' | 'failed' | 'denied'
+    summary: string
+  }
+  'permission.requested': {
+    callId: string
+    toolId: string
+    reason: string
+    requiredPermissions: ToolPermission[]
+    inputSummary?: string
+  }
+  'permission.resolved': {
       callId: string
       decision: PermissionDecision
       approvedByLabel?: string
@@ -73,20 +116,53 @@ export type AgentRunEventPayload =
       requestedScope?: PermissionGrantScope
       phase?: 'queued' | 'executing'
     }
-  | { artifactId: string; kind: AgentArtifactKind; title: string; summary: string }
-  | { messageId: string; planId: string }
-  | { messageId: string; response: AgentResponse }
-  | { errorClass: string; message: string; retryable: boolean; checkpoint?: string }
-  | Record<string, unknown>
-
-export interface AgentRunEventRecord {
-  id: string
-  runId: string
-  sequence: number
-  type: AgentRunEventType
-  payload: AgentRunEventPayload
-  createdAt: number
+  'artifact.created': {
+    artifactId: string
+    kind: AgentArtifactKind
+    title: string
+    summary: string
+  }
+  'plan.ready': {
+    messageId: string
+    planId: string
+  }
+  'response.ready': {
+    messageId: string
+    response: AgentNonCanvasResponse
+  }
+  'run.completed': {
+    status: 'completed'
+  }
+  'run.failed': {
+    errorClass: string
+    message: string
+    retryable: boolean
+    checkpoint?: string
+  }
 }
+
+/** Payload selected by one durable Agent Run event discriminator. */
+export type AgentRunEventPayload<Type extends AgentRunEventType = AgentRunEventType> =
+  AgentRunEventPayloadMap[Type]
+
+/** Appends one event while preserving the discriminator-to-payload relationship. */
+export type AgentRunEventAppend = <Type extends AgentRunEventType>(
+  runId: string,
+  type: Type,
+  payload: AgentRunEventPayloadMap[NoInfer<Type>]
+) => AgentRunEventRecord<Type>
+
+/** Durable event record with a discriminator-correlated payload. */
+export type AgentRunEventRecord<Type extends AgentRunEventType = AgentRunEventType> = {
+  [EventType in Type]: {
+    id: string
+    runId: string
+    sequence: number
+    type: EventType
+    payload: AgentRunEventPayloadMap[EventType]
+    createdAt: number
+  }
+}[Type]
 
 export interface AgentArtifactRecord {
   id: string

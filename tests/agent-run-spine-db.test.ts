@@ -11,6 +11,7 @@ import { createAgentPermissionGrantRepository } from '../desktop/src/main/db/rep
 import { createAgentRunEventRepository } from '../desktop/src/main/db/repositories/agent-run-event.repo'
 import { createAgentRunRepository } from '../desktop/src/main/db/repositories/agent-run.repo'
 import { createChildAgentTaskRepository } from '../desktop/src/main/db/repositories/child-agent-task.repo'
+import { AGENT_RUN_EVENT_TYPES } from '../shared/agent-run-events'
 
 function withTempDb<T>(run: (db: ReturnType<typeof openDatabaseAtPath>) => T): T {
   const tempDir = mkdtempSync(join(tmpdir(), 'comiccanvas-run-spine-db-'))
@@ -157,6 +158,209 @@ describe('Agent Run Spine SQLite schema', () => {
     })
   })
 
+  it('decodes missing or malformed event payloads to a safe payload for the event type', () => {
+    withTempDb((db) => {
+      const events = createAgentRunEventRepository(db)
+
+      events.append({
+        id: 'event-null-payload',
+        runId: 'run-invalid-payload',
+        type: 'progress',
+        payload: { message: 'Before corruption', progress: 10 },
+        createdAt: 1
+      })
+      events.append({
+        id: 'event-malformed-payload',
+        runId: 'run-invalid-payload',
+        type: 'progress',
+        payload: { message: 'Before corruption', progress: 20 },
+        createdAt: 2
+      })
+      db.prepare('UPDATE agent_run_events SET payload_json = ? WHERE id = ?')
+        .run('null', 'event-null-payload')
+      db.prepare('UPDATE agent_run_events SET payload_json = ? WHERE id = ?')
+        .run('{malformed', 'event-malformed-payload')
+
+      expect(events.listByRunId('run-invalid-payload').map((event) => event.payload)).toEqual([
+        { message: 'Event payload unavailable.', progress: 0 },
+        { message: 'Event payload unavailable.', progress: 0 }
+      ])
+    })
+  })
+
+  it('runtime-validates every event payload shape during replay', () => {
+    withTempDb((db) => {
+      const events = createAgentRunEventRepository(db)
+      const invalidPayloads = ['{}', '"wrong primitive"', '{"status":"completed"}']
+      const expectedFallbacks = [
+        {
+          threadId: 'unavailable',
+          workflowId: 'unavailable',
+          agentId: 'unavailable',
+          trigger: 'manual',
+          messageId: 'unavailable',
+          policyProfileId: 'unavailable'
+        },
+        { status: 'running' },
+        {
+          kind: 'clarify',
+          summary: 'Event payload unavailable.',
+          requirements: [],
+          missing: [],
+          localCapabilities: [],
+          recommendedAgentId: 'general-purpose',
+          executionMode: 'clarify',
+          complexity: 'low'
+        },
+        {
+          contextPackId: 'unavailable',
+          tokenEstimate: 0,
+          messagesIncluded: 0,
+          sourceCount: 0,
+          redactionCount: 0
+        },
+        { message: 'Event payload unavailable.', progress: 0 },
+        { delta: 'Event payload unavailable.' },
+        {
+          callId: 'unavailable',
+          toolId: 'unavailable',
+          inputSummary: 'Event payload unavailable.'
+        },
+        {
+          callId: 'unavailable',
+          toolId: 'unavailable',
+          status: 'failed',
+          summary: 'Event payload unavailable.'
+        },
+        {
+          callId: 'unavailable',
+          toolId: 'unavailable',
+          reason: 'Event payload unavailable.',
+          requiredPermissions: []
+        },
+        {
+          callId: 'unavailable',
+          decision: 'denied',
+          deniedByLabel: 'Event payload unavailable.'
+        },
+        {
+          artifactId: 'unavailable',
+          kind: 'diagnosticReport',
+          title: 'Unavailable artifact',
+          summary: 'Event payload unavailable.'
+        },
+        { messageId: 'unavailable', planId: 'unavailable' },
+        {
+          messageId: 'unavailable',
+          response: {
+            type: 'answer',
+            summary: 'Event payload unavailable.',
+            text: 'Event payload unavailable.',
+            dropped: []
+          }
+        },
+        { status: 'completed' },
+        {
+          errorClass: 'event_payload_unavailable',
+          message: 'Event payload unavailable.',
+          retryable: false
+        }
+      ]
+      const insert = db.prepare(`
+        INSERT INTO agent_run_events (id, run_id, sequence, type, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `)
+
+      AGENT_RUN_EVENT_TYPES.forEach((type, index) => {
+        insert.run(
+          `event-invalid-shape-${index}`,
+          'run-invalid-shapes',
+          index + 1,
+          type,
+          invalidPayloads[index % invalidPayloads.length],
+          index + 1
+        )
+      })
+
+      const replayed = events.listByRunId('run-invalid-shapes')
+
+      expect(replayed.map((event) => event.type)).toEqual(AGENT_RUN_EVENT_TYPES)
+      expect(replayed.map((event) => event.payload)).toEqual(expectedFallbacks)
+    })
+  })
+
+  it('replays validated event payloads without prohibited extra fields', () => {
+    withTempDb((db) => {
+      const events = createAgentRunEventRepository(db)
+
+      db.prepare(`
+        INSERT INTO agent_run_events (id, run_id, sequence, type, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        'event-extra-field',
+        'run-extra-field',
+        1,
+        'progress',
+        JSON.stringify({
+          message: 'Still valid',
+          progress: 50,
+          prohibitedExtra: 'must not replay'
+        }),
+        1
+      )
+
+      expect(events.listByRunId('run-extra-field')).toEqual([
+        expect.objectContaining({
+          type: 'progress',
+          payload: {
+            message: 'Still valid',
+            progress: 50
+          }
+        })
+      ])
+    })
+  })
+
+  it('skips persisted rows with unknown event types during replay', () => {
+    withTempDb((db) => {
+      const events = createAgentRunEventRepository(db)
+
+      events.append({
+        id: 'event-before-unknown',
+        runId: 'run-unknown-event-type',
+        type: 'run.started',
+        payload: { status: 'running' },
+        createdAt: 1
+      })
+      db.prepare(`
+        INSERT INTO agent_run_events (id, run_id, sequence, type, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        'event-unknown',
+        'run-unknown-event-type',
+        2,
+        'provider.experimental',
+        '{}',
+        2
+      )
+      events.append({
+        id: 'event-after-unknown',
+        runId: 'run-unknown-event-type',
+        type: 'run.completed',
+        payload: { status: 'completed' },
+        createdAt: 3
+      })
+
+      expect(events.listByRunId('run-unknown-event-type').map((event) => ({
+        sequence: event.sequence,
+        type: event.type
+      }))).toEqual([
+        { sequence: 1, type: 'run.started' },
+        { sequence: 3, type: 'run.completed' }
+      ])
+    })
+  })
+
   it('persists artifacts, permission grants, and child task summaries', () => {
     withTempDb((db) => {
       const artifacts = createAgentArtifactRepository(db)
@@ -291,6 +495,81 @@ describe('Agent Run Spine SQLite schema', () => {
     })
   })
 
+  it('redacts every durable event payload before persistence and snapshot replay', () => {
+    withTempDb((db) => {
+      let idSequence = 0
+      const spine = createAgentRunSpine({
+        runs: createAgentRunRepository(db),
+        events: createAgentRunEventRepository(db),
+        artifacts: createAgentArtifactRepository(db),
+        grants: createAgentPermissionGrantRepository(db),
+        childTasks: createChildAgentTaskRepository(db),
+        transaction: (operation) => db.transaction(operation)(),
+        idFactory: (prefix) => `${prefix}-redaction-${++idSequence}`,
+        clock: () => 150
+      })
+
+      spine.createRun({
+        runId: 'run-redaction',
+        threadId: 'thread sk-proj-fakecredentialvalue1234567890',
+        workflowId: '/Users/example/private/workflow.json',
+        messageId: '<!-- hidden -->internal message id<!-- /hidden -->',
+        agentId: 'general-purpose',
+        trigger: 'manual',
+        policyProfileId: 'local-default'
+      })
+      spine.appendEvent('run-redaction', 'response.ready', {
+        messageId: 'message-redaction',
+        response: {
+          type: 'answer',
+          summary: 'Bearer fake-auth-token-value',
+          text: 'Read /Users/example/private/story.txt. <!-- hidden -->private prompt<!-- /hidden -->',
+          dropped: []
+        }
+      })
+      spine.saveArtifact({
+        id: 'artifact-redaction',
+        runId: 'run-redaction',
+        kind: 'answer',
+        title: 'Bearer fake-artifact-token-value',
+        summary: 'From /Users/example/private/artifact.txt <!-- hidden -->artifact prompt<!-- /hidden -->',
+        payload: { text: 'Artifact payload is outside the event metadata assertion.' },
+        createdAt: 151
+      })
+
+      const persistedPayloads = db.prepare(`
+        SELECT payload_json
+        FROM agent_run_events
+        WHERE run_id = ?
+        ORDER BY sequence ASC
+      `).all('run-redaction') as Array<{ payload_json: string }>
+      const snapshotPayloads = spine.getSnapshot('run-redaction')?.events.map((event) => event.payload)
+      const serialized = JSON.stringify({
+        persistedPayloads,
+        snapshotPayloads
+      })
+
+      expect(serialized).not.toContain('fakecredentialvalue1234567890')
+      expect(serialized).not.toContain('fake-auth-token-value')
+      expect(serialized).not.toContain('fake-artifact-token-value')
+      expect(serialized).not.toContain('/Users/example/private')
+      expect(serialized).not.toContain('internal message id')
+      expect(serialized).not.toContain('private prompt')
+      expect(serialized).not.toContain('artifact prompt')
+      expect(serialized).toContain('[REDACTED_SECRET]')
+      expect(serialized).toContain('[REDACTED_PATH]')
+      expect(serialized).toContain('[REDACTED_HIDDEN_PROMPT]')
+
+      const artifactEvent = spine.getSnapshot('run-redaction')?.events.find(
+        (event) => event.type === 'artifact.created'
+      )
+      expect(artifactEvent?.payload).toMatchObject({
+        title: '[REDACTED_SECRET]',
+        summary: 'From [REDACTED_PATH] [REDACTED_HIDDEN_PROMPT]'
+      })
+    })
+  })
+
   it('updates status, paused state, usage, and checkpoint metadata', () => {
     withTempDb((db) => {
       const spine = createAgentRunSpine({
@@ -391,7 +670,8 @@ describe('Agent Run Spine SQLite schema', () => {
       spine.appendEvent('run-denial-rollback', 'permission.requested', {
         callId: 'call-1',
         toolId: 'canvas.deleteNode',
-        reason: 'Deleting a node requires confirmation.'
+        reason: 'Deleting a node requires confirmation.',
+        requiredPermissions: []
       })
 
       expect(() => spine.denyTool({

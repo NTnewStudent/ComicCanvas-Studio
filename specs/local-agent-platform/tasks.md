@@ -5,14 +5,14 @@
 - [x] 1. Update `docs/api-contracts/agents.md` with AgentRunEvent, Artifact, PermissionGrant, ChildAgentTask, Run Inspector, and local-only non-goals. _(R1-R9)_
 - [x] 2. Update `shared/agents.ts` or add shared contracts for run events, artifacts, projector outputs, local permission grants, and child task summaries. _(R1, R2, R5, R6, R8)_
 - [x] 3. Add schema/static tests that first-MVP contracts do not include enterprise team concepts such as organization roles, cloud sync, team memory, or centralized policy server. _(INV-7)_
-- [ ] 4. Define stable event vocabulary and payload redaction rules in shared types and docs. _(R1, R8)_
+- [x] 4. Define stable event vocabulary and payload redaction rules in shared types and docs. _(R1, R8)_
 
 ## Phase 1 - Agent Run Spine
 
 - [x] 5. Add SQLite migrations and repositories for `agent_run_events`, `agent_artifacts`, `agent_permission_grants`, and `child_agent_tasks`. _(R1, R5, R6, R8)_
 - [x] 6. Implement `AgentRunSpine` service for run creation, event append, artifact save, grant save, and snapshot reads. _(R1)_
 - [x] 7. Implement a pure `RunProjector` that maps run snapshots to ChatTurns, task tree rows, inspector model, and artifact view models. _(R2, INV-1)_
-- [ ] 8. Add projector unit/property tests for live-event and replay equivalence. _(INV-1)_
+- [x] 8. Add projector unit/property tests for live-event and replay equivalence. _(INV-1)_
 - [x] 9. Wire `OrchestratorRuntime` to append run events while preserving existing IPC behavior. _(R1, R2)_
 - [x] 10. Persist paused approval state and pending same-assistant-message tool calls through the run spine. _(R1, R6, INV-2)_
 
@@ -21,7 +21,7 @@
 - [x] 11. Extract `PermissionService` from ToolRuntime/session grant logic with `allow | ask | deny` decisions. _(R6)_
 - [x] 12. Add grant scopes for once, run, and session with workflow/tool/permission-kind boundaries. _(R6, INV-3)_
 - [x] 13. Keep destructive operations ask-first by default and test that non-destructive session grants do not bypass destructive prompts. _(R6, INV-3)_
-- [ ] 14. Add transcript-closure tests for native OpenAI-compatible tool calls across approval resume, multiple tool calls, denied tools, and tool failures. _(R6, INV-2)_
+- [x] 14. Add transcript-closure tests for native OpenAI-compatible tool calls across approval resume, multiple tool calls, denied tools, and tool failures. _(R6, INV-2)_
 - [x] 15. Make approval denial and approval failure project visible terminal or retryable states. _(R6, INV-5)_
 
 ## Phase 3 - Agent Workbench UI

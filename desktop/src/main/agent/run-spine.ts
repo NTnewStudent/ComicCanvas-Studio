@@ -5,7 +5,8 @@
 
 import type {
   AgentArtifactRecord,
-  AgentRunEventPayload,
+  AgentRunEventAppend,
+  AgentRunEventPayloadMap,
   AgentRunEventRecord,
   AgentRunEventType,
   AgentRunSnapshot,
@@ -13,9 +14,13 @@ import type {
   LocalPermissionGrant
 } from '../../../../shared/agent-run-events'
 import type { AgentRunStatus, AgentTriggerKind } from '../../../../shared/agents'
+import { redactSensitiveData } from '../security/redaction'
 import type { AgentArtifactRepository } from '../db/repositories/agent-artifact.repo'
 import type { AgentPermissionGrantRepository } from '../db/repositories/agent-permission-grant.repo'
-import type { AgentRunEventRepository } from '../db/repositories/agent-run-event.repo'
+import type {
+  AgentRunEventAppendInput,
+  AgentRunEventRepository
+} from '../db/repositories/agent-run-event.repo'
 import type {
   AgentRunRecord,
   AgentRunRepository,
@@ -63,7 +68,7 @@ export interface AgentRunSpine {
   createRun(input: CreateAgentRunSpineInput): AgentRunRecord
   updateRun(input: UpdateAgentRunInput): AgentRunRecord
   denyTool(input: DenyAgentToolRunInput): AgentRunRecord
-  appendEvent(runId: string, type: AgentRunEventType, payload: AgentRunEventPayload): AgentRunEventRecord
+  appendEvent: AgentRunEventAppend
   saveArtifact(record: AgentArtifactRecord): AgentArtifactRecord
   savePermissionGrant(record: LocalPermissionGrant): LocalPermissionGrant
   upsertChildTask(record: ChildAgentTaskRecord): ChildAgentTaskRecord
@@ -102,19 +107,21 @@ export function createAgentRunSpine(options: AgentRunSpineOptions): AgentRunSpin
     return run
   }
 
-  function appendEvent(
+  function appendEvent<Type extends AgentRunEventType>(
     runId: string,
-    type: AgentRunEventType,
-    payload: AgentRunEventPayload
-  ): AgentRunEventRecord {
+    type: Type,
+    payload: AgentRunEventPayloadMap[NoInfer<Type>],
+    createdAt = clock()
+  ): AgentRunEventRecord<Type> {
     requireRun(runId)
-    return options.events.append({
+    const appendInput = {
       id: idFactory('event'),
       runId,
       type,
-      payload,
-      createdAt: clock()
-    })
+      payload: redactSensitiveData(payload),
+      createdAt
+    } as AgentRunEventAppendInput
+    return options.events.append(appendInput) as AgentRunEventRecord<Type>
   }
 
   function updateRun(input: UpdateAgentRunInput): AgentRunRecord {
@@ -166,23 +173,17 @@ export function createAgentRunSpine(options: AgentRunSpineOptions): AgentRunSpin
         ...(input.modelId ? { modelId: input.modelId } : {})
       })
 
-      options.events.append({
-        id: idFactory('event'),
-        runId: input.runId,
-        type: 'run.created',
-        payload: {
-          threadId: input.threadId,
-          workflowId: input.workflowId,
-          agentId: input.agentId,
-          trigger: input.trigger,
-          messageId: input.messageId,
-          policyProfileId: input.policyProfileId,
-          ...(input.jobId ? { jobId: input.jobId } : {}),
-          ...(input.gatewayId ? { gatewayId: input.gatewayId } : {}),
-          ...(input.modelId ? { modelId: input.modelId } : {})
-        },
-        createdAt: now
-      })
+      appendEvent(input.runId, 'run.created', {
+        threadId: input.threadId,
+        workflowId: input.workflowId,
+        agentId: input.agentId,
+        trigger: input.trigger,
+        messageId: input.messageId,
+        policyProfileId: input.policyProfileId,
+        ...(input.jobId ? { jobId: input.jobId } : {}),
+        ...(input.gatewayId ? { gatewayId: input.gatewayId } : {}),
+        ...(input.modelId ? { modelId: input.modelId } : {})
+      }, now)
 
       return record
     },

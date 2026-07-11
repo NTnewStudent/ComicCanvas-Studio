@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { createChatStore, type ChatStoreApi } from '../desktop/src/renderer/src/chat/store/chat.store'
-import type { AgentRunEventPayload, AgentRunEventType } from '../shared/agent-run-events'
+import type {
+  AgentRunEventPayloadMap,
+  AgentRunEventRecord,
+  AgentRunEventType,
+  AgentRunSnapshot
+} from '../shared/agent-run-events'
 import type { AgentRunViewResponse } from '../shared/agents'
+import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
 import type { ChatTurn } from '../shared/chat-blocks'
 import type { CanvasPlan } from '../shared/plan'
 
@@ -16,30 +22,121 @@ const samplePlan: CanvasPlan = {
   dropped: [],
 }
 
-function eventPayload(type: AgentRunEventType): AgentRunEventPayload {
+type EventDescriptor = {
+  [Type in AgentRunEventType]: {
+    type: Type
+    payload: AgentRunEventPayloadMap[Type]
+  }
+}[AgentRunEventType]
+
+function eventDescriptor(type: AgentRunEventType): EventDescriptor {
   switch (type) {
     case 'run.created':
       return {
-        threadId: 'thread-1',
-        workflowId: 'default',
-        agentId: 'general-purpose',
-        trigger: 'canvasChat',
-        messageId: 'message-1',
-        policyProfileId: 'local-default'
+        type,
+        payload: {
+          threadId: 'thread-1',
+          workflowId: 'default',
+          agentId: 'general-purpose',
+          trigger: 'canvasChat',
+          messageId: 'message-1',
+          policyProfileId: 'local-default'
+        }
       }
+    case 'run.started':
+      return { type, payload: { status: 'running' } }
+    case 'intent.analyzed':
+      return {
+        type,
+        payload: {
+          kind: 'generalChat',
+          summary: 'Ordinary chat',
+          requirements: [],
+          missing: [],
+          localCapabilities: [],
+          recommendedAgentId: 'general-purpose',
+          executionMode: 'direct',
+          complexity: 'low'
+        }
+      }
+    case 'context.built':
+      return {
+        type,
+        payload: {
+          contextPackId: 'context-1',
+          tokenEstimate: 0,
+          messagesIncluded: 0,
+          sourceCount: 0,
+          redactionCount: 0
+        }
+      }
+    case 'progress':
+      return { type, payload: { message: 'Working', progress: 0 } }
+    case 'model.delta':
+      return { type, payload: { delta: '' } }
     case 'tool.started':
-      return { callId: 'call-1', toolId: 'canvas.queryGraph', inputSummary: '读取画布' }
+      return {
+        type,
+        payload: { callId: 'call-1', toolId: 'canvas.queryGraph', inputSummary: '读取画布' }
+      }
     case 'tool.completed':
-      return { callId: 'call-1', toolId: 'canvas.queryGraph', status: 'completed', summary: '读取完成' }
+      return {
+        type,
+        payload: {
+          callId: 'call-1',
+          toolId: 'canvas.queryGraph',
+          status: 'completed',
+          summary: '读取完成'
+        }
+      }
     case 'permission.requested':
       return {
-        callId: 'call-2',
-        toolId: 'web.search',
-        reason: '联网搜索需要授权',
-        requiredPermissions: [{ kind: 'network', reason: '访问互联网' }]
+        type,
+        payload: {
+          callId: 'call-2',
+          toolId: 'web.search',
+          reason: '联网搜索需要授权',
+          requiredPermissions: [{ kind: 'network', reason: '访问互联网' }]
+        }
       }
-    default:
-      return {}
+    case 'permission.resolved':
+      return { type, payload: { callId: 'call-2', decision: 'approved', scope: 'once' } }
+    case 'artifact.created':
+      return {
+        type,
+        payload: {
+          artifactId: 'artifact-1',
+          kind: 'answer',
+          title: 'Answer',
+          summary: 'Visible answer'
+        }
+      }
+    case 'plan.ready':
+      return { type, payload: { messageId: 'message-1', planId: 'plan-1' } }
+    case 'response.ready':
+      return {
+        type,
+        payload: {
+          messageId: 'message-1',
+          response: {
+            type: 'answer',
+            summary: 'Visible answer',
+            text: 'Visible answer',
+            dropped: []
+          }
+        }
+      }
+    case 'run.completed':
+      return { type, payload: { status: 'completed' } }
+    case 'run.failed':
+      return {
+        type,
+        payload: {
+          errorClass: 'event_fixture_failure',
+          message: 'Fixture failure',
+          retryable: false
+        }
+      }
   }
 }
 
@@ -68,14 +165,16 @@ function createRunView(eventTypes: AgentRunEventType[]): AgentRunViewResponse {
         createdAt: 1,
         updatedAt: eventTypes.length
       },
-      events: eventTypes.map((type, index) => ({
-        id: `event-${index + 1}`,
-        runId: 'run-1',
-        sequence: index + 1,
-        type,
-        payload: eventPayload(type),
-        createdAt: index + 1
-      })),
+      events: eventTypes.map((type, index): AgentRunEventRecord => {
+        const event = eventDescriptor(type)
+        return {
+          id: `event-${index + 1}`,
+          runId: 'run-1',
+          sequence: index + 1,
+          ...event,
+          createdAt: index + 1
+        }
+      }),
       artifacts: [],
       permissionGrants: [],
       childTasks: []
@@ -188,6 +287,177 @@ async function flush(): Promise<void> {
 }
 
 describe('chat store', () => {
+  it('reconciles the queue text created by send() through the persisted projection with no queue-only residue', async () => {
+    const replaySnapshot: AgentRunSnapshot = {
+      run: {
+        id: 'run-1',
+        threadId: 'thread-1',
+        workflowId: 'default',
+        agentId: 'general-purpose',
+        status: 'completed',
+        trigger: 'canvasChat',
+        messageId: 'message-1',
+        policyProfileId: 'local-default',
+        trace: {},
+        createdAt: 1,
+        updatedAt: 8
+      },
+      events: [
+        {
+          id: 'event-1',
+          runId: 'run-1',
+          sequence: 1,
+          type: 'progress',
+          payload: { message: 'Reading canvas', progress: 20 },
+          createdAt: 2
+        },
+        {
+          id: 'event-2',
+          runId: 'run-1',
+          sequence: 2,
+          type: 'model.delta',
+          payload: { delta: 'Draft' },
+          createdAt: 3
+        },
+        {
+          id: 'event-3',
+          runId: 'run-1',
+          sequence: 3,
+          type: 'tool.started',
+          payload: {
+            callId: 'call-1',
+            toolId: 'canvas.queryGraph',
+            inputSummary: 'Read graph'
+          },
+          createdAt: 4
+        },
+        {
+          id: 'event-4',
+          runId: 'run-1',
+          sequence: 4,
+          type: 'tool.completed',
+          payload: {
+            callId: 'call-1',
+            toolId: 'canvas.queryGraph',
+            invocationId: 'invoke-1',
+            status: 'completed',
+            summary: '3 nodes'
+          },
+          createdAt: 5
+        },
+        {
+          id: 'event-5',
+          runId: 'run-1',
+          sequence: 5,
+          type: 'permission.requested',
+          payload: {
+            callId: 'call-2',
+            toolId: 'web.search',
+            reason: 'Network access',
+            requiredPermissions: []
+          },
+          createdAt: 6
+        },
+        {
+          id: 'event-6',
+          runId: 'run-1',
+          sequence: 6,
+          type: 'permission.resolved',
+          payload: {
+            callId: 'call-2',
+            decision: 'approved',
+            scope: 'run'
+          },
+          createdAt: 7
+        },
+        {
+          id: 'event-7',
+          runId: 'run-1',
+          sequence: 7,
+          type: 'response.ready',
+          payload: {
+            messageId: 'message-1',
+            response: {
+              type: 'answer',
+              summary: 'Done',
+              text: 'Canvas has 3 nodes.',
+              dropped: []
+            }
+          },
+          createdAt: 8
+        },
+        {
+          id: 'event-8',
+          runId: 'run-1',
+          sequence: 8,
+          type: 'run.completed',
+          payload: { status: 'completed' },
+          createdAt: 9
+        }
+      ],
+      artifacts: [],
+      permissionGrants: [],
+      childTasks: []
+    }
+    const projection = projectAgentRunSnapshot(replaySnapshot)
+    const persistedRun: AgentRunViewResponse = {
+      runId: replaySnapshot.run.id,
+      status: replaySnapshot.run.status,
+      trace: replaySnapshot.run.trace,
+      snapshot: replaySnapshot,
+      projection
+    }
+    let resolveRun: ((run: AgentRunViewResponse) => void) | undefined
+    const getAgentRun = vi.fn().mockImplementation(() => {
+      return new Promise<AgentRunViewResponse>((resolve) => {
+        resolveRun = resolve
+      })
+    })
+    const { api } = createFakeApi({ getAgentRun })
+    const { store } = createChatStore({
+      api,
+      clock: () => 1,
+      deferSubscriptions: true
+    })
+
+    await store.getState().send({
+      message: 'Read the canvas',
+      agentId: 'general-purpose'
+    })
+
+    expect(getAgentRun).toHaveBeenCalledWith({ runId: 'run-1' })
+    expect(store.getState().turns[1]?.blocks).toContainEqual({
+      kind: 'thinking',
+      lines: ['Agent 已排队：job-1']
+    })
+
+    const reconciled = new Promise<void>((resolve) => {
+      const unsubscribe = store.subscribe((state) => {
+        if (state.activeRunView?.projection === projection) {
+          unsubscribe()
+          resolve()
+        }
+      })
+    })
+    resolveRun?.(persistedRun)
+    await reconciled
+
+    expect(store.getState().turns).toEqual([
+      {
+        id: 'user-1',
+        role: 'user',
+        blocks: [{ kind: 'text', markdown: 'Read the canvas', streaming: false }],
+        status: 'completed',
+        createdAt: 1
+      },
+      projection.chatTurn
+    ])
+    const hasQueueOnlyLine = store.getState().turns[1]?.blocks.some((block) => {
+      return block.kind === 'thinking' && block.lines.includes('Agent 已排队：job-1')
+    })
+    expect(hasQueueOnlyLine).toBe(false)
+  })
+
   it('appends a user turn immediately and a pending assistant turn after the ticket resolves', async () => {
     const { api } = createFakeApi()
     const { store } = createChatStore({ api, clock: () => 1_784_100_000_000 })

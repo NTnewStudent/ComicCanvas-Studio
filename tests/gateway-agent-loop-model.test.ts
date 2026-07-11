@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
 import type { AgentDefinition, AgentResponse } from '../shared/agents'
-import type { GatewayRequest, GatewayResult } from '../shared/gateway'
+import type { GatewayChatMessage, GatewayRequest, GatewayResult } from '../shared/gateway'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
 import { createGatewayAgentPlanner } from '../desktop/src/main/agent/gateway-loop-model'
@@ -88,6 +88,34 @@ function plannerDraftMessage(draft: OrchestratorPlannerDraft): string {
   }
 
   return draft.type
+}
+
+function expectClosedNativeToolCalls(messages: readonly GatewayChatMessage[]): void {
+  const pending = new Map<string, number>()
+
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      expect([...pending.entries()], 'assistant/model request started before prior tool calls were closed').toEqual([])
+      for (const call of message.tool_calls ?? []) {
+        expect(pending.has(call.id), `duplicate assistant tool call id ${call.id}`).toBe(false)
+        pending.set(call.id, 0)
+      }
+      continue
+    }
+
+    if (message.role !== 'tool') {
+      continue
+    }
+
+    const toolCallId = message.tool_call_id
+    expect(toolCallId, 'tool observation missing provider call id').toBeTypeOf('string')
+    expect(pending.has(toolCallId ?? ''), `orphan tool observation ${toolCallId ?? ''}`).toBe(true)
+    pending.set(toolCallId ?? '', (pending.get(toolCallId ?? '') ?? 0) + 1)
+    expect(pending.get(toolCallId ?? ''), `duplicate tool observation ${toolCallId ?? ''}`).toBe(1)
+    pending.delete(toolCallId ?? '')
+  }
+
+  expect([...pending.keys()], 'assistant tool calls missing tool observations').toEqual([])
 }
 
 describe('Gateway-backed Agent loop planner', () => {
@@ -686,5 +714,390 @@ describe('Gateway-backed Agent loop planner', () => {
       name: 'tool_canvas_d_queryGraph'
     })
     expect(expectAgentResponse(next.value).type).toBe('canvasPlan')
+  })
+
+  it('closes multiple native calls to the same tool with their distinct provider IDs', async () => {
+    const requests: GatewayRequest[] = []
+    const invokedPages: number[] = []
+    const pagedDescriptor: ToolDescriptor = {
+      ...queryGraphDescriptor,
+      inputParametersJsonSchema: {
+        type: 'object',
+        properties: { page: { type: 'number' } },
+        required: ['page'],
+        additionalProperties: false
+      }
+    }
+    const runtime = createToolRuntime({
+      idFactory: (() => {
+        let next = 0
+        return () => `invoke-query-${next += 1}`
+      })(),
+      tools: [
+        defineTool({
+          descriptor: pagedDescriptor,
+          inputSchema: z.object({ page: z.number() }),
+          outputSchema: z.object({ page: z.number() }),
+          renderToolUseMessage: () => 'Query graph',
+          call(input) {
+            invokedPages.push(input.page)
+            return { page: input.page }
+          }
+        })
+      ]
+    })
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke(_gatewayId, request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return Promise.resolve({
+              kind: 'text',
+              text: '',
+              toolCalls: [
+                {
+                  id: 'provider-call-page-1',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":1}' }
+                },
+                {
+                  id: 'provider-call-page-2',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":2}' }
+                }
+              ]
+            })
+          }
+
+          return Promise.resolve(textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan })))
+        }
+      },
+      tools: runtime,
+      listTools: () => [pagedDescriptor],
+      resolveGatewayType: () => 'openai_compat'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-native-tools-repeated',
+      messageId: 'message-native-tools-repeated',
+      message: '读取两页画布再规划',
+      agentId: 'orchestrator',
+      agent: agent({ gatewayPolicy: { gatewayId: 'openai-local', modelId: 'gpt-test', allowedChannels: ['text'] } }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    let next = await stream.next()
+    while (!next.done) {
+      next = await stream.next()
+    }
+
+    expect(invokedPages).toEqual([1, 2])
+    expect(requests[1]?.messages?.find((message) => message.role === 'assistant')?.tool_calls?.map((call) => call.id)).toEqual([
+      'provider-call-page-1',
+      'provider-call-page-2'
+    ])
+    expect(requests[1]?.messages?.filter((message) => message.role === 'tool').map((message) => message.tool_call_id)).toEqual([
+      'provider-call-page-1',
+      'provider-call-page-2'
+    ])
+    expect(expectAgentResponse(next.value).type).toBe('canvasPlan')
+  })
+
+  it('closes a failed native tool call before the next model request', async () => {
+    const requests: GatewayRequest[] = []
+    const runtime = createToolRuntime({
+      idFactory: () => 'invoke-native-failed',
+      tools: [
+        defineTool({
+          descriptor: {
+            ...queryGraphDescriptor,
+            inputParametersJsonSchema: { type: 'object', properties: {}, additionalProperties: false }
+          },
+          inputSchema: z.object({}),
+          outputSchema: z.object({ nodeCount: z.number() }),
+          renderToolUseMessage: () => 'Query graph',
+          call() {
+            throw new Error('native graph unavailable')
+          }
+        })
+      ]
+    })
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke(_gatewayId, request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return Promise.resolve({
+              kind: 'text',
+              text: '',
+              toolCalls: [{
+                id: 'provider-call-failed-query',
+                type: 'function',
+                function: { name: 'tool_canvas_d_queryGraph', arguments: '{}' }
+              }]
+            })
+          }
+
+          return Promise.resolve(textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan })))
+        }
+      },
+      tools: runtime,
+      listTools: () => [queryGraphDescriptor],
+      resolveGatewayType: () => 'openai_compat'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-native-tools-failed',
+      messageId: 'message-native-tools-failed',
+      message: '读取画布再规划',
+      agentId: 'orchestrator',
+      agent: agent({ gatewayPolicy: { gatewayId: 'openai-local', modelId: 'gpt-test', allowedChannels: ['text'] } }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    let next = await stream.next()
+    while (!next.done) {
+      next = await stream.next()
+    }
+
+    expect(requests).toHaveLength(2)
+    expectClosedNativeToolCalls(requests[1]?.messages ?? [])
+    const toolMessages = requests[1]?.messages?.filter((message) => message.role === 'tool') ?? []
+    expect(toolMessages).toHaveLength(1)
+    expect(toolMessages[0]).toMatchObject({
+      role: 'tool',
+      tool_call_id: 'provider-call-failed-query',
+      name: 'tool_canvas_d_queryGraph'
+    })
+    expect(toolMessages[0]?.content).toContain('native graph unavailable')
+    expect(expectAgentResponse(next.value).type).toBe('canvasPlan')
+  })
+
+  it('quarantines and denies non-canonical native provider calls without executing them', async () => {
+    const requests: GatewayRequest[] = []
+    let runtimeInvoked = false
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke(_gatewayId, request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return Promise.resolve({
+              kind: 'text',
+              text: '',
+              toolCalls: [{
+                id: 'provider-call-non-canonical',
+                type: 'function',
+                function: { name: 'tool_canvas_x2e_queryGraph', arguments: '{}' }
+              }]
+            })
+          }
+
+          return Promise.resolve(textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan })))
+        }
+      },
+      tools: {
+        invoke() {
+          runtimeInvoked = true
+          throw new Error('unknown_tool_should_not_reach_runtime')
+        }
+      },
+      listTools: () => [queryGraphDescriptor],
+      resolveGatewayType: () => 'openai_compat'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-native-tools-non-canonical',
+      messageId: 'message-native-tools-non-canonical',
+      message: '尝试非规范工具名',
+      agentId: 'orchestrator',
+      agent: agent({ gatewayPolicy: { gatewayId: 'openai-local', modelId: 'gpt-test', allowedChannels: ['text'] } }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    let next = await stream.next()
+    while (!next.done) {
+      next = await stream.next()
+    }
+
+    expect(runtimeInvoked).toBe(false)
+    expect(requests[1]?.messages?.filter((message) => message.role === 'tool')).toEqual([
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'provider-call-non-canonical',
+        name: 'tool_unknown_d_gateway-tool_d_malformed_d_1',
+        content: 'Tool denied by agent policy.'
+      })
+    ])
+    expect(expectAgentResponse(next.value).type).toBe('canvasPlan')
+  })
+
+  it('quarantines malformed native calls behind closed synthetic transcript IDs without executing permissive tools', async () => {
+    const requests: GatewayRequest[] = []
+    const executedInputs: unknown[] = []
+    const permissiveDescriptor: ToolDescriptor = {
+      ...queryGraphDescriptor,
+      inputParametersJsonSchema: { type: 'object', additionalProperties: true }
+    }
+    const runtime = createToolRuntime({
+      tools: [defineTool({
+        descriptor: permissiveDescriptor,
+        inputSchema: z.unknown(),
+        outputSchema: z.unknown(),
+        renderToolUseMessage: () => 'Query graph',
+        call(input) {
+          executedInputs.push(input)
+          return input
+        }
+      })]
+    })
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke(_gatewayId, request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return Promise.resolve({
+              kind: 'text',
+              text: '',
+              toolCalls: [
+                {
+                  id: '',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_queryGraph', arguments: '{}' }
+                },
+                {
+                  id: 'provider-call-invalid-json',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":' }
+                }
+              ]
+            })
+          }
+
+          return Promise.resolve(textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan })))
+        }
+      },
+      tools: runtime,
+      listTools: () => [permissiveDescriptor],
+      resolveGatewayType: () => 'openai_compat'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-native-tools-malformed-provider-calls',
+      messageId: 'message-native-tools-malformed-provider-calls',
+      message: '尝试格式错误的原生工具调用',
+      agentId: 'orchestrator',
+      agent: agent({ gatewayPolicy: { gatewayId: 'openai-local', modelId: 'gpt-test', allowedChannels: ['text'] } }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    for await (const draft of stream) {
+      void draft
+    }
+
+    expect(executedInputs).toEqual([])
+    expectClosedNativeToolCalls(requests[1]?.messages ?? [])
+    const assistantCalls = requests[1]?.messages?.find((message) => message.role === 'assistant')?.tool_calls ?? []
+    const toolMessages = requests[1]?.messages?.filter((message) => message.role === 'tool') ?? []
+    expect(assistantCalls.map((call) => call.id)).toEqual(['model-tool-call-1', 'model-tool-call-2'])
+    expect(toolMessages.map((message) => message.tool_call_id)).toEqual(['model-tool-call-1', 'model-tool-call-2'])
+    expect(toolMessages).toEqual([
+      expect.objectContaining({
+        name: 'tool_unknown_d_gateway-tool_d_malformed_d_1',
+        content: 'Tool denied by agent policy.'
+      }),
+      expect.objectContaining({
+        name: 'tool_unknown_d_gateway-tool_d_malformed_d_2',
+        content: 'Tool denied by agent policy.'
+      })
+    ])
+  })
+
+  it('closes duplicate native IDs without executing duplicate side effects', async () => {
+    const requests: GatewayRequest[] = []
+    const invokedPages: number[] = []
+    const pagedDescriptor: ToolDescriptor = {
+      ...queryGraphDescriptor,
+      inputParametersJsonSchema: {
+        type: 'object',
+        properties: { page: { type: 'number' } },
+        required: ['page'],
+        additionalProperties: false
+      }
+    }
+    const runtime = createToolRuntime({
+      tools: [defineTool({
+        descriptor: pagedDescriptor,
+        inputSchema: z.object({ page: z.number() }),
+        outputSchema: z.object({ page: z.number() }),
+        renderToolUseMessage: () => 'Query graph',
+        call(input) {
+          invokedPages.push(input.page)
+          return { page: input.page }
+        }
+      })]
+    })
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke(_gatewayId, request) {
+          requests.push(request)
+          if (requests.length === 1) {
+            return Promise.resolve({
+              kind: 'text',
+              text: '',
+              toolCalls: [
+                {
+                  id: 'provider-call-duplicate',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":1}' }
+                },
+                {
+                  id: 'provider-call-duplicate',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":2}' }
+                }
+              ]
+            })
+          }
+
+          return Promise.resolve(textResult(JSON.stringify({ type: 'canvasPlan', plan: finalPlan })))
+        }
+      },
+      tools: runtime,
+      listTools: () => [pagedDescriptor],
+      resolveGatewayType: () => 'openai_compat'
+    })
+    const stream = planner.proposePlan({
+      runId: 'run-native-tools-duplicate-id',
+      messageId: 'message-native-tools-duplicate-id',
+      message: 'read once despite duplicate provider IDs',
+      agentId: 'orchestrator',
+      agent: agent({ gatewayPolicy: { gatewayId: 'openai-local', modelId: 'gpt-test', allowedChannels: ['text'] } }),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof stream === 'object' && stream !== null && Symbol.asyncIterator in stream)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    for await (const draft of stream) {
+      void draft
+    }
+
+    expect(invokedPages).toEqual([1])
+    expectClosedNativeToolCalls(requests[1]?.messages ?? [])
+    const assistantIds = requests[1]?.messages?.find((message) => message.role === 'assistant')?.tool_calls?.map((call) => call.id) ?? []
+    expect(new Set(assistantIds).size).toBe(2)
   })
 })

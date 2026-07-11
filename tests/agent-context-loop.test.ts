@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { AgentDefinition } from '../shared/agents'
 import type { ToolDescriptor } from '../shared/tools'
 import { AgentLoopTerminalError, compactAgentMessages, createAgentContextLoop, filterAgentTools, resumeAgentContextLoopWithApproval, runAgentContextLoop } from '../desktop/src/main/agent/context-loop'
+import type { AgentLoopMessage } from '../desktop/src/main/agent/context-loop'
 import { createToolRuntime, defineTool } from '../desktop/src/main/tools/runtime'
 import type { CanvasPlan } from '../shared/plan'
 
@@ -37,6 +38,12 @@ const disabledTool: ToolDescriptor = {
   ...readTool,
   id: 'canvas.disabled',
   enabled: false
+}
+
+const safeReadonlyTool: ToolDescriptor = {
+  ...readTool,
+  id: 'local.safeRead',
+  permissions: []
 }
 
 const finalPlan: CanvasPlan = {
@@ -73,6 +80,33 @@ function agent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
     enabled: true,
     ...overrides
   }
+}
+
+function expectClosedAssistantToolCalls(messages: readonly AgentLoopMessage[]): void {
+  const pending = new Map<string, number>()
+
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      expect([...pending.entries()], 'assistant/model request started before prior tool calls were closed').toEqual([])
+      for (const call of message.toolCalls ?? []) {
+        expect(pending.has(call.id), `duplicate assistant tool call id ${call.id}`).toBe(false)
+        pending.set(call.id, 0)
+      }
+      continue
+    }
+
+    if (message.role !== 'tool') {
+      continue
+    }
+
+    const toolCallId = message.toolCallId ?? message.invocationId
+    expect(pending.has(toolCallId), `orphan tool observation ${toolCallId}`).toBe(true)
+    pending.set(toolCallId, (pending.get(toolCallId) ?? 0) + 1)
+    expect(pending.get(toolCallId), `duplicate tool observation ${toolCallId}`).toBe(1)
+    pending.delete(toolCallId)
+  }
+
+  expect([...pending.keys()], 'assistant tool calls missing tool observations').toEqual([])
 }
 
 describe('Agent context loop policy', () => {
@@ -178,6 +212,7 @@ describe('Agent context loop policy', () => {
         return Promise.reject(new Error('should_not_invoke'))
       }
     }
+    const modelStates: AgentLoopMessage[][] = []
     const loop = runAgentContextLoop({
       agent: agent({ allowedTools: ['canvas.queryGraph'] }),
       message: 'try denied tool',
@@ -187,10 +222,12 @@ describe('Agent context loop policy', () => {
       traceId: 'trace-loop-2',
       model: {
         step(state) {
+          modelStates.push([...state.messages])
           if (state.turnCount === 0) {
             return { type: 'toolCalls', calls: [{ id: 'call-denied', toolId: 'canvas.createNode', input: { type: 'text' } }] }
           }
 
+          expectClosedAssistantToolCalls(state.messages)
           return { type: 'plan', plan: finalPlan }
         }
       }
@@ -202,6 +239,214 @@ describe('Agent context loop policy', () => {
     }
 
     expect(invoked).toBe(false)
+    expect(modelStates[1]?.filter((message) => message.role === 'tool')).toEqual([
+      expect.objectContaining({
+        toolCallId: 'call-denied',
+        toolId: 'canvas.createNode',
+        status: 'denied',
+        content: 'Tool denied by agent policy.'
+      })
+    ])
+  })
+
+  it('closes failed tool calls before the next model request', async () => {
+    const runtime = createToolRuntime({
+      idFactory: () => 'invoke-failed',
+      tools: [
+        defineTool({
+          descriptor: readTool,
+          inputSchema: z.object({}),
+          outputSchema: z.object({ nodeCount: z.number() }),
+          renderToolUseMessage: () => 'Query graph',
+          call() {
+            throw new Error('graph unavailable')
+          }
+        })
+      ]
+    })
+    const loop = runAgentContextLoop({
+      agent: agent(),
+      message: 'read the graph',
+      trigger: 'manual',
+      availableTools: [readTool],
+      tools: runtime,
+      traceId: 'trace-loop-failed',
+      model: {
+        step(state) {
+          if (state.turnCount === 0) {
+            return { type: 'toolCalls', calls: [{ id: 'call-failed', toolId: 'canvas.queryGraph', input: {} }] }
+          }
+
+          expectClosedAssistantToolCalls(state.messages)
+          const [toolMessage] = state.messages.filter((message) => message.role === 'tool')
+          expect(toolMessage).toMatchObject({
+            toolCallId: 'call-failed',
+            status: 'failed'
+          })
+          expect(toolMessage?.content).toContain('graph unavailable')
+          return { type: 'plan', plan: finalPlan }
+        }
+      }
+    })
+
+    for await (const event of loop) {
+      void event
+    }
+  })
+
+  it('closes runtime-denied tool calls before the next model request', async () => {
+    const runtime = createToolRuntime({
+      idFactory: () => 'invoke-denied',
+      permissionPolicy: () => ({
+        decision: 'deny',
+        decisionReason: 'Canvas reads are blocked for this run.',
+        requiredPermissions: [{ kind: 'canvas.read', reason: 'Reads canvas graph.' }]
+      }),
+      tools: [
+        defineTool({
+          descriptor: readTool,
+          inputSchema: z.object({}),
+          outputSchema: z.object({ nodeCount: z.number() }),
+          renderToolUseMessage: () => 'Query graph',
+          call() {
+            throw new Error('denied_tool_should_not_execute')
+          }
+        })
+      ]
+    })
+    const loop = runAgentContextLoop({
+      agent: agent(),
+      message: 'read the graph',
+      trigger: 'manual',
+      availableTools: [readTool],
+      tools: runtime,
+      traceId: 'trace-loop-runtime-denied',
+      model: {
+        step(state) {
+          if (state.turnCount === 0) {
+            return { type: 'toolCalls', calls: [{ id: 'call-runtime-denied', toolId: 'canvas.queryGraph', input: {} }] }
+          }
+
+          expectClosedAssistantToolCalls(state.messages)
+          const [toolMessage] = state.messages.filter((message) => message.role === 'tool')
+          expect(toolMessage).toMatchObject({
+            toolCallId: 'call-runtime-denied',
+            status: 'denied'
+          })
+          expect(toolMessage?.content).toContain('Canvas reads are blocked for this run.')
+          return { type: 'plan', plan: finalPlan }
+        }
+      }
+    })
+
+    for await (const event of loop) {
+      void event
+    }
+  })
+
+  it('starts safe readonly calls concurrently but leaves approval siblings unstarted', async () => {
+    const started: string[] = []
+    const invoked: string[] = []
+    const resolvers = new Map<string, () => void>()
+    const runtime = createToolRuntime({
+      permissionPolicy: (tool) => tool.descriptor.id === readTool.id
+        ? {
+            decision: 'ask',
+            decisionReason: 'Canvas read requires approval.',
+            requiredPermissions: readTool.permissions
+          }
+        : {
+            decision: 'allow',
+            decisionReason: 'Local read is safe.',
+            requiredPermissions: []
+          },
+      tools: [
+        defineTool({
+          descriptor: safeReadonlyTool,
+          inputSchema: z.object({ page: z.number() }),
+          outputSchema: z.object({ page: z.number() }),
+          renderToolUseMessage: () => 'Read local data',
+          call(input) {
+            started.push(`safe:${input.page}`)
+            return new Promise<{ page: number }>((resolve) => {
+              resolvers.set(`safe:${input.page}`, () => resolve({ page: input.page }))
+            })
+          }
+        }),
+        defineTool({
+          descriptor: readTool,
+          inputSchema: z.object({ page: z.number() }),
+          outputSchema: z.object({ page: z.number() }),
+          renderToolUseMessage: () => 'Query graph',
+          call(input) {
+            started.push(`approval:${input.page}`)
+            return { page: input.page }
+          }
+        })
+      ]
+    })
+    const loop = runAgentContextLoop({
+      agent: agent({
+        allowedTools: [safeReadonlyTool.id, readTool.id],
+        permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true }
+      }),
+      message: 'read local pages, then canvas, then another local page',
+      trigger: 'manual',
+      availableTools: [safeReadonlyTool, readTool],
+      tools: {
+        invoke(input) {
+          const page = typeof input.input === 'object' && input.input !== null && 'page' in input.input
+            ? input.input.page
+            : 'unknown'
+          invoked.push(`${input.toolId}:${String(page)}`)
+          return runtime.invoke(input)
+        }
+      },
+      traceId: 'trace-loop-safe-readonly-concurrency',
+      model: {
+        step() {
+          return {
+            type: 'toolCalls',
+            calls: [
+              { id: 'safe-1', toolId: safeReadonlyTool.id, input: { page: 1 } },
+              { id: 'safe-2', toolId: safeReadonlyTool.id, input: { page: 2 } },
+              { id: 'approval-3', toolId: readTool.id, input: { page: 3 } },
+              { id: 'safe-4', toolId: safeReadonlyTool.id, input: { page: 4 } }
+            ]
+          }
+        }
+      }
+    })
+
+    await loop.next()
+    await loop.next()
+    await loop.next()
+    const pendingBatch = loop.next()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(started).toEqual(['safe:1', 'safe:2'])
+    expect(invoked).toEqual(['local.safeRead:1', 'local.safeRead:2'])
+    expect(resolvers.has('safe:1')).toBe(true)
+    expect(resolvers.has('safe:2')).toBe(true)
+
+    resolvers.get('safe:1')?.()
+    resolvers.get('safe:2')?.()
+    await pendingBatch
+
+    let caught: unknown
+    try {
+      for await (const event of loop) {
+        void event
+      }
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(AgentLoopTerminalError)
+    expect(started).toEqual(['safe:1', 'safe:2'])
+    expect(invoked).toEqual(['local.safeRead:1', 'local.safeRead:2', 'canvas.queryGraph:3'])
+    expect(caught instanceof AgentLoopTerminalError ? caught.pausedState?.pendingToolCalls.map((call) => call.id) : []).toEqual(['safe-4'])
   })
 
   it('pauses with structured approval metadata when ToolRuntime returns ask', async () => {
@@ -267,17 +512,24 @@ describe('Agent context loop policy', () => {
 
   it('executes remaining tool calls after an approved call before continuing the model loop', async () => {
     let rememberedScope: string | undefined
+    const invokedToolIds: string[] = []
+    let initialModelCalls = 0
     const runtime = createToolRuntime({
       idFactory: (() => {
         let next = 0
         return () => `invoke-approval-batch-${(next += 1)}`
       })(),
       clock: () => 1_783_700_000_150,
-      permissionPolicy: (tool) => tool.descriptor.id === 'canvas.createNode'
+      permissionPolicy: (_tool, input) => (
+        typeof input === 'object'
+        && input !== null
+        && 'page' in input
+        && input.page === 1
+      )
         ? {
             decision: 'ask',
-            decisionReason: 'Creating canvas nodes requires user approval.',
-            requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
+            decisionReason: 'Reading page one requires user approval.',
+            requiredPermissions: [{ kind: 'canvas.read', reason: 'Reads canvas graph.' }]
           }
         : {
             decision: 'allow',
@@ -294,39 +546,32 @@ describe('Agent context loop policy', () => {
       },
       tools: [
         defineTool({
-          descriptor: writeTool,
-          inputSchema: z.object({ type: z.string() }),
-          outputSchema: z.object({ nodeId: z.string() }),
-          renderToolUseMessage: () => 'Create node',
-          call() {
-            return { nodeId: 'node-approved' }
-          }
-        }),
-        defineTool({
           descriptor: readTool,
-          inputSchema: z.object({}),
-          outputSchema: z.object({ nodeCount: z.number() }),
+          inputSchema: z.object({ page: z.number() }),
+          outputSchema: z.object({ page: z.number() }),
           renderToolUseMessage: () => 'Query graph',
-          call() {
-            return { nodeCount: 1 }
+          call(input) {
+            invokedToolIds.push(`canvas.queryGraph:${input.page}`)
+            return { page: input.page }
           }
         })
       ]
     })
     const initialLoop = runAgentContextLoop({
-      agent: agent({ permissionPolicy: { allowedPermissionKinds: ['canvas.write', 'canvas.read'], requireAskForDestructive: true } }),
-      message: '创建节点后读取画布',
+      agent: agent({ permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true } }),
+      message: '读取两页画布',
       trigger: 'manual',
-      availableTools: [writeTool, readTool],
+      availableTools: [readTool],
       tools: runtime,
       traceId: 'trace-loop-approval-batch',
       model: {
         step() {
+          initialModelCalls += 1
           return {
             type: 'toolCalls',
             calls: [
-              { id: 'call-write', toolId: 'canvas.createNode', input: { type: 'text' } },
-              { id: 'call-read', toolId: 'canvas.queryGraph', input: {} }
+              { id: 'call-read-1', toolId: 'canvas.queryGraph', input: { page: 1 } },
+              { id: 'call-read-2', toolId: 'canvas.queryGraph', input: { page: 2 } }
             ]
           }
         }
@@ -346,12 +591,16 @@ describe('Agent context loop policy', () => {
     if (!(caught instanceof AgentLoopTerminalError) || !caught.pausedState || !caught.pendingApproval) {
       throw new Error('expected_paused_approval_state')
     }
+    expect(initialModelCalls).toBe(1)
+    expect(invokedToolIds).toEqual([])
+    expect(caught.pausedState.pendingToolCalls.map((call) => call.id)).toEqual(['call-read-2'])
 
+    let resumedModelCalls = 0
     const resumed = resumeAgentContextLoopWithApproval({
-      agent: agent({ permissionPolicy: { allowedPermissionKinds: ['canvas.write', 'canvas.read'], requireAskForDestructive: true } }),
-      message: '创建节点后读取画布',
+      agent: agent({ permissionPolicy: { allowedPermissionKinds: ['canvas.read'], requireAskForDestructive: true } }),
+      message: '读取两页画布',
       trigger: 'manual',
-      availableTools: [writeTool, readTool],
+      availableTools: [readTool],
       tools: runtime,
       traceId: 'trace-loop-approval-batch-resume',
       initialState: caught.pausedState,
@@ -360,11 +609,13 @@ describe('Agent context loop policy', () => {
       approvalScope: 'run',
       model: {
         step(state) {
+          resumedModelCalls += 1
+          expectClosedAssistantToolCalls(state.messages)
           const toolCallIds = state.messages
             .filter((message) => message.role === 'tool')
             .map((message) => message.toolCallId)
 
-          expect(toolCallIds).toEqual(['call-write', 'call-read'])
+          expect(toolCallIds).toEqual(['call-read-1', 'call-read-2'])
           return { type: 'plan', plan: finalPlan }
         }
       }
@@ -377,6 +628,8 @@ describe('Agent context loop policy', () => {
 
     expect(next.value.response).toEqual({ type: 'canvasPlan', plan: finalPlan })
     expect(rememberedScope).toBe('run')
+    expect(invokedToolIds).toEqual(['canvas.queryGraph:1', 'canvas.queryGraph:2'])
+    expect(resumedModelCalls).toBe(1)
   })
 
   it('compacts older loop messages into a deterministic summary when over budget', () => {
@@ -396,6 +649,27 @@ describe('Agent context loop policy', () => {
     expect(compacted.omittedMessages).toBeGreaterThan(0)
     expect(compacted.messages[0]).toEqual({ role: 'system', content: 'system prompt' })
     expect(compacted.messages[1]).toEqual({ role: 'user', content: 'current user request' })
+  })
+
+  it('keeps complete assistant multi-tool groups during context-loop compaction', () => {
+    const messages: AgentLoopMessage[] = [
+      { role: 'system', content: 'system prompt' },
+      { role: 'user', content: 'current user request' },
+      {
+        role: 'assistant',
+        content: 'read twice',
+        toolCalls: [
+          { id: 'call-1', toolId: 'canvas.queryGraph', input: { page: 1 } },
+          { id: 'call-2', toolId: 'canvas.queryGraph', input: { page: 2 } }
+        ]
+      },
+      { role: 'tool', toolId: 'canvas.queryGraph', invocationId: 'invoke-1', toolCallId: 'call-1', status: 'completed', content: 'x'.repeat(1200) },
+      { role: 'tool', toolId: 'canvas.queryGraph', invocationId: 'invoke-2', toolCallId: 'call-2', status: 'completed', content: 'y'.repeat(1200) }
+    ]
+
+    const compacted = compactAgentMessages(messages, 80)
+
+    expectClosedAssistantToolCalls(compacted.messages)
   })
 
   it('feeds compacted summaries into model state before the next step', async () => {

@@ -267,9 +267,11 @@ export function createChatStore(deps: ChatStoreDeps): ChatStoreHandle {
               }
 
               matched = true
+              if (replaceBlocks) {
+                return projectedTurn
+              }
               return {
                 ...turn,
-                ...(replaceBlocks ? { blocks: projectedTurn.blocks } : {}),
                 status: projectedTurn.status
               }
             })

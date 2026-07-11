@@ -110,22 +110,18 @@ type AgentResponse =
 `AgentRunEvent` 是本地 Agent 运行的持久化事实源。现有 live IPC 事件仍作为投递通道；重放与 `agent.getRun` SHALL 从持久化的 `agent_runs`、`agent_run_events`、`agent_artifacts`、`agent_permission_grants` 与 `child_agent_tasks` 重建。
 
 ```ts
-type AgentRunEventType =
-  | 'run.created'
-  | 'run.started'
-  | 'intent.analyzed'
-  | 'context.built'
-  | 'progress'
-  | 'model.delta'
-  | 'tool.started'
-  | 'tool.completed'
-  | 'permission.requested'
-  | 'permission.resolved'
-  | 'artifact.created'
-  | 'plan.ready'
-  | 'response.ready'
-  | 'run.completed'
-  | 'run.failed'
+type AgentRunEventType = (typeof AGENT_RUN_EVENT_TYPES)[number]
+
+type AgentRunEventRecord<Type extends AgentRunEventType = AgentRunEventType> = {
+  [EventType in Type]: {
+    id: string
+    runId: string
+    sequence: number
+    type: EventType
+    payload: AgentRunEventPayloadMap[EventType]
+    createdAt: number
+  }
+}[Type]
 
 interface LocalPermissionGrant {
   id: string
@@ -139,6 +135,43 @@ interface LocalPermissionGrant {
   createdAt: number
 }
 ```
+
+`AgentRunEventRecord` 与 live IPC envelope 是不同契约：
+
+- durable record 具有持久化 `id`、每个 Run 单调递增的 `sequence`、`createdAt`，以及由 `type` 关联的 `payload`；它写入 `agent_run_events` 并用于重放。该 mapped type 对每个 `EventType` 分别构造 record，再以 `[Type]` 索引为 discriminated union，因此收窄 `type` 会同步收窄对应的 `payload`。
+- live IPC envelope 使用现有 `agent.delta`、`agent.toolStarted`、`agent.toolCompleted`、`agent.permissionRequired`、`agent.responseReady`、`canvas.planReady` 与 `job.progress` 通道；它可包含投递所需的 `runId` / `messageId`，但不等同于 durable record，也不保证带有 durable `id` 或 `sequence`。
+- live IPC 与 durable event 可以表达同一生命周期事实，但消费者 SHALL NOT 将 IPC 到达顺序当作持久化重放顺序。
+
+#### Durable Event Payload Vocabulary
+
+唯一事件名称真源为 `shared/agent-run-events.ts` 的 `AGENT_RUN_EVENT_TYPES`，当前固定为 15 种。`AgentRunEventPayloadMap` 定义每个 discriminator 的 payload，`AgentRunEventRecord` 的 mapped discriminated union SHALL 保持两者的编译期关联。
+
+| Event type | Durable payload |
+| :--- | :--- |
+| `run.created` | `{ threadId, workflowId, agentId, trigger, messageId, policyProfileId, jobId?, gatewayId?, modelId? }` |
+| `run.started` | `{ status: 'running', jobId?, resumedFromApproval? }` |
+| `intent.analyzed` | `{ kind, summary, requirements, missing, localCapabilities, recommendedAgentId, executionMode, complexity }` |
+| `context.built` | `{ contextPackId, tokenEstimate, messagesIncluded, sourceCount, redactionCount }` |
+| `progress` | `{ message, progress }` |
+| `model.delta` | `{ delta }` |
+| `tool.started` | `{ callId, toolId, inputSummary? }` |
+| `tool.completed` | `{ callId, toolId, invocationId?, status, summary }` |
+| `permission.requested` | `{ callId, toolId, reason, requiredPermissions, inputSummary? }` |
+| `permission.resolved` | `{ callId, decision, approvedByLabel?, deniedByLabel?, scope?, requestedScope?, phase? }` |
+| `artifact.created` | `{ artifactId, kind, title, summary }` |
+| `plan.ready` | `{ messageId, planId }` |
+| `response.ready` | `{ messageId, response }`, where `response` is `answer` or `clarification`, never `canvasPlan` |
+| `run.completed` | `{ status: 'completed' }` |
+| `run.failed` | `{ errorClass, message, retryable, checkpoint? }` |
+
+#### Durable Event Redaction
+
+- `AgentRunSpine.appendEvent` SHALL recursively sanitize every durable event payload with `redactSensitiveData` immediately before calling `AgentRunEventRepository.append`. SQLite SHALL receive only that sanitized clone.
+- `run.created` SHALL pass through the same append boundary while retaining the timestamp captured for the corresponding run record.
+- `artifact.created.title` and `artifact.created.summary` SHALL be sanitized by the same event boundary.
+- Durable event payloads SHALL contain bounded UI/audit metadata only. They SHALL NOT contain raw credentials or authorization headers, hidden system/provider prompts, unnecessary absolute local paths, raw provider request/response dumps, full conversation transcripts, raw tool arguments/results, binary/base64 asset bodies, or unbounded file contents.
+- Redaction is defense in depth, not permission to put prohibited raw data into a typed payload. Producers SHALL emit IDs, counters, decisions, and bounded summaries that match `AgentRunEventPayloadMap`.
+- `AgentRunSpine.saveArtifact` persists `agent_artifacts.payload_json` as supplied by the caller; it does not currently apply `redactSensitiveData` to the artifact record. Callers SHALL therefore keep artifact payloads free of secrets, hidden prompts, unnecessary absolute paths, and raw binary data. Only the derived `artifact.created` event metadata is guaranteed to pass through the durable event redaction boundary.
 
 Rules:
 

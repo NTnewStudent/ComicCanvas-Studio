@@ -842,15 +842,17 @@ function projectInspector(
       title: artifact.title,
       summary: artifact.summary
     })),
-    childTasks: snapshot.childTasks.map((task) => ({
-      id: task.id,
-      parentRunId: task.parentRunId,
-      roleId: task.roleId,
-      status: task.status,
-      summary: task.outputSummary ?? task.inputSummary,
-      artifactIds: task.artifactIds,
-      ...(task.errorClass ? { errorClass: task.errorClass } : {})
-    })),
+    childTasks: [...snapshot.childTasks]
+      .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
+      .map((task) => ({
+        id: task.id,
+        parentRunId: task.parentRunId,
+        roleId: task.roleId,
+        status: task.status,
+        summary: task.outputSummary ?? task.inputSummary,
+        artifactIds: task.artifactIds,
+        ...(task.errorClass ? { errorClass: task.errorClass } : {})
+      })),
     ...(error ? { error } : {})
   }
 }

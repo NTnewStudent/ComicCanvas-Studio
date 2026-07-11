@@ -61,12 +61,79 @@ function firstLine(content: string, max = 80): string {
   return line.length > max ? `${line.slice(0, max)}…` : line
 }
 
-function isProtected(message: AgentLoopMessage, index: number, lastUserIndex: number): boolean {
-  if (message.role === 'system') {
-    return true
+function matchingPendingCallId(
+  pending: ReadonlyMap<string, string>,
+  message: Extract<AgentLoopMessage, { role: 'tool' }>
+): string | undefined {
+  if (message.toolCallId) {
+    return pending.has(message.toolCallId) ? message.toolCallId : undefined
   }
 
-  return message.role === 'user' && index === lastUserIndex
+  return [...pending.entries()].find(([, toolId]) => toolId === message.toolId)?.[0]
+}
+
+/**
+ * Groups assistant native tool calls with all immediately following tool observations.
+ * @param messages - Ordered Agent loop transcript.
+ * @returns Message groups whose tool-call protocol boundaries must remain atomic.
+ */
+export function groupAgentMessagesAtomically(messages: readonly AgentLoopMessage[]): AgentLoopMessage[][] {
+  const groups: AgentLoopMessage[][] = []
+  let index = 0
+
+  while (index < messages.length) {
+    const message = messages[index] as AgentLoopMessage
+
+    if (message.role !== 'assistant' || !message.toolCalls || message.toolCalls.length === 0) {
+      groups.push([message])
+      index += 1
+      continue
+    }
+
+    const group: AgentLoopMessage[] = [message]
+    const pending = new Map(message.toolCalls.map((call) => [call.id, call.toolId]))
+    let nextIndex = index + 1
+
+    while (nextIndex < messages.length && pending.size > 0) {
+      const observation = messages[nextIndex] as AgentLoopMessage
+      if (observation.role !== 'tool') {
+        break
+      }
+
+      const callId = matchingPendingCallId(pending, observation)
+      if (!callId) {
+        break
+      }
+
+      group.push(observation)
+      pending.delete(callId)
+      nextIndex += 1
+    }
+
+    groups.push(group)
+    index = nextIndex
+  }
+
+  return groups
+}
+
+function isCompleteToolGroup(group: readonly AgentLoopMessage[]): boolean {
+  const assistant = group[0]
+  if (assistant?.role !== 'assistant' || !assistant.toolCalls || assistant.toolCalls.length === 0) {
+    return false
+  }
+
+  const expected = new Map(assistant.toolCalls.map((call) => [call.id, call.toolId]))
+  for (const message of group.slice(1)) {
+    if (message.role === 'tool') {
+      const callId = matchingPendingCallId(expected, message)
+      if (callId) {
+        expected.delete(callId)
+      }
+    }
+  }
+
+  return expected.size === 0
 }
 
 /**
@@ -79,40 +146,30 @@ export function foldHistory(messages: readonly AgentLoopMessage[], options: Fold
   let current = [...messages]
   let foldedPairs = 0
 
-  const lastUserIndex = current.reduce((latest, message, index) => (message.role === 'user' ? index : latest), -1)
-
   while (estimateLoopTokens(current) > options.tokenBudget) {
-    // 找最旧的已完成 tool 结果及其发起 assistant 消息。
-    const toolIndex = current.findIndex((message, index) =>
-      message.role === 'tool'
-      && !isProtected(message, index, lastUserIndex))
+    const groups = groupAgentMessagesAtomically(current)
+    const lastUser = [...current].reverse().find((message) => message.role === 'user')
+    const groupIndex = groups.findIndex((group) =>
+      isCompleteToolGroup(group)
+      && !group.includes(lastUser as AgentLoopMessage))
 
-    if (toolIndex === -1) {
+    if (groupIndex === -1) {
       break
     }
 
-    const tool = current[toolIndex]
-    if (!tool || tool.role !== 'tool') {
+    const group = groups[groupIndex]
+    if (!group) {
       break
     }
 
+    const tools = group.filter((message): message is Extract<AgentLoopMessage, { role: 'tool' }> => message.role === 'tool')
     const note: AgentLoopMessage = {
       role: 'system',
-      content: `[tool ${tool.toolId}: ${tool.status}${firstLine(tool.content) ? ` — ${firstLine(tool.content)}` : ''}]`,
+      content: tools.map((tool) =>
+        `[tool ${tool.toolId}: ${tool.status}${firstLine(tool.content) ? ` — ${firstLine(tool.content)}` : ''}]`
+      ).join(' '),
     }
-
-    const assistantIndex = toolIndex > 0
-      && current[toolIndex - 1]?.role === 'assistant'
-      && (current[toolIndex - 1] as Extract<AgentLoopMessage, { role: 'assistant' }>).toolCalls?.some(() => true)
-      ? toolIndex - 1
-      : -1
-
-    const next = [...current]
-    if (assistantIndex >= 0) {
-      next.splice(assistantIndex, 2, note)
-    } else {
-      next.splice(toolIndex, 1, note)
-    }
+    const next = groups.flatMap((candidate, index) => index === groupIndex ? [note] : candidate)
 
     // 防御：折叠必须让 token 下降，否则停止避免死循环。
     if (estimateLoopTokens(next) >= estimateLoopTokens(current)) {
@@ -120,7 +177,7 @@ export function foldHistory(messages: readonly AgentLoopMessage[], options: Fold
     }
 
     current = next
-    foldedPairs += 1
+    foldedPairs += tools.length
   }
 
   return {
@@ -165,8 +222,26 @@ export async function autoCompact(messages: readonly AgentLoopMessage[], options
   }
 
   const system = messages.filter((message) => message.role === 'system' && message === messages[0])
-  const tail = messages.slice(-options.keepRecent)
-  const middle = messages.slice(system.length, messages.length - options.keepRecent)
+  const body = messages.slice(system.length)
+  const groups = groupAgentMessagesAtomically(body)
+  let tailStart = groups.length
+  let keptMessages = 0
+
+  while (tailStart > 0 && keptMessages < options.keepRecent) {
+    tailStart -= 1
+    keptMessages += groups[tailStart]?.length ?? 0
+  }
+
+  const lastUserGroupIndex = groups.reduce((latest, group, index) =>
+    group.some((message) => message.role === 'user') ? index : latest, -1)
+  const tailGroups = groups.slice(tailStart)
+  const protectedUserGroup = lastUserGroupIndex >= 0 && lastUserGroupIndex < tailStart
+    ? groups[lastUserGroupIndex]
+    : undefined
+  const middleGroups = groups.filter((_group, index) =>
+    index < tailStart && index !== lastUserGroupIndex)
+  const tail = tailGroups.flat()
+  const middle = middleGroups.flat()
 
   if (middle.length === 0) {
     return {
@@ -184,7 +259,7 @@ export async function autoCompact(messages: readonly AgentLoopMessage[], options
   try {
     const summary = await options.summarize(transcript)
     const summaryNote: AgentLoopMessage = { role: 'system', content: `[对话前文摘要] ${summary}` }
-    const compacted = [...system, summaryNote, ...tail]
+    const compacted = [...system, summaryNote, ...(protectedUserGroup ?? []), ...tail]
 
     return {
       messages: compacted,
@@ -194,7 +269,7 @@ export async function autoCompact(messages: readonly AgentLoopMessage[], options
     }
   } catch {
     // 摘要网关失败必须有确定性降级：硬截断保留 system + 尾部。
-    const truncated = [...system, ...tail]
+    const truncated = [...system, ...(protectedUserGroup ?? []), ...tail]
 
     return {
       messages: truncated,

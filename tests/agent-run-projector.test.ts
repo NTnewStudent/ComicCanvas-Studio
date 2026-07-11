@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
-import type { AgentRunSnapshot } from '../shared/agent-run-events'
+import type {
+  AgentArtifactRecord,
+  AgentRunEventPayloadMap,
+  AgentRunEventRecord,
+  AgentRunEventType,
+  AgentRunProjection,
+  AgentRunSnapshot,
+  ChildAgentTaskRecord,
+  LocalPermissionGrant
+} from '../shared/agent-run-events'
 import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
+import {
+  applyAgentEvent,
+  createAssistantTurn,
+  type AgentChatEvent,
+  type ChatTurn
+} from '../shared/chat-blocks'
 
 const snapshot: AgentRunSnapshot = {
   run: {
@@ -55,7 +70,262 @@ const snapshot: AgentRunSnapshot = {
   childTasks: []
 }
 
+function eventRecord<Type extends AgentRunEventType>(
+  sequence: number,
+  type: Type,
+  payload: AgentRunEventPayloadMap[Type]
+): AgentRunEventRecord<Type> {
+  return {
+    id: `event-${sequence}`,
+    runId: 'run-1',
+    sequence,
+    type,
+    payload,
+    createdAt: 10 + sequence
+  }
+}
+
+function projectLive(events: AgentChatEvent[]): ChatTurn {
+  return events.reduce(
+    (turn, event) => applyAgentEvent(turn, event),
+    createAssistantTurn({
+      id: 'run-1-assistant',
+      runId: 'run-1',
+      messageId: 'message-1',
+      createdAt: 10
+    })
+  )
+}
+
+function shuffled<T>(values: readonly T[], seed: number): T[] {
+  const result = [...values]
+  let state = seed >>> 0
+
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
+    const swapIndex = state % (index + 1)
+    const current = result[index]!
+    result[index] = result[swapIndex]!
+    result[swapIndex] = current
+  }
+
+  return result
+}
+
 describe('Agent Run Projector', () => {
+  const equivalenceScenarios: Array<{
+    name: string
+    status: AgentRunSnapshot['run']['status']
+    liveEvents: AgentChatEvent[]
+    durableEvents: AgentRunEventRecord[]
+  }> = [
+    {
+      name: 'progress and model delta',
+      status: 'running',
+      liveEvents: [
+        { type: 'progress', message: 'Reading context' },
+        { type: 'delta', delta: 'Partial answer' }
+      ],
+      durableEvents: [
+        eventRecord(1, 'progress', { message: 'Reading context', progress: 20 }),
+        eventRecord(2, 'model.delta', { delta: 'Partial answer' })
+      ]
+    },
+    ...(['completed', 'failed', 'denied'] as const).map((status) => ({
+      name: `tool ${status}`,
+      status: 'running' as const,
+      liveEvents: [
+        {
+          type: 'toolStarted' as const,
+          callId: `call-${status}`,
+          toolId: 'canvas.queryGraph',
+          inputSummary: 'Read graph'
+        },
+        {
+          type: 'toolCompleted' as const,
+          callId: `call-${status}`,
+          toolId: 'canvas.queryGraph',
+          status,
+          summary: `Tool ${status}`
+        }
+      ],
+      durableEvents: [
+        eventRecord(1, 'tool.started', {
+          callId: `call-${status}`,
+          toolId: 'canvas.queryGraph',
+          inputSummary: 'Read graph'
+        }),
+        eventRecord(2, 'tool.completed', {
+          callId: `call-${status}`,
+          toolId: 'canvas.queryGraph',
+          status,
+          summary: `Tool ${status}`
+        })
+      ]
+    })),
+    {
+      name: 'permission requested and approved',
+      status: 'running',
+      liveEvents: [
+        { type: 'progress', message: 'Waiting for approval' },
+        {
+          type: 'permissionRequired',
+          callId: 'call-permission',
+          toolId: 'web.search',
+          reason: 'Network access',
+          requiredPermissions: [{ kind: 'network', reason: 'Search the web' }]
+        },
+        {
+          type: 'permissionResolved',
+          callId: 'call-permission',
+          decision: 'approved',
+          scope: 'run'
+        }
+      ],
+      durableEvents: [
+        eventRecord(1, 'progress', { message: 'Waiting for approval', progress: 50 }),
+        eventRecord(2, 'permission.requested', {
+          callId: 'call-permission',
+          toolId: 'web.search',
+          reason: 'Network access',
+          requiredPermissions: [{ kind: 'network', reason: 'Search the web' }]
+        }),
+        eventRecord(3, 'permission.resolved', {
+          callId: 'call-permission',
+          decision: 'approved',
+          scope: 'run'
+        })
+      ]
+    },
+    {
+      name: 'answer response',
+      status: 'completed',
+      liveEvents: [
+        { type: 'delta', delta: 'Draft' },
+        {
+          type: 'responseReady',
+          response: {
+            type: 'answer',
+            summary: 'Final answer',
+            text: 'Final answer',
+            dropped: []
+          }
+        }
+      ],
+      durableEvents: [
+        eventRecord(1, 'model.delta', { delta: 'Draft' }),
+        eventRecord(2, 'response.ready', {
+          messageId: 'message-1',
+          response: {
+            type: 'answer',
+            summary: 'Final answer',
+            text: 'Final answer',
+            dropped: []
+          }
+        }),
+        eventRecord(3, 'run.completed', { status: 'completed' })
+      ]
+    },
+    {
+      name: 'clarification response',
+      status: 'completed',
+      liveEvents: [
+        {
+          type: 'responseReady',
+          response: {
+            type: 'clarification',
+            summary: 'Need orientation',
+            question: 'Landscape or portrait?',
+            missing: ['orientation'],
+            dropped: []
+          }
+        }
+      ],
+      durableEvents: [
+        eventRecord(1, 'response.ready', {
+          messageId: 'message-1',
+          response: {
+            type: 'clarification',
+            summary: 'Need orientation',
+            question: 'Landscape or portrait?',
+            missing: ['orientation'],
+            dropped: []
+          }
+        }),
+        eventRecord(2, 'run.completed', { status: 'completed' })
+      ]
+    },
+    {
+      name: 'plan ready',
+      status: 'completed',
+      liveEvents: [{ type: 'planReady', planId: 'plan-1' }],
+      durableEvents: [
+        eventRecord(1, 'plan.ready', { messageId: 'message-1', planId: 'plan-1' }),
+        eventRecord(2, 'run.completed', { status: 'completed' })
+      ]
+    },
+    {
+      name: 'approval required',
+      status: 'approval_required',
+      liveEvents: [
+        { type: 'progress', message: 'Waiting for approval' },
+        {
+          type: 'permissionRequired',
+          callId: 'call-approval',
+          toolId: 'canvas.createNode',
+          reason: 'Canvas write',
+          requiredPermissions: [{ kind: 'canvas.write', reason: 'Create a node' }]
+        }
+      ],
+      durableEvents: [
+        eventRecord(1, 'progress', { message: 'Waiting for approval', progress: 50 }),
+        eventRecord(2, 'permission.requested', {
+          callId: 'call-approval',
+          toolId: 'canvas.createNode',
+          reason: 'Canvas write',
+          requiredPermissions: [{ kind: 'canvas.write', reason: 'Create a node' }]
+        })
+      ]
+    },
+    {
+      name: 'failed terminal',
+      status: 'failed',
+      liveEvents: [
+        { type: 'delta', delta: 'Discarded draft' },
+        {
+          type: 'runFailed',
+          errorClass: 'gateway_unavailable',
+          message: 'Gateway unavailable.',
+          retryable: true
+        }
+      ],
+      durableEvents: [
+        eventRecord(1, 'model.delta', { delta: 'Discarded draft' }),
+        eventRecord(2, 'run.failed', {
+          errorClass: 'gateway_unavailable',
+          message: 'Gateway unavailable.',
+          retryable: true
+        })
+      ]
+    }
+  ]
+
+  it.each(equivalenceScenarios)(
+    'keeps live applyAgentEvent and replay equivalent for $name',
+    ({ status, liveEvents, durableEvents }) => {
+      const replay = projectAgentRunSnapshot({
+        ...snapshot,
+        run: { ...snapshot.run, status },
+        events: durableEvents,
+        artifacts: [],
+        permissionGrants: [],
+        childTasks: []
+      })
+
+      expect(replay.chatTurn).toEqual(projectLive(liveEvents))
+    }
+  )
+
   it('projects persisted events into the same chat blocks as live reducer events', () => {
     const projection = projectAgentRunSnapshot(snapshot)
 
@@ -89,6 +359,366 @@ describe('Agent Run Projector', () => {
 
     expect(projectAgentRunSnapshot(shuffled)).toEqual(projectAgentRunSnapshot(snapshot))
     expect(projectAgentRunSnapshot(shuffled).inspector.latestEventType).toBe('run.completed')
+  })
+
+  it('matches an independently reconstructed projection at every durable prefix', () => {
+    const childRunning: ChildAgentTaskRecord = {
+      id: 'child-1',
+      parentRunId: 'run-1',
+      roleId: 'canvas-planner',
+      inputSummary: 'Inspect the canvas',
+      effectiveTools: ['canvas.queryGraph'],
+      status: 'running',
+      artifactIds: [],
+      createdAt: 13,
+      updatedAt: 13
+    }
+    const artifact: AgentArtifactRecord = {
+      id: 'artifact-1',
+      runId: 'run-1',
+      kind: 'answer',
+      title: 'Canvas summary',
+      summary: 'Found three nodes',
+      payload: {
+        type: 'answer',
+        summary: 'Found three nodes',
+        text: 'Canvas has three nodes.',
+        dropped: []
+      },
+      createdAt: 17
+    }
+    const grant: LocalPermissionGrant = {
+      id: 'grant-1',
+      toolId: 'canvas.queryGraph',
+      permissionKinds: ['canvas.read'],
+      workflowId: 'default',
+      scope: 'run',
+      runId: 'run-1',
+      approvedByLabel: 'chat-user',
+      createdAt: 15
+    }
+    const completedChild: ChildAgentTaskRecord = {
+      ...childRunning,
+      status: 'completed',
+      outputSummary: 'Found three nodes',
+      artifactIds: ['artifact-1'],
+      updatedAt: 18
+    }
+    const finalEvents: AgentRunEventRecord[] = [
+      eventRecord(1, 'run.created', {
+        threadId: 'thread-1',
+        workflowId: 'default',
+        agentId: 'general-purpose',
+        trigger: 'canvasChat',
+        messageId: 'message-1',
+        policyProfileId: 'local-default'
+      }),
+      eventRecord(2, 'progress', { message: 'Inspecting canvas', progress: 20 }),
+      eventRecord(3, 'tool.started', {
+        callId: 'call-1',
+        toolId: 'canvas.queryGraph',
+        inputSummary: 'Read graph'
+      }),
+      eventRecord(4, 'permission.requested', {
+        callId: 'call-1',
+        toolId: 'canvas.queryGraph',
+        reason: 'Read canvas',
+        requiredPermissions: [{ kind: 'canvas.read', reason: 'Inspect the graph' }]
+      }),
+      eventRecord(5, 'permission.resolved', {
+        callId: 'call-1',
+        decision: 'approved',
+        scope: 'run'
+      }),
+      eventRecord(6, 'tool.completed', {
+        callId: 'call-1',
+        toolId: 'canvas.queryGraph',
+        status: 'completed',
+        summary: '3 nodes'
+      }),
+      eventRecord(7, 'artifact.created', {
+        artifactId: 'artifact-1',
+        kind: 'answer',
+        title: 'Canvas summary',
+        summary: 'Found three nodes'
+      }),
+      eventRecord(8, 'response.ready', {
+        messageId: 'message-1',
+        response: {
+          type: 'answer',
+          summary: 'Found three nodes',
+          text: 'Canvas has three nodes.',
+          dropped: []
+        }
+      }),
+      eventRecord(9, 'run.completed', { status: 'completed' })
+    ]
+    const initialSnapshot: AgentRunSnapshot = {
+      ...snapshot,
+      run: { ...snapshot.run, status: 'running', updatedAt: 10 },
+      events: [],
+      artifacts: [],
+      permissionGrants: [],
+      childTasks: []
+    }
+    let growingSnapshot = initialSnapshot
+    type ChildTaskState = 'none' | 'running' | 'completed'
+    interface CapturedPrefix {
+      name: string
+      eventCount: number
+      hasArtifact: boolean
+      hasGrant: boolean
+      childTaskState: ChildTaskState
+      runStatus: AgentRunSnapshot['run']['status']
+      updatedAt: number
+      projection: AgentRunProjection
+    }
+    const capturedPrefixes: CapturedPrefix[] = []
+    const capture = (name: string, childTaskState: ChildTaskState): void => {
+      capturedPrefixes.push({
+        name,
+        eventCount: growingSnapshot.events.length,
+        hasArtifact: growingSnapshot.artifacts.length > 0,
+        hasGrant: growingSnapshot.permissionGrants.length > 0,
+        childTaskState,
+        runStatus: growingSnapshot.run.status,
+        updatedAt: growingSnapshot.run.updatedAt,
+        projection: projectAgentRunSnapshot(growingSnapshot)
+      })
+    }
+    const appendEvent = (event: AgentRunEventRecord, childTaskState: ChildTaskState): void => {
+      growingSnapshot = {
+        ...growingSnapshot,
+        events: [...growingSnapshot.events, event],
+        run: {
+          ...growingSnapshot.run,
+          status: event.type === 'run.completed' ? 'completed' : growingSnapshot.run.status,
+          updatedAt: event.createdAt
+        }
+      }
+      capture(`event:${event.type}`, childTaskState)
+    }
+
+    capture('initial', 'none')
+    for (const event of finalEvents.slice(0, 3)) {
+      appendEvent(event, 'none')
+    }
+    growingSnapshot = { ...growingSnapshot, childTasks: [childRunning] }
+    capture('child-task:running', 'running')
+    for (const event of finalEvents.slice(3, 7)) {
+      appendEvent(event, 'running')
+    }
+    growingSnapshot = { ...growingSnapshot, permissionGrants: [grant] }
+    capture('permission-grant:created', 'running')
+    growingSnapshot = { ...growingSnapshot, artifacts: [artifact] }
+    capture('artifact:created', 'running')
+    growingSnapshot = { ...growingSnapshot, childTasks: [completedChild] }
+    capture('child-task:completed', 'completed')
+    for (const event of finalEvents.slice(7)) {
+      appendEvent(event, 'completed')
+    }
+
+    const reconstructPrefix = (prefix: CapturedPrefix): AgentRunSnapshot => {
+      const childTasks = prefix.childTaskState === 'none'
+        ? []
+        : [structuredClone(prefix.childTaskState === 'running' ? childRunning : completedChild)]
+
+      return {
+        ...initialSnapshot,
+        run: {
+          ...initialSnapshot.run,
+          status: prefix.runStatus,
+          updatedAt: prefix.updatedAt
+        },
+        events: structuredClone(finalEvents.slice(0, prefix.eventCount)),
+        artifacts: prefix.hasArtifact ? [structuredClone(artifact)] : [],
+        permissionGrants: prefix.hasGrant ? [structuredClone(grant)] : [],
+        childTasks
+      }
+    }
+
+    for (const prefix of capturedPrefixes) {
+      const replay = projectAgentRunSnapshot(reconstructPrefix(prefix))
+
+      expect(prefix.projection.chatTurn).toEqual(replay.chatTurn)
+      expect(prefix.projection.taskTree).toEqual(replay.taskTree)
+      expect(prefix.projection.inspector).toEqual(replay.inspector)
+      expect(prefix.projection.artifacts).toEqual(replay.artifacts)
+      expect(prefix.projection.inspector.latestEventType).toBe(
+        finalEvents[prefix.eventCount - 1]?.type
+      )
+    }
+
+    const runningChildPrefix = capturedPrefixes.find(
+      (prefix) => prefix.name === 'child-task:running'
+    )!
+    const grantPrefix = capturedPrefixes.find(
+      (prefix) => prefix.name === 'permission-grant:created'
+    )!
+    const beforeGrantPrefix = capturedPrefixes[capturedPrefixes.indexOf(grantPrefix) - 1]!
+    const artifactPrefix = capturedPrefixes.find(
+      (prefix) => prefix.name === 'artifact:created'
+    )!
+    const completedChildPrefix = capturedPrefixes.find(
+      (prefix) => prefix.name === 'child-task:completed'
+    )!
+
+    expect(runningChildPrefix.projection.taskTree).toEqual([
+      expect.objectContaining({ id: 'child-1', status: 'running', artifactIds: [] })
+    ])
+    expect(grantPrefix.projection).toEqual(beforeGrantPrefix.projection)
+    expect(artifactPrefix.projection.artifacts).toEqual([
+      expect.objectContaining({ id: 'artifact-1', viewType: 'answer' })
+    ])
+    expect(artifactPrefix.projection.inspector.artifacts).toEqual([
+      expect.objectContaining({ id: 'artifact-1', kind: 'answer' })
+    ])
+    expect(completedChildPrefix.projection.taskTree).toEqual([
+      expect.objectContaining({
+        id: 'child-1',
+        status: 'completed',
+        summary: 'Found three nodes',
+        artifactIds: ['artifact-1']
+      })
+    ])
+  })
+
+  it('is deterministic and pure across fixed-seed permutations of replay collections', () => {
+    const artifacts: AgentArtifactRecord[] = [
+      {
+        id: 'artifact-b',
+        runId: 'run-1',
+        kind: 'answer',
+        title: 'Later ID',
+        summary: 'Second at the same time',
+        payload: { type: 'answer', text: 'B', dropped: [] },
+        createdAt: 22
+      },
+      {
+        id: 'artifact-a',
+        runId: 'run-1',
+        kind: 'answer',
+        title: 'Earlier ID',
+        summary: 'First at the same time',
+        payload: { type: 'answer', text: 'A', dropped: [] },
+        createdAt: 22
+      },
+      {
+        id: 'artifact-c',
+        runId: 'run-1',
+        kind: 'answer',
+        title: 'Last',
+        summary: 'Later creation time',
+        payload: { type: 'answer', text: 'C', dropped: [] },
+        createdAt: 23
+      }
+    ]
+    const childTasks: ChildAgentTaskRecord[] = [
+      {
+        id: 'child-b',
+        parentRunId: 'run-1',
+        roleId: 'qa-verifier',
+        inputSummary: 'Second at the same time',
+        effectiveTools: [],
+        status: 'completed',
+        artifactIds: [],
+        createdAt: 18,
+        updatedAt: 20
+      },
+      {
+        id: 'child-a',
+        parentRunId: 'run-1',
+        roleId: 'canvas-planner',
+        inputSummary: 'First at the same time',
+        effectiveTools: [],
+        status: 'completed',
+        artifactIds: [],
+        createdAt: 18,
+        updatedAt: 19
+      },
+      {
+        id: 'child-c',
+        parentRunId: 'run-1',
+        roleId: 'tooling',
+        inputSummary: 'Later creation time',
+        effectiveTools: [],
+        status: 'failed',
+        artifactIds: [],
+        errorClass: 'child_failed',
+        createdAt: 19,
+        updatedAt: 21
+      }
+    ]
+    const permissionGrants: LocalPermissionGrant[] = [
+      {
+        id: 'grant-b',
+        toolId: 'web.search',
+        permissionKinds: ['network'],
+        workflowId: 'default',
+        scope: 'session',
+        approvedByLabel: 'chat-user',
+        createdAt: 17
+      },
+      {
+        id: 'grant-a',
+        toolId: 'canvas.queryGraph',
+        permissionKinds: ['canvas.read'],
+        workflowId: 'default',
+        scope: 'run',
+        runId: 'run-1',
+        approvedByLabel: 'chat-user',
+        createdAt: 17
+      },
+      {
+        id: 'grant-c',
+        toolId: 'canvas.createNode',
+        permissionKinds: ['canvas.write'],
+        workflowId: 'default',
+        scope: 'once',
+        runId: 'run-1',
+        approvedByLabel: 'chat-user',
+        createdAt: 18,
+        revokedAt: 19
+      }
+    ]
+    const replaySnapshot: AgentRunSnapshot = {
+      ...snapshot,
+      artifacts,
+      permissionGrants,
+      childTasks
+    }
+    const baseline = projectAgentRunSnapshot(replaySnapshot)
+    const withoutGrantRows = projectAgentRunSnapshot({
+      ...replaySnapshot,
+      permissionGrants: []
+    })
+
+    expect(baseline.artifacts.map((artifact) => artifact.id)).toEqual([
+      'artifact-a',
+      'artifact-b',
+      'artifact-c'
+    ])
+    expect(baseline.taskTree.map((task) => task.id)).toEqual([
+      'child-a',
+      'child-b',
+      'child-c'
+    ])
+    expect(baseline).toEqual(withoutGrantRows)
+
+    for (const seed of [1, 7, 42, 2_026_071_1]) {
+      const permuted: AgentRunSnapshot = {
+        ...replaySnapshot,
+        events: shuffled(replaySnapshot.events, seed),
+        artifacts: shuffled(replaySnapshot.artifacts, seed ^ 0xa5a5a5a5),
+        permissionGrants: shuffled(replaySnapshot.permissionGrants, seed ^ 0x3c3c3c3c),
+        childTasks: shuffled(replaySnapshot.childTasks, seed ^ 0x5a5a5a5a)
+      }
+      const before = structuredClone(permuted)
+
+      expect(projectAgentRunSnapshot(permuted)).toEqual(baseline)
+      expect(projectAgentRunSnapshot(permuted)).toEqual(baseline)
+      expect(permuted).toEqual(before)
+    }
   })
 
   it('projects unresolved permission state into chat and inspector views', () => {

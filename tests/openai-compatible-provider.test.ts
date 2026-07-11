@@ -168,6 +168,133 @@ describe('M3 OpenAI-compatible provider', () => {
     })
   })
 
+  it('preserves native tool request and response wire fields', async () => {
+    const fetchMock = createFetchMock((input) => {
+      if (!inputUrl(input).endsWith('/chat/completions')) {
+        throw new Error('expected_chat_completions_request')
+      }
+
+      return Promise.resolve(createJsonResponse({
+        choices: [{
+          message: {
+            content: null,
+            tool_calls: [
+              {
+                id: 'provider-call-1',
+                type: 'function',
+                function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":1}' }
+              },
+              {
+                id: 'provider-call-2',
+                type: 'function',
+                function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":2}' }
+              }
+            ]
+          }
+        }]
+      }))
+    })
+    const provider = createOpenAICompatibleProvider({
+      id: 'openai-main',
+      baseUrl: 'https://api.example.test/v1',
+      apiKey: 'sk-secret-value',
+      modelKeys: { text: 'gpt-4.1-mini' },
+      fetchImpl: fetchMock
+    })
+    const result = await provider.invoke(createImageRequest({
+      channel: 'text',
+      modelKey: 'gpt-4.1-mini',
+      prompt: '',
+      messages: [
+        { role: 'system', content: 'Use tools.' },
+        { role: 'user', content: 'Read two pages.' },
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'previous-call',
+            type: 'function',
+            function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":0}' }
+          }]
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'previous-call',
+          name: 'tool_canvas_d_queryGraph',
+          content: '{"page":0}'
+        }
+      ],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'tool_canvas_d_queryGraph',
+          description: 'Reads the graph.',
+          parameters: {
+            type: 'object',
+            properties: { page: { type: 'number' } },
+            required: ['page'],
+            additionalProperties: false
+          }
+        }
+      }],
+      toolChoice: 'auto'
+    }))
+
+    expect(JSON.parse(requestBody(fetchMock.calls[0]))).toEqual({
+      model: 'gpt-4.1-mini',
+      messages: [
+        { role: 'system', content: 'Use tools.' },
+        { role: 'user', content: 'Read two pages.' },
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'previous-call',
+            type: 'function',
+            function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":0}' }
+          }]
+        },
+        {
+          role: 'tool',
+          tool_call_id: 'previous-call',
+          name: 'tool_canvas_d_queryGraph',
+          content: '{"page":0}'
+        }
+      ],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'tool_canvas_d_queryGraph',
+          description: 'Reads the graph.',
+          parameters: {
+            type: 'object',
+            properties: { page: { type: 'number' } },
+            required: ['page'],
+            additionalProperties: false
+          }
+        }
+      }],
+      tool_choice: 'auto',
+      size: '1024x1024'
+    })
+    expect(result).toEqual({
+      kind: 'text',
+      text: '',
+      toolCalls: [
+        {
+          id: 'provider-call-1',
+          type: 'function',
+          function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":1}' }
+        },
+        {
+          id: 'provider-call-2',
+          type: 'function',
+          function: { name: 'tool_canvas_d_queryGraph', arguments: '{"page":2}' }
+        }
+      ]
+    })
+  })
+
   it('rejects unsupported video requests before remote submission', async () => {
     const fetchMock = createFetchMock()
     const provider = createOpenAICompatibleProvider({

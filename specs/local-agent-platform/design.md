@@ -246,9 +246,9 @@ The exact migration may adapt existing tables such as `agent_runs`, `chat_messag
 | `agent_artifacts.id` | text | Artifact ID |
 | `agent_artifacts.run_id` | text | Producing run |
 | `agent_artifacts.kind` | text | Typed artifact |
-| `agent_artifacts.title` | text | UI label |
-| `agent_artifacts.summary` | text | Safe summary |
-| `agent_artifacts.payload_json` | text | Structured payload |
+| `agent_artifacts.title` | text | Caller-supplied UI label; the derived `artifact.created` event copy is redacted before append |
+| `agent_artifacts.summary` | text | Caller-supplied summary; the derived `artifact.created` event copy is redacted before append |
+| `agent_artifacts.payload_json` | text | Structured caller-supplied payload; not automatically redacted by `AgentRunSpine` |
 | `agent_permission_grants.id` | text | Local grant ID |
 | `agent_permission_grants.tool_id` | text | Tool scope |
 | `agent_permission_grants.workflow_id` | text | Local workflow scope |
@@ -273,30 +273,15 @@ No `workspaceId`, organization role, cloud sync, or team memory fields are part 
 
 ## Event Vocabulary
 
-Initial event types:
+The stable durable vocabulary is defined only by `AGENT_RUN_EVENT_TYPES` and its correlated
+`AgentRunEventPayloadMap` in `shared/agent-run-events.ts`. This design does not maintain a
+second event-name list.
 
-- `run.created`
-- `intent.detected`
-- `context.built`
-- `model.delta`
-- `model.message`
-- `tool.started`
-- `tool.completed`
-- `permission.requested`
-- `permission.granted`
-- `permission.denied`
-- `tool.resume.started`
-- `child.started`
-- `child.completed`
-- `child.failed`
-- `artifact.created`
-- `plan.ready`
-- `run.retrying`
-- `run.failed`
-- `run.completed`
-- `run.aborted`
-
-Event payloads are safe UI/audit metadata, not raw provider payload dumps.
+Durable event payloads are bounded UI/audit metadata, not raw provider payload dumps.
+`AgentRunSpine.appendEvent` applies `redactSensitiveData` immediately before repository
+append, including `run.created` and the title/summary copied into `artifact.created`.
+Artifact records are a separate persistence boundary: `agent_artifacts.payload_json` is
+stored as supplied by the caller and is not automatically redacted by the Run Spine.
 
 ## UI Design
 

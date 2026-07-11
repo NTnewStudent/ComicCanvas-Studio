@@ -8,6 +8,7 @@ import { z } from 'zod'
 import type { AgentDefinition, AgentResponse } from '../shared/agents'
 import { projectAgentRunSnapshot } from '../shared/agent-run-projector'
 import type { ChatBlock } from '../shared/chat-blocks'
+import type { GatewayChatMessage, GatewayRequest } from '../shared/gateway'
 import type { CanvasPlan } from '../shared/plan'
 import type { ToolDescriptor } from '../shared/tools'
 import { createAgentRunSpine } from '../desktop/src/main/agent/run-spine'
@@ -99,6 +100,34 @@ function createDeferredResponse(): { promise: Promise<AgentResponse>; resolve: (
       resolveResponse?.(response)
     }
   }
+}
+
+function expectClosedNativeToolCalls(messages: readonly GatewayChatMessage[]): void {
+  const pending = new Map<string, number>()
+
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      expect([...pending.entries()], 'assistant/model request started before prior tool calls were closed').toEqual([])
+      for (const call of message.tool_calls ?? []) {
+        expect(pending.has(call.id), `duplicate assistant tool call id ${call.id}`).toBe(false)
+        pending.set(call.id, 0)
+      }
+      continue
+    }
+
+    if (message.role !== 'tool') {
+      continue
+    }
+
+    const toolCallId = message.tool_call_id
+    expect(toolCallId, 'tool observation missing provider call id').toBeTypeOf('string')
+    expect(pending.has(toolCallId ?? ''), `orphan tool observation ${toolCallId ?? ''}`).toBe(true)
+    pending.set(toolCallId ?? '', (pending.get(toolCallId ?? '') ?? 0) + 1)
+    expect(pending.get(toolCallId ?? ''), `duplicate tool observation ${toolCallId ?? ''}`).toBe(1)
+    pending.delete(toolCallId ?? '')
+  }
+
+  expect([...pending.keys()], 'assistant tool calls missing tool observations').toEqual([])
 }
 
 describe('M4 orchestrator AsyncGenerator runtime', () => {
@@ -748,17 +777,32 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         clock: () => 1_782_700_002_000
       })
       let createNodeCalls = 0
+      const createdNodeTypes: string[] = []
       let rememberedScope: string | undefined
       let executionCheckpoint: string | undefined
       let pausedStatePresentDuringExecution = false
       const toolRuntime = createToolRuntime({
-        idFactory: () => 'invoke-agent-approval',
+        idFactory: (() => {
+          let next = 0
+          return () => `invoke-agent-approval-${next += 1}`
+        })(),
         clock: () => 1_782_700_002_001,
-        permissionPolicy: () => ({
-          decision: 'ask',
-          decisionReason: 'Creating nodes requires confirmation.',
-          requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
-        }),
+        permissionPolicy: (_tool, input) => (
+          typeof input === 'object'
+          && input !== null
+          && 'type' in input
+          && input.type === 'text'
+        )
+          ? {
+              decision: 'ask',
+              decisionReason: 'Creating nodes requires confirmation.',
+              requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
+            }
+          : {
+              decision: 'allow',
+              decisionReason: 'Canvas reads are allowed.',
+              requiredPermissions: []
+            },
         permissionGrantStore: {
           remember(input) {
             rememberedScope = input.approvedInvocation?.scope
@@ -773,21 +817,24 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
             inputSchema: z.object({ type: z.string() }),
             outputSchema: z.object({ nodeId: z.string() }),
             renderToolUseMessage: () => 'Create node',
-            call() {
+            call(input) {
               const executingRun = agentRuns.getById('run-approval-1')
               executionCheckpoint = executingRun?.lastCheckpoint
               pausedStatePresentDuringExecution = executingRun?.pausedState !== undefined
               createNodeCalls += 1
+              createdNodeTypes.push(input.type)
               return { nodeId: 'node-approved' }
             }
           })
         ]
       })
       let modelTurns = 0
+      const nativeRequests: GatewayRequest[] = []
       const planner = createGatewayAgentPlanner({
         gateways: {
-          invoke() {
+          invoke(_gatewayId, request) {
             modelTurns += 1
+            nativeRequests.push(request)
             if (modelTurns > 1) {
               return Promise.resolve({
                 kind: 'text',
@@ -805,15 +852,27 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
             return Promise.resolve({
               kind: 'text',
-              text: JSON.stringify({
-                type: 'toolCalls',
-                calls: [{ id: 'call-create', toolId: 'canvas.createNode', input: { type: 'text' } }]
-              })
+              text: '',
+              toolCalls: [
+                {
+                  id: 'provider-call-create-text',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_createNode', arguments: '{"type":"text"}' }
+                },
+                {
+                  id: 'provider-call-create-image',
+                  type: 'function',
+                  function: { name: 'tool_canvas_d_createNode', arguments: '{"type":"image"}' }
+                }
+              ]
             })
           }
         },
         tools: toolRuntime,
-        listTools: () => [writeTool]
+        listTools: () => [writeTool],
+        defaultGatewayId: 'openai-local',
+        defaultModelId: 'gpt-test',
+        resolveGatewayType: () => 'openai_compat'
       })
       const runtime = createOrchestratorRuntime({
         queue,
@@ -842,6 +901,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
       expect(await worker.runNext()).toBe('job-agent-approval-1')
       expect(createNodeCalls).toBe(0)
+      expect(createdNodeTypes).toEqual([])
+      expect(modelTurns).toBe(1)
+      expect(nativeRequests).toHaveLength(1)
       expect(jobs.getById(ticket.jobId)?.error).toMatchObject({
         errorClass: 'agent_tool_approval_required',
         message: 'Tool requires user approval before execution.'
@@ -861,7 +923,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         errorClass: 'agent_tool_approval_required',
         details: {
           pendingApproval: {
-            callId: 'call-create',
+            callId: 'provider-call-create-text',
             toolId: 'canvas.createNode',
             input: { type: 'text' },
             reason: 'Creating nodes requires confirmation.',
@@ -875,7 +937,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         trace: {
           errorClass: 'agent_tool_approval_required',
           pendingApproval: {
-            callId: 'call-create',
+            callId: 'provider-call-create-text',
             toolId: 'canvas.createNode',
             input: { type: 'text' }
           }
@@ -886,6 +948,9 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       if (!pausedRecord?.pausedState) {
         throw new Error('expected_persisted_paused_run')
       }
+      expect(pausedRecord.pausedState.pendingToolCalls).toEqual([
+        { id: 'provider-call-create-image', toolId: 'canvas.createNode', input: { type: 'image' } }
+      ])
       agentRuns.upsert({
         ...pausedRecord,
         id: 'run-approval-denied',
@@ -907,13 +972,13 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         updatedAt: 1_782_700_002_004
       })
       runSpine.appendEvent('run-approval-denied', 'permission.requested', {
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         toolId: 'canvas.createNode',
         reason: 'Creating nodes requires confirmation.',
         requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
       })
       runSpine.appendEvent('run-approval-denial-failure', 'permission.requested', {
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         toolId: 'canvas.createNode',
         reason: 'Creating nodes requires confirmation.',
         requiredPermissions: [{ kind: 'canvas.write', reason: 'Mutates canvas graph.' }]
@@ -945,7 +1010,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
       expect(failingDenialRuntime.denyTool({
         runId: 'run-approval-denial-failure',
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         deniedBy: 'user-local'
       })).toEqual({
         errorClass: 'agent_denial_failed',
@@ -974,7 +1039,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
 
       expect(denialRuntime.denyTool({
         runId: 'run-approval-denied',
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         deniedBy: 'user-local'
       })).toEqual({
         runId: 'run-approval-denied',
@@ -994,13 +1059,13 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
         chatTurn: {
           status: 'failed',
           blocks: [
-            expect.objectContaining({ kind: 'permission', callId: 'call-create', resolved: true }),
+            expect.objectContaining({ kind: 'permission', callId: 'provider-call-create-text', resolved: true }),
             expect.objectContaining({ kind: 'error', errorClass: 'agent_tool_denied' })
           ]
         },
         inspector: {
           status: 'aborted',
-          permissions: [expect.objectContaining({ callId: 'call-create', resolved: true })]
+          permissions: [expect.objectContaining({ callId: 'provider-call-create-text', resolved: true })]
         }
       })
       const deniedAssistant = chatMessages.getById('message-approval-denied-assistant')
@@ -1013,7 +1078,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       expect(deniedBlocks).toContainEqual(
         expect.objectContaining({
           kind: 'permission',
-          callId: 'call-create',
+          callId: 'provider-call-create-text',
           resolved: true,
           decision: 'denied'
         })
@@ -1035,7 +1100,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       })
       expect(deniedRestartRuntime.approveTool({
         runId: 'run-approval-denied',
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         approvedBy: 'user-local',
         scope: 'once'
       })).toMatchObject({ errorClass: 'agent_approval_unavailable' })
@@ -1056,7 +1121,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       })
       const approvalTicket = restartedRuntime.approveTool({
         runId: ticket.runId,
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         approvedBy: 'user-local',
         scope: 'session'
       })
@@ -1065,7 +1130,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       expect(runSpine.getSnapshot(ticket.runId)?.permissionGrants).toEqual([])
       expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.resolved')).toHaveLength(1)
       expect(runSpine.getSnapshot(ticket.runId)?.events.find((event) => event.type === 'permission.resolved')?.payload).toMatchObject({
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         decision: 'approved',
         phase: 'queued',
         requestedScope: 'session'
@@ -1106,7 +1171,19 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       })
 
       expect(await restartedWorker.runNext()).toBe('job-agent-approval-2')
-      expect(createNodeCalls).toBe(1)
+      expect(createNodeCalls).toBe(2)
+      expect(createdNodeTypes).toEqual(['text', 'image'])
+      expect(modelTurns).toBe(2)
+      expect(nativeRequests).toHaveLength(2)
+      expectClosedNativeToolCalls(nativeRequests[1]?.messages ?? [])
+      expect(nativeRequests[1]?.messages?.find((message) => message.role === 'assistant')?.tool_calls?.map((call) => call.id)).toEqual([
+        'provider-call-create-text',
+        'provider-call-create-image'
+      ])
+      expect(nativeRequests[1]?.messages?.filter((message) => message.role === 'tool').map((message) => message.tool_call_id)).toEqual([
+        'provider-call-create-text',
+        'provider-call-create-image'
+      ])
       expect(rememberedScope).toBe('once')
       expect(executionCheckpoint).toBe('approval.execution_started')
       expect(pausedStatePresentDuringExecution).toBe(true)
@@ -1126,7 +1203,7 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'run.completed')).toHaveLength(1)
       expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.resolved')).toHaveLength(2)
       expect(runSpine.getSnapshot(ticket.runId)?.events.filter((event) => event.type === 'permission.resolved').at(-1)?.payload).toMatchObject({
-        callId: 'call-create',
+        callId: 'provider-call-create-text',
         decision: 'approved',
         phase: 'executing',
         scope: 'once'
@@ -1141,14 +1218,21 @@ describe('M4 orchestrator AsyncGenerator runtime', () => {
       expect(resumedBlocks).toContainEqual(
         expect.objectContaining({
           kind: 'toolCall',
-          callId: 'call-create',
+          callId: 'provider-call-create-text',
+          status: 'completed'
+        })
+      )
+      expect(resumedBlocks).toContainEqual(
+        expect.objectContaining({
+          kind: 'toolCall',
+          callId: 'provider-call-create-image',
           status: 'completed'
         })
       )
       expect(resumedBlocks).toContainEqual(
         expect.objectContaining({
           kind: 'permission',
-          callId: 'call-create',
+          callId: 'provider-call-create-text',
           resolved: true,
           decision: 'approved',
           scope: 'once'

@@ -8,8 +8,10 @@ import type { AgentDefinition, AgentResponse, AgentTriggerKind } from '../../../
 import type { CanvasPlan } from '../../../../shared/plan'
 import type { ToolActor, ToolDescriptor, ToolInvocationRecord, ToolPermission } from '../../../../shared/tools'
 import type { ToolInvocationResult, ToolRuntime } from '../tools/runtime'
-import { foldHistory, trimToolResult } from './compaction'
+import { foldHistory, groupAgentMessagesAtomically, trimToolResult } from './compaction'
 import { CompactionFailedError, createToolFailureGuard, isContextOverflowError } from './recovery'
+
+const MAX_READONLY_CONCURRENCY = 8
 
 export interface AgentContextLoopInput {
   agent: AgentDefinition
@@ -53,8 +55,6 @@ export type AgentLoopMessage =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: AgentToolCall[] }
   | { role: 'tool'; toolId: string; invocationId: string; toolCallId?: string; status: ToolInvocationRecord['status']; content: string }
-
-const MAX_READONLY_TOOL_BATCH = 8
 
 export interface AgentToolCall {
   id: string
@@ -268,14 +268,17 @@ export function compactAgentMessages(messages: readonly AgentLoopMessage[], budg
     }
   }
 
-  const system = messages.find((message) => message.role === 'system')
-  const firstUser = messages.find((message) => message.role === 'user')
-  const tail = messages.slice(-1)
-  const protectedMessages = [system, firstUser, ...tail].filter((message, index, array): message is AgentLoopMessage => {
-    return Boolean(message) && array.findIndex((candidate) => candidate === message) === index
-  })
-  const protectedSet = new Set(protectedMessages)
-  const omitted = messages.filter((message) => !protectedSet.has(message))
+  const groups = groupAgentMessagesAtomically(messages)
+  const systemGroup = groups.find((group) => group[0]?.role === 'system')
+  const firstUserGroup = groups.find((group) => group[0]?.role === 'user')
+  const tailGroup = groups.at(-1)
+  const protectedGroups = [systemGroup, firstUserGroup, tailGroup].filter(
+    (group, index, array): group is AgentLoopMessage[] =>
+      Boolean(group) && array.findIndex((candidate) => candidate === group) === index
+  )
+  const protectedSet = new Set(protectedGroups)
+  const omittedGroups = groups.filter((group) => !protectedSet.has(group))
+  const omitted = omittedGroups.flat()
 
   if (omitted.length === 0) {
     return {
@@ -291,14 +294,12 @@ export function compactAgentMessages(messages: readonly AgentLoopMessage[], budg
     role: 'assistant',
     content: `Context compacted (${omitted.length} messages): ${summary}`
   }
-  let compacted = [system, firstUser, summaryMessage, ...tail].filter((message, index, array): message is AgentLoopMessage => {
-    return Boolean(message) && array.findIndex((candidate) => candidate === message) === index
-  })
-  const boundary = compacted.slice(0, 2)
-
-  while (estimateTokens(compacted) > tokenBudget && compacted.length > boundary.length + 1) {
-    compacted = [...boundary, summaryMessage, ...compacted.slice(boundary.length + 2)]
-  }
+  const compacted = [
+    ...(systemGroup ?? []),
+    ...(firstUserGroup ?? []),
+    summaryMessage,
+    ...(tailGroup ?? [])
+  ].filter((message, index, array) => array.findIndex((candidate) => candidate === message) === index)
 
   return {
     messages: compacted,
@@ -405,10 +406,6 @@ function cloneAgentContextLoopState(state: AgentContextLoopState): AgentContextL
   }
 }
 
-function toolConcurrencyFor(state: AgentContextLoopState, toolId: string): ToolDescriptor['concurrency'] {
-  return state.allowedTools.find((tool) => tool.id === toolId)?.concurrency ?? 'serial-write'
-}
-
 async function* executeAgentToolCall(
   input: RunAgentContextLoopInput,
   state: AgentContextLoopState,
@@ -471,82 +468,59 @@ async function* executeAgentToolCalls(
   allowedToolIds: Set<string>,
   actor: ToolActor
 ): AsyncGenerator<AgentLoopEvent, void> {
+  const descriptorsById = new Map(state.allowedTools.map((tool) => [tool.id, tool]))
   let index = 0
 
   while (index < calls.length) {
     const call = calls[index] as AgentToolCall
+    const descriptor = descriptorsById.get(call.toolId)
+    const canRunWithoutPausing = descriptor?.concurrency === 'readonly' && descriptor.permissions.length === 0
 
-    if (!allowedToolIds.has(call.toolId)) {
-      state.droppedTools.push(call.toolId)
-      state.messages.push({ role: 'tool', toolId: call.toolId, invocationId: call.id, toolCallId: call.id, status: 'denied', content: 'Tool denied by agent policy.' })
-      index += 1
-      continue
-    }
-
-    if (toolConcurrencyFor(state, call.toolId) === 'readonly') {
+    if (canRunWithoutPausing) {
       const batch: AgentToolCall[] = []
 
-      while (index < calls.length && batch.length < MAX_READONLY_TOOL_BATCH) {
+      while (index < calls.length && batch.length < MAX_READONLY_CONCURRENCY) {
         const candidate = calls[index] as AgentToolCall
-        if (!allowedToolIds.has(candidate.toolId)) {
-          break
-        }
-        if (toolConcurrencyFor(state, candidate.toolId) !== 'readonly') {
+        const candidateDescriptor = descriptorsById.get(candidate.toolId)
+        if (candidateDescriptor?.concurrency !== 'readonly' || candidateDescriptor.permissions.length > 0) {
           break
         }
         batch.push(candidate)
         index += 1
       }
 
-      if (batch.length === 0) {
+      if (batch.length > 1) {
+        for (const candidate of batch) {
+          yield { type: 'toolStarted', call: candidate }
+        }
+
+        const results = await Promise.all(batch.map((candidate) => input.tools.invoke({
+          toolId: candidate.toolId,
+          input: candidate.input,
+          actor,
+          traceId: input.traceId
+        })))
+
+        for (let resultIndex = 0; resultIndex < batch.length; resultIndex += 1) {
+          const candidate = batch[resultIndex] as AgentToolCall
+          const result = results[resultIndex] as ToolInvocationResult
+          yield { type: 'tool', call: candidate, result }
+          state.messages.push({
+            role: 'tool',
+            toolId: candidate.toolId,
+            invocationId: result.record.invocationId,
+            toolCallId: candidate.id,
+            status: result.record.status,
+            content: toolResultContent(result)
+          })
+        }
         continue
       }
 
-      for (const started of batch) {
-        yield { type: 'toolStarted', call: started }
+      const [single] = batch
+      if (single) {
+        yield* executeAgentToolCall(input, state, single, allowedToolIds, actor, calls.slice(index))
       }
-
-      const results = await Promise.all(batch.map((entry) => input.tools.invoke({
-        toolId: entry.toolId,
-        input: entry.input,
-        actor,
-        traceId: input.traceId
-      })))
-
-      for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
-        const entry = batch[batchIndex] as AgentToolCall
-        const result = results[batchIndex] as ToolInvocationResult
-        yield { type: 'tool', call: entry, result }
-        const pendingApproval = approvalRequestFromDeniedTool(entry, result)
-        if (pendingApproval) {
-          state.transition = 'approval_required'
-          state.pendingToolCalls = [
-            ...batch.slice(batchIndex + 1),
-            ...calls.slice(index)
-          ].map((remaining) => ({ ...remaining }))
-          yield { type: 'permissionRequired', call: entry, request: pendingApproval }
-          throw new AgentLoopTerminalError({
-            errorClass: 'agent_tool_approval_required',
-            message: 'Tool requires user approval before execution.',
-            turnsUsed: state.turnCount,
-            droppedTools: state.droppedTools,
-            compactionSummary: state.compactionSummary,
-            omittedMessages: state.omittedMessages,
-            pendingApproval,
-            pausedState: state
-          })
-        }
-
-        state.messages.push({
-          role: 'tool',
-          toolId: entry.toolId,
-          invocationId: result.record.invocationId,
-          toolCallId: entry.id,
-          status: result.record.status,
-          content: toolResultContent(result)
-        })
-      }
-
       continue
     }
 

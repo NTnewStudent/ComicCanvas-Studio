@@ -17,6 +17,7 @@ const EMPTY_PARAMETERS: Record<string, unknown> = {
 }
 
 const GATEWAY_TOOL_NAME_PREFIX = 'tool_'
+const UNKNOWN_GATEWAY_TOOL_ID_PREFIX = 'unknown.gateway-tool'
 
 /**
  * Resolves whether the Agent loop should use native gateway tools or JSON toolCalls.
@@ -82,7 +83,7 @@ export function loopMessagesToGatewayMessages(messages: readonly AgentLoopMessag
       continue
     }
 
-    const matchedCall = takePendingToolCall(pendingToolCalls, message.toolId)
+    const matchedCall = takePendingToolCall(pendingToolCalls, message.toolId, message.toolCallId)
     out.push({
       role: 'tool',
       tool_call_id: message.toolCallId ?? matchedCall?.id ?? message.invocationId,
@@ -94,8 +95,9 @@ export function loopMessagesToGatewayMessages(messages: readonly AgentLoopMessag
   return out
 }
 
-function takePendingToolCall(pendingToolCalls: AgentToolCall[], toolId: string): AgentToolCall | undefined {
-  const matchingIndex = pendingToolCalls.findIndex((call) => call.toolId === toolId)
+function takePendingToolCall(pendingToolCalls: AgentToolCall[], toolId: string, toolCallId?: string): AgentToolCall | undefined {
+  const idIndex = toolCallId ? pendingToolCalls.findIndex((call) => call.id === toolCallId) : -1
+  const matchingIndex = idIndex >= 0 ? idIndex : pendingToolCalls.findIndex((call) => call.toolId === toolId)
   const index = matchingIndex >= 0 ? matchingIndex : 0
   const [call] = pendingToolCalls.splice(index, 1)
   return call
@@ -114,38 +116,86 @@ export function gatewayToolCallsToAgentCalls(
 ): AgentToolCall[] {
   const calls: AgentToolCall[] = []
   const gatewayNameToToolId = buildGatewayToolNameMap(allowedToolIds)
+  const occupiedCallIds = new Set(
+    toolCalls
+      .map((entry) => entry.id)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+  )
+  const seenCallIds = new Set<string>()
 
   toolCalls.forEach((entry, index) => {
     if (entry.type !== 'function' || typeof entry.function?.name !== 'string') {
       return
     }
 
-    const toolId = gatewayNameToToolId.get(entry.function.name) ?? (
-      allowedToolIds.has(entry.function.name) ? entry.function.name : undefined
-    )
-    if (!toolId) {
-      return
-    }
-
+    const providerCallId = typeof entry.id === 'string' && entry.id.trim().length > 0 ? entry.id : undefined
+    const duplicateProviderCallId = providerCallId !== undefined && seenCallIds.has(providerCallId)
     let input: unknown = {}
+    let invalidArguments = false
     const rawArgs = entry.function.arguments
 
     if (typeof rawArgs === 'string' && rawArgs.trim().length > 0) {
       try {
         input = JSON.parse(rawArgs) as unknown
       } catch {
+        // Invalid provider arguments are quarantined before ToolRuntime schema validation.
+        invalidArguments = true
         input = {}
       }
     }
 
+    const needsSyntheticCallId = providerCallId === undefined || duplicateProviderCallId || invalidArguments
+    const syntheticBase = duplicateProviderCallId
+      ? `model-tool-call-duplicate-${index + 1}`
+      : `model-tool-call-${index + 1}`
+    const callId = needsSyntheticCallId
+      ? uniqueSyntheticCallId(syntheticBase, occupiedCallIds, seenCallIds)
+      : providerCallId
+    seenCallIds.add(callId)
+
+    const canonicalAllowedToolId = gatewayNameToToolId.get(entry.function.name)
+    const decodedToolId = canonicalAllowedToolId ?? gatewayToolIdFromName(entry.function.name)
+    const nonCanonicalAllowedTool = canonicalAllowedToolId === undefined
+      && decodedToolId !== undefined
+      && allowedToolIds.has(decodedToolId)
+    const malformedCall = needsSyntheticCallId || decodedToolId === undefined || nonCanonicalAllowedTool
+    const toolId = malformedCall
+      ? uniqueUnknownToolId(duplicateProviderCallId ? 'duplicate' : 'malformed', index, allowedToolIds)
+      : decodedToolId
+
     calls.push({
-      id: entry.id?.trim().length ? entry.id : `model-tool-call-${index + 1}`,
+      id: callId,
       toolId,
       input
     })
   })
 
   return calls
+}
+
+function uniqueSyntheticCallId(base: string, occupied: ReadonlySet<string>, seen: ReadonlySet<string>): string {
+  let candidate = base
+  let suffix = 2
+
+  while (occupied.has(candidate) || seen.has(candidate)) {
+    candidate = `${base}-${suffix}`
+    suffix += 1
+  }
+
+  return candidate
+}
+
+function uniqueUnknownToolId(reason: 'duplicate' | 'malformed', index: number, allowedToolIds: ReadonlySet<string>): string {
+  const base = `${UNKNOWN_GATEWAY_TOOL_ID_PREFIX}.${reason}.${index + 1}`
+  let candidate = base
+  let suffix = 2
+
+  while (allowedToolIds.has(candidate)) {
+    candidate = `${base}.${suffix}`
+    suffix += 1
+  }
+
+  return candidate
 }
 
 function stableJson(value: unknown): string {
@@ -164,6 +214,46 @@ function buildGatewayToolNameMap(allowedToolIds: ReadonlySet<string>): Map<strin
 
 function gatewayToolNameFromToolId(toolId: string): string {
   return `${GATEWAY_TOOL_NAME_PREFIX}${Array.from(toolId).map(encodeToolNameChar).join('')}`
+}
+
+function gatewayToolIdFromName(name: string): string | undefined {
+  if (!name.startsWith(GATEWAY_TOOL_NAME_PREFIX)) {
+    return name
+  }
+
+  const encoded = name.slice(GATEWAY_TOOL_NAME_PREFIX.length)
+  let decoded = ''
+  let index = 0
+
+  while (index < encoded.length) {
+    if (encoded.startsWith('_d_', index)) {
+      decoded += '.'
+      index += 3
+      continue
+    }
+
+    if (encoded.startsWith('_u_', index)) {
+      decoded += '_'
+      index += 3
+      continue
+    }
+
+    const codePoint = encoded.slice(index).match(/^_x([0-9a-f]+)_/u)
+    if (codePoint?.[1]) {
+      const value = Number.parseInt(codePoint[1], 16)
+      if (value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+        return undefined
+      }
+      decoded += String.fromCodePoint(value)
+      index += codePoint[0].length
+      continue
+    }
+
+    decoded += encoded[index]
+    index += 1
+  }
+
+  return gatewayToolNameFromToolId(decoded) === name ? decoded : undefined
 }
 
 function encodeToolNameChar(char: string): string {

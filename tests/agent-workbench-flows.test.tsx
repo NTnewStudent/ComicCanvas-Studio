@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatPanel, type ChatPanelApi } from '../desktop/src/renderer/src/chat/ChatPanel'
 import type {
-  AgentRunEventPayload,
+  AgentRunEventPayloadMap,
+  AgentRunEventRecord,
   AgentRunEventType,
   AgentRunSnapshot,
   PermissionDecision,
@@ -87,10 +88,12 @@ function userTurn(runId: string, messageId: string, markdown: string): ChatTurn 
   }
 }
 
-interface RunEventDescriptor {
-  type: AgentRunEventType
-  payload: AgentRunEventPayload
-}
+type RunEventDescriptor = {
+  [Type in AgentRunEventType]: {
+    type: Type
+    payload: AgentRunEventPayloadMap[Type]
+  }
+}[AgentRunEventType]
 
 function runCreated(messageId: string, jobId?: string): RunEventDescriptor {
   return {
@@ -189,12 +192,11 @@ function createRunView<TStatus extends AgentRunStatus>(input: {
       createdAt: 1,
       updatedAt: 2,
     },
-    events: input.events.map((event, index) => ({
+    events: input.events.map((event, index): AgentRunEventRecord => ({
       id: `${input.runId}-event-${index + 1}`,
       runId: input.runId,
       sequence: index + 1,
-      type: event.type,
-      payload: event.payload,
+      ...event,
       createdAt: index + 1,
     })),
     artifacts: [],
