@@ -412,6 +412,34 @@ describe('Agent Workbench', () => {
     expect(screen.getByText('denied')).toBeInTheDocument()
   })
 
+  it('renders child task rows with role, status, effective tools, artifacts, and errors', () => {
+    const childTaskRunView: AgentRunViewResponse = {
+      ...runView,
+      snapshot: {
+        ...runView.snapshot!,
+        childTasks: [{
+          id: 'child-task-1', parentRunId: 'run-1', roleId: 'qa-verifier', inputSummary: 'Verify the draft graph.',
+          effectiveTools: ['canvas.queryGraph', 'canvas.validateGraph'], status: 'failed', outputSummary: 'One invalid edge.',
+          artifactIds: ['child-task-1:artifact:diagnosticReport'], errorClass: 'agent_child_run_failed', createdAt: 13, updatedAt: 18
+        }]
+      },
+      projection: {
+        ...runView.projection!,
+        taskTree: [{
+          id: 'child-task-1', parentRunId: 'run-1', roleId: 'qa-verifier', status: 'failed',
+          summary: 'One invalid edge.', artifactIds: ['child-task-1:artifact:diagnosticReport'], errorClass: 'agent_child_run_failed'
+        }]
+      }
+    }
+
+    render(<RunInspector runView={childTaskRunView} />)
+
+    expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('qa-verifier')
+    expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('canvas.queryGraph')
+    expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('child-task-1:artifact:diagnosticReport')
+    expect(screen.getByRole('region', { name: '子任务' })).toHaveTextContent('agent_child_run_failed')
+  })
+
   it('renders accessible typed artifact tabs with detailed read-only views and malformed fallback', () => {
     render(<RunInspector runView={artifactRunView} />)
 

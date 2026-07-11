@@ -40,8 +40,8 @@
 - [x] 24. Enforce child permission narrowing by parent policy, role policy, and tool permissions. _(R5, INV-3)_
 - [x] 25. Add draft graph / draft CanvasPlan artifacts for child canvas proposals. _(R4, R5, INV-4)_
 - [x] 26. Add parent merge/apply gate for child canvas artifacts. _(R4, R5)_
-- [ ] 27. Add task tree UI rows with role, status, summaries, effective tools, artifacts, and errors. _(R5, R8)_
-- [ ] 28. Add tests for child task success, failed child reporting, permission narrowing, draft isolation, and verifier gate output. _(R5, INV-3, INV-4)_
+- [x] 27. Add task tree UI rows with role, status, summaries, effective tools, artifacts, and errors. _(R5, R8)_
+- [x] 28. Add tests for child task success, failed child reporting, permission narrowing, draft isolation, and verifier gate output. _(R5, INV-3, INV-4)_
 
 ## Phase 5 - Context, Memory, Search
 

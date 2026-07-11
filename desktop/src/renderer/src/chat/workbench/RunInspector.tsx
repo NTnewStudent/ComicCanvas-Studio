@@ -343,6 +343,10 @@ export function RunInspector({ runView, className }: RunInspectorProps): JSX.Ele
 
     return projectedArtifactViews(projection?.artifacts)
   }, [projection?.artifacts, runView?.snapshot])
+  const childTasksById = useMemo(
+    () => new Map((runView?.snapshot?.childTasks ?? []).map((task) => [task.id, task])),
+    [runView?.snapshot?.childTasks]
+  )
   const runTabId = `${tabInstanceId}-inspector-tab-run`
   const artifactsTabId = `${tabInstanceId}-inspector-tab-artifacts`
   const runPanelId = `${tabInstanceId}-inspector-panel-run`
@@ -523,12 +527,18 @@ export function RunInspector({ runView, className }: RunInspectorProps): JSX.Ele
                   <InspectorRows
                     icon={<GitBranch className="h-3.5 w-3.5" aria-hidden="true" />}
                     title="子任务"
-                    rows={projection.taskTree.map((task) => ({
-                      id: task.id,
-                      label: task.roleId,
-                      status: task.status,
-                      detail: task.summary
-                    }))}
+                    rows={projection.taskTree.map((task) => {
+                      const persisted = childTasksById.get(task.id)
+                      return {
+                        id: task.id,
+                        label: task.roleId,
+                        status: task.status,
+                        detail: task.summary,
+                        tools: persisted?.effectiveTools ?? [],
+                        artifactIds: task.artifactIds,
+                        errorClass: task.errorClass ?? persisted?.errorClass
+                      }
+                    })}
                   />
                 )}
               </div>
@@ -555,6 +565,9 @@ interface InspectorRow {
   label: string
   status: string
   detail?: string | undefined
+  tools?: string[] | undefined
+  artifactIds?: string[] | undefined
+  errorClass?: string | undefined
 }
 
 interface InspectorRowsProps {
@@ -565,7 +578,7 @@ interface InspectorRowsProps {
 
 function InspectorRows({ icon, title, rows }: InspectorRowsProps): JSX.Element {
   return (
-    <section>
+    <section aria-label={title}>
       <h4 className="m-0 flex items-center gap-1.5 text-[10px] font-semibold uppercase text-text-muted">
         {icon}
         {title}
@@ -578,6 +591,15 @@ function InspectorRows({ icon, title, rows }: InspectorRowsProps): JSX.Element {
               <span className="shrink-0 font-mono text-[9px] uppercase text-text-muted">{row.status}</span>
             </div>
             {row.detail && <p className="mb-0 mt-1 text-[10px] leading-relaxed text-text-muted">{row.detail}</p>}
+            {row.tools && row.tools.length > 0 && (
+              <p className="mb-0 mt-1 break-all font-mono text-[9px] text-text-muted">有效工具: {row.tools.join(', ')}</p>
+            )}
+            {row.artifactIds && row.artifactIds.length > 0 && (
+              <p className="mb-0 mt-1 break-all font-mono text-[9px] text-text-muted">产物: {row.artifactIds.join(', ')}</p>
+            )}
+            {row.errorClass && (
+              <p className="mb-0 mt-1 break-all font-mono text-[9px] text-semantic-negative">{row.errorClass}</p>
+            )}
           </div>
         ))}
       </div>
