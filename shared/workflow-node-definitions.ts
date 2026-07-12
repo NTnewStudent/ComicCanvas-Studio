@@ -4,7 +4,7 @@
  */
 
 import { NODE_CONNECTION_MATRIX } from './connection-matrix'
-import type { GatewayCapability, GatewayChannel, GatewayConfigView } from './gateway'
+import { isCreativeMediaRoute, type GatewayCapability, type GatewayChannel, type GatewayConfigView } from './gateway'
 import type { NodeType } from './nodes'
 import type { RunAction } from './plan'
 
@@ -360,6 +360,15 @@ export function buildModelCatalog(gateways: readonly GatewayConfigView[]): Workf
   }
 
   for (const gateway of enabledGateways) {
+    if (gateway.type === 'creative_media' && gateway.modelRoutes && gateway.modelRoutes.length > 0) {
+      for (const route of gateway.modelRoutes) {
+        if (isCreativeMediaRoute(route) && gateway.capabilities.includes(route.channel)) {
+          models[route.channel].push(modelOption(gateway, route.channel, route.modelKey))
+        }
+      }
+      continue
+    }
+
     for (const channel of ['text', 'image', 'video'] as const) {
       const modelId = gateway.modelMap[channel]
       if (modelId && gateway.capabilities.includes(channel)) {

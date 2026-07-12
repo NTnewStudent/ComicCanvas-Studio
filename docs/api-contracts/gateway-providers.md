@@ -31,6 +31,7 @@ interface GatewayConfigInput {
   auth: GatewayAuthInput
   capabilities: GatewayCapability[]
   modelMap: GatewayModelMap
+  modelRoutes?: GatewayModelRoute[]
   enabled: boolean
 }
 ```
@@ -45,10 +46,17 @@ interface GatewayConfigView {
   baseUrl: string
   capabilities: GatewayCapability[]
   modelMap: GatewayModelMap
+  modelRoutes?: GatewayModelRoute[]
   enabled: boolean
   keyRef: string
 }
 ```
+
+`creative_media` is the system-built-in custom gateway. Its optional
+`modelRoutes` records bind `{ channel, modelKey, profile }`; a profile is valid
+only for its declared channel. Existing gateway types continue to use
+`modelMap`. A future NewAPI gateway is a separate type and does not reuse these
+private profiles.
 
 ### `gateway.invoke`
 

@@ -5,11 +5,34 @@
 
 import type { AssetRef, AssetMediaType, AssetMetadata } from './assets'
 
-export type GatewayType = 'openai_compat' | 'async_media_task' | 'stub'
+export type GatewayType = 'openai_compat' | 'async_media_task' | 'creative_media' | 'stub'
 
 export type GatewayChannel = 'text' | 'image' | 'video'
 
 export type GatewayCapability = GatewayChannel | 'image.edit' | 'video.firstFrame' | 'video.lastFrame'
+
+/** Built-in Creative Media protocol profiles. */
+export type CreativeMediaProfile = 'openai_chat' | 'nano_banana' | 'seedream' | 'seedance' | 'kling'
+
+/** A model binding served by the built-in Creative Media gateway. */
+export interface GatewayModelRoute {
+  channel: GatewayChannel
+  modelKey: string
+  profile: CreativeMediaProfile
+}
+
+const creativeMediaProfileChannels: Record<CreativeMediaProfile, GatewayChannel> = {
+  openai_chat: 'text',
+  nano_banana: 'image',
+  seedream: 'image',
+  seedance: 'video',
+  kling: 'video'
+}
+
+/** Returns whether a route uses a non-empty model key and a channel-valid built-in profile. */
+export function isCreativeMediaRoute(route: GatewayModelRoute): boolean {
+  return route.modelKey.trim().length > 0 && creativeMediaProfileChannels[route.profile] === route.channel
+}
 
 export interface GatewayModelMap {
   text?: string
@@ -24,6 +47,8 @@ export interface GatewayConfigView {
   baseUrl: string
   capabilities: GatewayCapability[]
   modelMap: GatewayModelMap
+  /** Multi-model routes used only by the built-in Creative Media gateway. */
+  modelRoutes?: GatewayModelRoute[]
   enabled: boolean
   keyRef: string
 }
@@ -41,6 +66,8 @@ export interface GatewayConfigInput {
   auth: GatewayAuthInput
   capabilities: GatewayCapability[]
   modelMap: GatewayModelMap
+  /** Multi-model routes used only by the built-in Creative Media gateway. */
+  modelRoutes?: GatewayModelRoute[]
   enabled: boolean
 }
 
