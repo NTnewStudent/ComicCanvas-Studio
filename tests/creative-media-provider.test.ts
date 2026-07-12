@@ -125,4 +125,46 @@ describe('Creative Media provider', () => {
       stream: false
     })
   })
+
+  it('submits Seedance video metadata then polls and normalizes its output', async () => {
+    let statusCalls = 0
+    const calls: FetchCall[] = []
+    const fetchMock = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      calls.push({ input, init })
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      if (url.endsWith('/video/generations')) return jsonResponse({ id: 'seed-task', status: 'queued' })
+      if (url.endsWith('/video/generations/seed-task')) {
+        statusCalls += 1
+        return statusCalls === 1
+          ? jsonResponse({ status: 'processing', progress: 40, message: 'rendering' })
+          : jsonResponse({ status: 'completed', url: 'https://cdn.example.test/seedance.mp4' })
+      }
+      return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'video/mp4' } })
+    }) as typeof fetch & { calls: FetchCall[] }
+    fetchMock.calls = calls
+    const progress: Array<{ progress: number; message?: string }> = []
+    const provider = createCreativeMediaProvider({
+      id: 'creative-media', baseUrl: 'https://media.example.test/v1', apiKey: 'sk-creative-secret',
+      routes: [{ channel: 'video', modelKey: 'seedance-2', profile: 'seedance' }], fetchImpl: fetchMock,
+      polling: { initialDelayMs: 1, maxDelayMs: 1, timeoutMs: 10, sleep: () => Promise.resolve() }
+    })
+
+    const result = await provider.invoke(request({
+      channel: 'video', modelKey: 'seedance-2', parameters: { duration: 5, ratio: '16:9', resolution: '720p' },
+      references: [{ assetId: 'frame-1', mediaType: 'image', url: 'https://assets.example.test/first.png', role: 'first_frame' }]
+    }), { onProgress: (event) => { progress.push(event) } })
+
+    expect(requestBody(fetchMock.calls[0])).toEqual({
+      model: 'seedance-2',
+      prompt: 'hello',
+      metadata: {
+        duration: 5,
+        ratio: '16:9',
+        resolution: '720p',
+        content: [{ type: 'image_url', image_url: { url: 'https://assets.example.test/first.png' }, role: 'reference_image' }]
+      }
+    })
+    expect(progress).toEqual([{ progress: 40, message: 'rendering' }])
+    expect(result).toMatchObject({ kind: 'assetBytes', mediaType: 'video' })
+  })
 })

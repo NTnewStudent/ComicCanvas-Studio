@@ -5,6 +5,7 @@
 
 import type { GatewayConfigView } from '../../../../shared/gateway'
 import { createAsyncMediaProvider } from './async-media.provider'
+import { createCreativeMediaProvider } from './creative-media.provider'
 import { createOpenAICompatibleProvider } from './openai-compatible.provider'
 import type { GatewayRegistry } from './registry'
 import { createStubProvider, type GatewayProvider } from './stub.provider'
@@ -35,6 +36,16 @@ function providerFromConfig(config: GatewayConfigView, options: GatewayConfigRel
       baseUrl: config.baseUrl,
       apiKey,
       modelKeys: config.modelMap,
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {})
+    })
+  }
+
+  if (config.type === 'creative_media') {
+    return createCreativeMediaProvider({
+      id: config.id,
+      baseUrl: config.baseUrl,
+      apiKey,
+      routes: config.modelRoutes ?? [],
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {})
     })
   }

@@ -3,7 +3,7 @@
  * @see docs/api-contracts/gateway-providers.md
  */
 
-import type { GatewayAuthInput, GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayFetchedModel, GatewayFetchModelsRequest, GatewayType } from '../../../../shared/gateway'
+import { isCreativeMediaRoute, type GatewayAuthInput, type GatewayCapability, type GatewayConfigInput, type GatewayConfigView, type GatewayFetchedModel, type GatewayFetchModelsRequest, type GatewayModelRoute, type GatewayType } from '../../../../shared/gateway'
 import type { IpcResponseMap } from '../../../../shared/ipc'
 import type { JobTicket } from '../../../../shared/jobs'
 import { buildModelCatalog } from '../../../../shared/workflow-node-definitions'
@@ -45,6 +45,9 @@ function ensureDefaultGateway(): void {
   if (gatewayConfigs.size === 0) {
     const stub = createDefaultGateway()
     gatewayConfigs.set(stub.id, stub)
+    gatewayConfigs.set('creative-media', {
+      id: 'creative-media', name: 'Creative Media Gateway', type: 'creative_media', baseUrl: '', capabilities: ['text', 'image', 'video'], modelMap: {}, modelRoutes: [], enabled: false, keyRef: 'vault:creative-media'
+    })
   }
 }
 
@@ -79,7 +82,16 @@ function gatewayId(input: GatewayConfigInput): string {
 }
 
 function gatewayType(value: unknown): GatewayType {
-  return value === 'async_media_task' || value === 'stub' ? value : 'openai_compat'
+  return value === 'async_media_task' || value === 'creative_media' || value === 'stub' ? value : 'openai_compat'
+}
+
+function modelRoutes(value: unknown): GatewayModelRoute[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is GatewayModelRoute => {
+    if (typeof item !== 'object' || item === null) return false
+    const route = item as GatewayModelRoute
+    return isCreativeMediaRoute(route)
+  })
 }
 
 function capabilities(value: unknown): GatewayCapability[] {
@@ -107,6 +119,7 @@ function viewFromInput(input: GatewayConfigInput): GatewayConfigView {
     baseUrl: input.baseUrl,
     capabilities: capabilities(input.capabilities),
     modelMap: input.modelMap,
+    ...(input.type === 'creative_media' ? { modelRoutes: modelRoutes(input.modelRoutes) } : {}),
     enabled: input.enabled,
     keyRef
   }

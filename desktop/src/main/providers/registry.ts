@@ -86,7 +86,8 @@ export function createGatewayRegistry(): GatewayRegistry {
 
       const modelKey = resolveModelKey(provider, request)
 
-      if (!provider.capabilities.includes(request.channel) || modelKey.length === 0 || provider.modelKeys[request.channel] !== modelKey) {
+      const modelSupported = provider.supportsModel?.(request.channel, modelKey) ?? provider.modelKeys[request.channel] === modelKey
+      if (!provider.capabilities.includes(request.channel) || modelKey.length === 0 || !modelSupported) {
         throw new GatewayProviderError({
           errorClass: 'capability_unsupported',
           message: `Gateway ${id} does not support ${request.channel}:${modelKey}`,

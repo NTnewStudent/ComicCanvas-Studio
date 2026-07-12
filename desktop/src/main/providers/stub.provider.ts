@@ -26,6 +26,8 @@ export interface GatewayProvider {
   readonly id: string
   readonly capabilities: GatewayCapability[]
   readonly modelKeys: Record<'text' | 'image' | 'video', string>
+  /** Optional multi-model preflight used by providers with explicit routes. */
+  supportsModel?: (channel: GatewayRequest['channel'], modelKey: string) => boolean
   invoke(request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult> | GatewayResult
 }
 

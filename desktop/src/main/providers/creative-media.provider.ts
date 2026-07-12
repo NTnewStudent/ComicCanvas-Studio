@@ -6,6 +6,7 @@ import type { CreativeMediaProfile, GatewayCapability, GatewayMediaMetadata, Gat
 import { isCreativeMediaRoute } from '../../../../shared/gateway'
 import { createOpenAICompatibleProvider } from './openai-compatible.provider'
 import { GatewayProviderError } from './registry'
+import { pollWithBackoff, type PollingStrategyOptions } from './polling-strategy'
 import type { GatewayProvider, GatewayProviderContext } from './stub.provider'
 
 export interface CreativeMediaProviderOptions {
@@ -14,6 +15,7 @@ export interface CreativeMediaProviderOptions {
   apiKey: string
   routes: GatewayModelRoute[]
   fetchImpl?: typeof fetch
+  polling?: Partial<PollingStrategyOptions>
 }
 
 function providerError(errorClass: GatewayProviderError['errorClass'], message: string, retryable: boolean): GatewayProviderError {
@@ -123,6 +125,78 @@ async function invokeImage(options: CreativeMediaProviderOptions, request: Gatew
   return normalizeImage(body, fetchImpl)
 }
 
+function numberParameter(parameters: Record<string, unknown>, key: string): number | undefined {
+  const value = parameters[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function seedancePayload(request: GatewayRequest): Record<string, unknown> {
+  const content = request.references
+    .filter((reference) => reference.url.trim().length > 0 && (reference.mediaType === 'image' || reference.mediaType === 'video'))
+    .map((reference) => reference.mediaType === 'video'
+      ? { type: 'video_url', video_url: { url: reference.url }, role: 'reference_video' }
+      : { type: 'image_url', image_url: { url: reference.url }, role: 'reference_image' })
+  return {
+    model: request.modelKey,
+    prompt: request.prompt,
+    metadata: {
+      ...(numberParameter(request.parameters, 'duration') !== undefined ? { duration: numberParameter(request.parameters, 'duration') } : {}),
+      ...(stringParameter(request.parameters, 'ratio') ? { ratio: stringParameter(request.parameters, 'ratio') } : {}),
+      ...(stringParameter(request.parameters, 'resolution') ? { resolution: stringParameter(request.parameters, 'resolution') } : {}),
+      content
+    }
+  }
+}
+
+function taskId(body: unknown): string | undefined {
+  const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+  const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
+  for (const value of [record.task_id, record.id, data.task_id, data.id]) if (typeof value === 'string' && value.length > 0) return value
+  return undefined
+}
+
+function taskStatus(body: unknown): string {
+  const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+  const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
+  const status = record.status ?? record.state ?? data.status ?? data.task_status
+  return typeof status === 'string' ? status.toLowerCase() : ''
+}
+
+function taskUrl(body: unknown): string | undefined {
+  const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+  const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
+  const result = typeof record.result === 'object' && record.result !== null ? record.result as Record<string, unknown> : {}
+  for (const value of [record.url, record.video_url, data.url, data.result_url, result.video_url]) if (typeof value === 'string' && value.length > 0) return value
+  return undefined
+}
+
+async function invokeSeedance(options: CreativeMediaProviderOptions, request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const submit = await fetchImpl(endpoint(options.baseUrl, '/video/generations'), { method: 'POST', headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(seedancePayload(request)) })
+  const accepted = await readJson(submit)
+  if (!submit.ok) throw providerError('provider_request_failed', redactedMessage(accepted, `Provider request failed with ${submit.status}`, options.apiKey), true)
+  const id = taskId(accepted)
+  if (!id) throw providerError('provider_payload_invalid', 'Seedance submit response did not include a task ID', false)
+  const completed = await pollWithBackoff(async () => {
+    const response = await fetchImpl(endpoint(options.baseUrl, `/video/generations/${encodeURIComponent(id)}`), { headers: { Authorization: `Bearer ${options.apiKey}` } })
+    const body = await readJson(response)
+    if (!response.ok) return { state: 'failed' as const, message: redactedMessage(body, `Provider task failed with ${response.status}`, options.apiKey), retryable: true }
+    const status = taskStatus(body)
+    if (['completed', 'succeeded', 'success'].includes(status)) {
+      const url = taskUrl(body)
+      if (!url) throw providerError('provider_payload_invalid', 'Seedance completed response did not include a video URL', false)
+      return { state: 'completed' as const, result: url }
+    }
+    if (['failed', 'error', 'canceled', 'cancelled'].includes(status)) return { state: 'failed' as const, message: 'Seedance task failed', retryable: false }
+    const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+    return { state: 'pending' as const, ...(typeof record.progress === 'number' ? { progress: record.progress } : {}), ...(typeof record.message === 'string' ? { message: record.message } : {}) }
+  }, { initialDelayMs: options.polling?.initialDelayMs ?? 1000, maxDelayMs: options.polling?.maxDelayMs ?? 10_000, timeoutMs: options.polling?.timeoutMs ?? 600_000, ...(options.polling?.clock ? { clock: options.polling.clock } : {}), ...(options.polling?.sleep ? { sleep: options.polling.sleep } : {}) }, context)
+  const media = await fetchImpl(completed)
+  if (!media.ok) throw providerError('provider_request_failed', 'Seedance video URL fetch failed', true)
+  const bytes = new Uint8Array(await media.arrayBuffer())
+  return { kind: 'assetBytes', mediaType: 'video', bytes, metadata: { mediaType: 'video', mimeType: media.headers.get('content-type') ?? 'video/mp4', sizeBytes: bytes.byteLength, hash: createHash('sha256').update(bytes).digest('hex') } }
+}
+
 function profileCapabilities(routes: GatewayModelRoute[]): GatewayCapability[] {
   return [...new Set(routes.map((route) => route.channel))]
 }
@@ -136,6 +210,9 @@ export function createCreativeMediaProvider(options: CreativeMediaProviderOption
     id: options.id,
     capabilities: profileCapabilities(routes),
     modelKeys: { text: firstModel('text'), image: firstModel('image'), video: firstModel('video') },
+    supportsModel(channel, modelKey) {
+      return routes.some((route) => route.channel === channel && route.modelKey === modelKey)
+    },
     async invoke(request, context) {
       const route = routeFor(routes, request)
       if (route.profile === 'openai_chat') {
@@ -151,6 +228,7 @@ export function createCreativeMediaProvider(options: CreativeMediaProviderOption
         return provider.invoke({ ...request, parameters }, context)
       }
       if (route.profile === 'nano_banana' || route.profile === 'seedream') return invokeImage(options, request, route.profile)
+      if (route.profile === 'seedance') return invokeSeedance(options, request, context)
       throw providerError('capability_unsupported', `Creative Media profile ${route.profile} is not available yet`, false)
     }
   }
