@@ -37,23 +37,23 @@ export const NODE_RESIZER_CLASS_NAMES = {
 /** Shared Tailwind class fragments for a calmer, denser canvas node rhythm. */
 export const NODE_UI_CLASS_NAMES = {
   textShell:
-    'relative flex h-full min-h-[240px] w-full min-w-[300px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-3.5 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+    'cc-node-frame relative flex h-full min-h-[240px] w-full min-w-[300px] flex-col gap-3 rounded-lg border border-border-secondary bg-bg-card p-3 text-text-base transition-[border-color,box-shadow] duration-150',
   characterShell:
-    'relative flex h-full min-h-[440px] w-full min-w-[420px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-3.5 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+    'cc-node-frame relative flex h-full min-h-[440px] w-full min-w-[420px] flex-col gap-3 rounded-lg border border-border-secondary bg-bg-card p-3 text-text-base transition-[border-color,box-shadow] duration-150',
   sceneShell:
-    'relative flex h-full min-h-[560px] w-full min-w-[420px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-3.5 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
+    'cc-node-frame relative flex h-full min-h-[560px] w-full min-w-[420px] flex-col gap-3 rounded-lg border border-border-secondary bg-bg-card p-3 text-text-base transition-[border-color,box-shadow] duration-150',
   mediaShell: 'relative flex h-full min-h-[380px] w-full min-w-[360px] flex-col gap-2.5 select-none text-text-base',
   videoShell: 'relative flex h-full min-h-[400px] w-full min-w-[380px] flex-col gap-2.5 select-none text-text-base',
   mediaCard:
-    'rounded-xl border border-border-secondary bg-bg-card p-3.5 shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
-  title: 'text-[14px] font-semibold leading-[1.35] text-text-base',
+    'cc-node-frame rounded-lg border border-border-secondary bg-bg-card p-3 transition-[border-color,box-shadow] duration-150',
+  title: 'text-[13px] font-semibold leading-[1.35] text-text-base',
   header: 'flex min-h-8 items-center gap-2',
   field:
-    'rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] leading-[1.5] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand',
+    'rounded-md border border-border-input bg-bg-input px-2.5 py-2 text-[13px] leading-[1.5] text-text-base outline-none focus-visible:shadow-[0_0_0_3px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand',
   compactButton:
-    'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-border-input bg-bg-input px-2.5 py-1.5 text-[12px] font-medium text-text-secondary transition hover:border-border-primary hover:text-text-base',
+    'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-border-input bg-bg-input px-2.5 py-1.5 text-[11px] font-medium text-text-secondary transition hover:border-border-primary hover:text-text-base',
   toolbar:
-    'nodrag nowheel relative w-[min(760px,calc(100vw-96px))] overflow-visible rounded-2xl border border-border-primary bg-bg-panel p-3.5 shadow-card'
+    'nodrag nowheel relative w-[min(760px,calc(100vw-96px))] overflow-visible rounded-lg border border-border-primary bg-bg-panel p-3 shadow-card'
 } as const
 
 /**

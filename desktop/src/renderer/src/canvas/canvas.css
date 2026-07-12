@@ -4,9 +4,31 @@
  * 对齐 DESIGN.md wf-neo 霓虹青双主题规范。
  */
 
+/* Approved light production workbench tokens. */
+.cc-flow {
+  --cc-workbench-bg: #f4f4f2;
+  --cc-node-surface: #ffffff;
+  --cc-node-border: #e2e2de;
+  --cc-node-text: #242424;
+  --cc-node-muted: #7a7a73;
+  --cc-node-hover-shadow: 0 8px 22px rgba(20, 20, 18, 0.10);
+  --cc-bg-canvas: #f4f4f2;
+  --cc-bg-panel: #ffffff;
+  --cc-bg-card: #ffffff;
+  --cc-bg-input: #f7f7f5;
+  --cc-bg-hover: #eeeeeb;
+  --cc-border-primary: #242424;
+  --cc-border-secondary: #e2e2de;
+  --cc-border-input: #dfdfda;
+  --cc-text-base: #242424;
+  --cc-text-secondary: #595953;
+  --cc-text-muted: #85857e;
+  font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
 /* ReactFlow 容器背景 */
 .cc-flow {
-  background-color: var(--cc-bg-canvas);
+  background-color: var(--cc-workbench-bg);
 }
 
 /* ── 连线样式（DESIGN.md 第十节） ── */
@@ -67,10 +89,10 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
 
 /* ── MiniMap 样式 ── */
 .cc-flow .react-flow__minimap {
-  border-radius: 0.75rem;
-  border: 1px solid var(--cc-border-card-hover);
-  background-color: var(--cc-bg-card);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--cc-text-primary) 8%, transparent);
+  border-radius: 8px;
+  border: 1px solid var(--cc-node-border);
+  background-color: #fff;
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -80,16 +102,16 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
 
 /* ── Controls 样式 ── */
 .cc-flow .react-flow__controls {
-  border-radius: 0.75rem;
-  border: 1px solid var(--cc-border-card-hover);
+  border-radius: 8px;
+  border: 1px solid var(--cc-node-border);
   overflow: hidden;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--cc-text-primary) 8%, transparent);
+  box-shadow: none;
 }
 
 .cc-flow .react-flow__controls-button {
-  background-color: var(--cc-bg-card);
-  border-bottom: 1px solid var(--cc-border-card-hover);
-  color: var(--cc-text-secondary);
+  background-color: #fff;
+  border-bottom: 1px solid var(--cc-node-border);
+  color: var(--cc-node-muted);
   transition: background-color 0.15s, color 0.15s;
 }
 
@@ -104,7 +126,7 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
 
 /* ── 背景点阵 ── */
 .cc-flow .react-flow__background {
-  background-color: var(--cc-bg-canvas);
+  background-color: var(--cc-workbench-bg);
 }
 
 /* ── Attribution（右下角 logo） ── */
@@ -249,11 +271,33 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
 
 /* ── 节点 hover 微抬升（DESIGN.md 第八节 wf-neo，box-shadow 避免 filter 模糊） ── */
 .cc-flow .react-flow__node {
-  box-shadow: 0 0 14px rgba(70, 217, 230, 0.10), 0 14px 30px rgba(0, 0, 0, 0.45);
-  transition: box-shadow 0.25s var(--cc-ease-luxury);
+  box-shadow: none;
+  transition: box-shadow 160ms ease, outline-color 160ms ease;
 }
 .cc-flow .react-flow__node:hover {
-  box-shadow: 0 0 18px rgba(70, 217, 230, 0.22), 0 14px 30px rgba(0, 0, 0, 0.50);
+  box-shadow: var(--cc-node-hover-shadow);
+}
+
+/* All node families share the same surface even when their internal markup differs. */
+.cc-flow .react-flow__node > article,
+.cc-flow .react-flow__node > div {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+.cc-flow .react-flow__node:hover > article,
+.cc-flow .react-flow__node:hover > div {
+  box-shadow: var(--cc-node-hover-shadow) !important;
+}
+.cc-flow .react-flow__node.selected > article,
+.cc-flow .react-flow__node.selected > div {
+  outline: 2px solid #242424;
+  outline-offset: 2px;
+}
+
+.cc-flow .react-flow__node .uppercase {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 11px;
 }
 
 .cc-flow .react-flow__node.cc-flow-node-related {
@@ -277,11 +321,11 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
 
 /* 基础 Handle：16px 圆形，霓虹青填充，面板色边框 */
 .react-flow__handle {
-  width: 16px !important;
-  height: 16px !important;
+  width: 10px !important;
+  height: 10px !important;
   border-radius: 50% !important;
-  background: var(--cc-accent) !important;
-  border: 2.5px solid var(--cc-bg-panel) !important;
+  background: #292929 !important;
+  border: 2px solid #ffffff !important;
   transition:
     transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 180ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
@@ -300,7 +344,7 @@ html.light .cc-flow .react-flow__edge:hover .react-flow__edge-path {
 
 /* hover：放大 + 青色发光光晕 */
 .react-flow__handle:hover {
-  transform: scale(1.6) !important;
+  transform: scale(1.35) !important;
   box-shadow:
     0 0 0 4px rgba(70, 217, 230, 0.22),
     0 0 0 9px rgba(70, 217, 230, 0.08) !important;
@@ -343,25 +387,23 @@ html.light .react-flow__handle:hover {
 
 /* ── 选中态：品牌色边框 + 外发光光环 + 投影 ── */
 .cc-flow .react-flow__node.selected {
-  box-shadow:
-    0 0 0 2px var(--cc-accent),
-    0 0 0 6px color-mix(in srgb, var(--cc-accent) 18%, transparent),
-    0 0 22px rgba(70, 217, 230, 0.32),
-    0 14px 30px rgba(0, 0, 0, 0.50);
+  box-shadow: none;
+  outline: 2px solid #242424;
+  outline-offset: 2px;
 }
 
 /* ── 节点卡片基础样式（DESIGN.md 第八节/第九节） ── */
 .cc-node-card {
-  background: var(--cc-canvas-surface);
-  border-radius: 20px;
-  border: 1px solid var(--cc-border-primary);
+  background: var(--cc-node-surface);
+  border-radius: 8px;
+  border: 1px solid var(--cc-node-border);
   overflow: hidden;
   /* 夜间 wf-neo box-shadow（避免 filter 模糊） */
-  box-shadow: 0 0 14px rgba(70, 217, 230, 0.10), 0 14px 30px rgba(0, 0, 0, 0.45);
-  transition: box-shadow 0.25s var(--cc-ease-luxury);
+  box-shadow: none;
+  transition: box-shadow 160ms ease, outline-color 160ms ease;
 }
 .cc-node-card:hover {
-  box-shadow: 0 0 18px rgba(70, 217, 230, 0.22), 0 14px 30px rgba(0, 0, 0, 0.50);
+  box-shadow: var(--cc-node-hover-shadow);
 }
 
 /* 节点选中态 */
@@ -392,7 +434,7 @@ html.light .cc-node-selected {
 
 /* ── 预览区卡片 ── */
 .cc-preview-card {
-  border-radius: 20px;
+  border-radius: 6px;
   overflow: hidden;
   aspect-ratio: 16 / 9;
   background: var(--cc-bg-input);

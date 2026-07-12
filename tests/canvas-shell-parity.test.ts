@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const CANVAS_PAGE = 'desktop/src/renderer/src/canvas/CanvasPage.tsx'
+const CANVAS_CSS = 'desktop/src/renderer/src/canvas/canvas.css'
+const NODE_SIZING = 'desktop/src/renderer/src/canvas/lib/node-sizing.ts'
 
 describe('Task 20 canvas shell parity', () => {
   it('wires hjwall-style top bar actions into CanvasPage', () => {
@@ -41,6 +43,25 @@ describe('Task 20 canvas shell parity', () => {
     expect(source).toContain('zoomOut()')
   })
 
+  it('declares wheel, pinch, and double-click zoom on the React Flow canvas', () => {
+    const source = readFileSync(CANVAS_PAGE, 'utf8')
+
+    expect(source).toContain('zoomOnScroll')
+    expect(source).toContain('zoomOnPinch')
+    expect(source).toContain('zoomOnDoubleClick')
+    expect(source).toContain('panOnScroll={false}')
+  })
+
+  it('defers non-visual work while a node drag is active', () => {
+    const source = readFileSync(CANVAS_PAGE, 'utf8')
+
+    expect(source).toContain("import { EMPTY_RELATED_NODE_IDS, projectDisplayNodes } from './lib/display-nodes'")
+    expect(source).toContain('const [isDraggingNode, setIsDraggingNode] = useState(false)')
+    expect(source).toContain('projectDisplayNodes(rfNodes, isDraggingNode ? EMPTY_RELATED_NODE_IDS : relatedNodeIds)')
+    expect(source).toContain('if (isDraggingNode) return')
+    expect(source).toContain('{!isDraggingNode && <MiniMap position="bottom-right" pannable zoomable />}')
+  })
+
   it('surfaces one-shot generation recovery feedback without polling', () => {
     const source = readFileSync(CANVAS_PAGE, 'utf8')
 
@@ -48,5 +69,18 @@ describe('Task 20 canvas shell parity', () => {
     expect(source).toContain('setGenerationRecoveryFeedback')
     expect(source).toContain('data-testid="generation-recovery-feedback"')
     expect(source).not.toContain('setInterval')
+  })
+
+  it('defines the approved light workbench and compact shared node visual language', () => {
+    const css = readFileSync(CANVAS_CSS, 'utf8')
+    const sizing = readFileSync(NODE_SIZING, 'utf8')
+
+    expect(css).toContain('--cc-workbench-bg: #f4f4f2')
+    expect(css).toContain('border-radius: 8px')
+    expect(css).toContain('box-shadow: none')
+    expect(css).toContain('width: 10px !important')
+    expect(css).toContain('height: 10px !important')
+    expect(sizing).toContain("text-[13px] font-semibold")
+    expect(sizing).toContain("text-[11px]")
   })
 })

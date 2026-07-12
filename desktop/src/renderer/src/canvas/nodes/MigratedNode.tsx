@@ -96,8 +96,8 @@ function MigratedNodeComponent({ id, type, data, selected = false, onChange }: M
       role="group"
       aria-label={`${typeLabel}节点 ${label}`}
       className={cn(
-        'relative flex h-full w-full flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
-        selected && 'border-border-primary shadow-active'
+        'cc-node-frame relative flex h-full w-full flex-col gap-3 rounded-lg border border-border-secondary bg-bg-card p-3 text-text-base transition-[border-color,box-shadow] duration-150',
+        selected && 'border-border-primary'
       )}
       style={{ minWidth: size.width, minHeight: size.height }}
       data-node-id={id}
@@ -113,17 +113,17 @@ function MigratedNodeComponent({ id, type, data, selected = false, onChange }: M
 
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand">{typeLabel}</div>
-          <div className="truncate text-[15px] font-semibold leading-6 text-text-base">{label}</div>
+          <div className="text-[11px] font-medium text-text-muted">{typeLabel}</div>
+          <div className="truncate text-[13px] font-semibold leading-5 text-text-base">{label}</div>
         </div>
         {status ? (
-          <span className="shrink-0 rounded-sm border border-border-secondary bg-bg-input px-2 py-1 text-[11px] font-medium text-text-muted">
+          <span className="shrink-0 rounded-md border border-border-secondary bg-bg-input px-2 py-1 text-[11px] font-medium text-text-muted">
             {status}
           </span>
         ) : null}
       </header>
 
-      <div className="min-h-10 rounded-sm border border-border-input bg-bg-input px-3 py-2 text-[13px] leading-relaxed text-text-secondary">
+      <div className="min-h-10 border-y border-border-input bg-bg-input/50 px-2.5 py-2 text-[11px] leading-relaxed text-text-secondary">
         {summary || '连接此节点以提供上下文或工具输入。'}
       </div>
 
