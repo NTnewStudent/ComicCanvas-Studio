@@ -53,7 +53,7 @@ export const NODE_UI_CLASS_NAMES = {
   compactButton:
     'inline-flex min-h-8 items-center justify-center gap-1.5 rounded-md border border-border-input bg-bg-input px-2.5 py-1.5 text-[11px] font-medium text-text-secondary transition hover:border-border-primary hover:text-text-base',
   toolbar:
-    'nodrag nowheel relative w-[min(760px,calc(100vw-96px))] overflow-visible rounded-lg border border-border-primary bg-bg-panel p-3 shadow-card'
+    'cc-node-editor nodrag nowheel relative w-[min(760px,calc(100vw-96px))] overflow-visible border border-border-primary bg-bg-panel p-4'
 } as const
 
 /**
@@ -93,7 +93,7 @@ export const V2_VIDEO_WIDTH_LANDSCAPE = 240
 export const V2_TOOLBAR_WIDTH = 760
 
 /** V2 节点预览卡圆角 */
-export const V2_NODE_RADIUS = 20
+export const V2_NODE_RADIUS = 8
 
 /** V2 图片比例 → CSS aspect-ratio 映射 */
 export const V2_IMAGE_ASPECT_RATIO: Record<ImageRatio, string> = {

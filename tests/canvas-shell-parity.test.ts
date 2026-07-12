@@ -59,7 +59,26 @@ describe('Task 20 canvas shell parity', () => {
     expect(source).toContain('const [isDraggingNode, setIsDraggingNode] = useState(false)')
     expect(source).toContain('projectDisplayNodes(rfNodes, isDraggingNode ? EMPTY_RELATED_NODE_IDS : relatedNodeIds)')
     expect(source).toContain('if (isDraggingNode) return')
-    expect(source).toContain('{!isDraggingNode && <MiniMap position="bottom-right" pannable zoomable />}')
+    expect(source).toContain('{!isDraggingNode && !isViewportMoving && <MiniMap position="bottom-right" pannable zoomable />}')
+  })
+
+  it('pauses the minimap while the viewport moves so large graphs keep wheel zoom responsive', () => {
+    const source = readFileSync(CANVAS_PAGE, 'utf8')
+
+    expect(source).toContain('const [isViewportMoving, setIsViewportMoving] = useState(false)')
+    expect(source).toContain('const handleViewportMoveStart = useCallback(() => {')
+    expect(source).toContain('setIsViewportMoving(true)')
+    expect(source).toContain('setIsViewportMoving(false)')
+    expect(source).toContain('onMoveStart={handleViewportMoveStart}')
+    expect(source).toContain('{!isDraggingNode && !isViewportMoving && <MiniMap position="bottom-right" pannable zoomable />}')
+  })
+
+  it('does not animate every idle connection handle on a large canvas', () => {
+    const css = readFileSync(CANVAS_CSS, 'utf8')
+
+    expect(css).not.toContain('.react-flow__handle-left.connectable {')
+    expect(css).toContain('.react-flow__handle.connectingfrom,')
+    expect(css).toContain('.react-flow__handle.connectingto {')
   })
 
   it('surfaces one-shot generation recovery feedback without polling', () => {
@@ -75,7 +94,11 @@ describe('Task 20 canvas shell parity', () => {
     const css = readFileSync(CANVAS_CSS, 'utf8')
     const sizing = readFileSync(NODE_SIZING, 'utf8')
 
-    expect(css).toContain('--cc-workbench-bg: #f4f4f2')
+    expect(css).toContain('--cc-workbench-bg: #f3f5f6')
+    expect(css).toContain('--cc-node-border: #d9dee2')
+    expect(css).toContain('--cc-node-divider: #eaedef')
+    expect(css).toContain('--cc-node-text: #202428')
+    expect(css).toContain('--cc-editor-shadow: 0 18px 46px rgba(32, 36, 40, 0.08)')
     expect(css).toContain('border-radius: 8px')
     expect(css).toContain('box-shadow: none')
     expect(css).toContain('width: 10px !important')
