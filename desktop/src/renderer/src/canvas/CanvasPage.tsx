@@ -107,6 +107,7 @@ import { ProjectStyleSelector } from './components/ProjectStyleSelector'
 import { CanvasJobPanel } from './components/CanvasJobPanel'
 import { CanvasCommandPalette, type CanvasCommand } from './components/CanvasCommandPalette'
 import { ConnectionFeedback } from './components/ConnectionFeedback'
+import { NodeEditorProvider } from './components/NodeEditorContext'
 import PromptOrderEdge from './edges/PromptOrderEdge'
 import ImageOrderEdge from './edges/ImageOrderEdge'
 import ImageRoleEdge from './edges/ImageRoleEdge'
@@ -141,6 +142,7 @@ import { getAddableNodeDefinitions, getConnectCreateNodeDefinitions } from '../.
 import { planLocalMediaDrops } from './lib/local-media-drop'
 import { buildAssetNodeInsertion, buildReferenceAssetPatch } from './lib/asset-node-insertion'
 import { computeRelatedNodeIds } from './lib/related-highlight'
+import { EMPTY_RELATED_NODE_IDS, projectDisplayNodes } from './lib/display-nodes'
 
 /* Debounce utility */
 
@@ -634,6 +636,8 @@ function CanvasPageInner(): JSX.Element {
   const [rfNodes, setRfNodes, reactFlowOnNodesChange] = useNodesState<Node>(initialNodes)
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges)
   const isDraggingNodeRef = useRef(false)
+  const [isDraggingNode, setIsDraggingNode] = useState(false)
+  const [isViewportMoving, setIsViewportMoving] = useState(false)
   const connectStartNodeIdRef = useRef<string | null>(null)
   const [graphRevision, setGraphRevision] = useState(0)
   const markGraphDirty = useCallback(() => {
@@ -641,7 +645,10 @@ function CanvasPageInner(): JSX.Element {
     setGraphRevision((revision) => revision + 1)
   }, [])
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    isDraggingNodeRef.current = changes.some((change) => change.type === 'position' && change.dragging)
+    if (changes.some((change) => change.type === 'position' && change.dragging)) {
+      isDraggingNodeRef.current = true
+      setIsDraggingNode(true)
+    }
     reactFlowOnNodesChange(changes)
   }, [reactFlowOnNodesChange])
   const selectedNodeIds = useMemo(
@@ -653,13 +660,10 @@ function CanvasPageInner(): JSX.Element {
     () => (focusedNodeId ? computeRelatedNodeIds(focusedNodeId, rfEdges) : new Set<string>()),
     [focusedNodeId, rfEdges],
   )
-  const displayNodes = useMemo(() => {
-    if (relatedNodeIds.size === 0) return rfNodes
-    return rfNodes.map((node) => ({
-      ...node,
-      ...(relatedNodeIds.has(node.id) ? { className: 'cc-flow-node-related' } : {}),
-    }))
-  }, [relatedNodeIds, rfNodes])
+  const displayNodes = useMemo(
+    () => projectDisplayNodes(rfNodes, isDraggingNode ? EMPTY_RELATED_NODE_IDS : relatedNodeIds),
+    [isDraggingNode, relatedNodeIds, rfNodes]
+  )
   const selectedSnippet = useMemo(
     () => snippets.find((snippet) => snippet.id === selectedSnippetId) ?? snippets[0] ?? null,
     [selectedSnippetId, snippets],
@@ -821,8 +825,9 @@ function CanvasPageInner(): JSX.Element {
   )
 
   useEffect(() => {
+    if (isDraggingNode) return
     persistToStore(rfNodes, rfEdges)
-  }, [rfNodes, rfEdges, persistToStore])
+  }, [isDraggingNode, rfNodes, rfEdges, persistToStore])
 
   useEffect(() => {
     void loadSnippets()
@@ -1100,6 +1105,8 @@ function CanvasPageInner(): JSX.Element {
   /* Commit final drag positions into the durable store. */
   const handleNodeDragStop = useCallback<OnNodeDrag>((_event, node) => {
     isDraggingNodeRef.current = false
+    setIsDraggingNode(false)
+    skipNextPersistRef.current = true
     setFocusedRelatedNodeId(node.id)
     const finalNodes = new Map(getNodes().map((currentNode) => [currentNode.id, currentNode]))
     canvasStore.setState((prev) => {
@@ -1240,7 +1247,12 @@ function CanvasPageInner(): JSX.Element {
     [],
   )
 
+  const handleViewportMoveStart = useCallback(() => {
+    setIsViewportMoving(true)
+  }, [])
+
   const handleViewportMoveEnd = useCallback((_event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
+    setIsViewportMoving(false)
     canvasStore.getState().setViewport({ x: viewport.x, y: viewport.y, zoom: viewport.zoom })
     isDirtyRef.current = true
   }, [])
@@ -1903,6 +1915,7 @@ function CanvasPageInner(): JSX.Element {
         </div>
       </header>
       <div className="relative flex-1" onDragOver={handleCanvasDragOver} onDrop={(event) => void handleCanvasDrop(event)}>
+        <NodeEditorProvider selectedNodeIds={selectedNodeIds}>
         <ReactFlow
           nodes={displayNodes}
           edges={rfEdges}
@@ -1916,6 +1929,7 @@ function CanvasPageInner(): JSX.Element {
           onNodeMouseLeave={handleNodeMouseLeave}
           onPaneContextMenu={onPaneContextMenu}
           onNodeContextMenu={onNodeContextMenu}
+          onMoveStart={handleViewportMoveStart}
           onMoveEnd={handleViewportMoveEnd}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -1924,6 +1938,10 @@ function CanvasPageInner(): JSX.Element {
           defaultViewport={{ x: 120, y: 80, zoom: 0.75 }}
           minZoom={0.15}
           maxZoom={2}
+          zoomOnScroll
+          zoomOnPinch
+          zoomOnDoubleClick
+          panOnScroll={false}
           selectionOnDrag={interactionMode === 'select'}
           panOnDrag={interactionMode === 'pan'}
           selectionMode={SelectionMode.Partial}
@@ -1938,8 +1956,9 @@ function CanvasPageInner(): JSX.Element {
             size={1.5}
             color="var(--color-border-secondary)"
           />
-          <MiniMap position="bottom-right" pannable zoomable />
+          {!isDraggingNode && !isViewportMoving && <MiniMap position="bottom-right" pannable zoomable />}
         </ReactFlow>
+        </NodeEditorProvider>
 
         {dropFeedback && (
           <div

@@ -10,7 +10,8 @@ describe('Task 24 canvas related highlight parity', () => {
 
     expect(source).toContain("from './lib/related-highlight'")
     expect(source).toContain('computeRelatedNodeIds(focusedNodeId, rfEdges)')
-    expect(source).toContain("...(relatedNodeIds.has(node.id) ? { className: 'cc-flow-node-related' } : {})")
+    expect(source).toContain("import { EMPTY_RELATED_NODE_IDS, projectDisplayNodes } from './lib/display-nodes'")
+    expect(source).toContain('projectDisplayNodes(rfNodes, isDraggingNode ? EMPTY_RELATED_NODE_IDS : relatedNodeIds)')
     expect(source).toContain('const handleNodeMouseEnter')
     expect(source).toContain('const handleNodeMouseLeave')
     expect(source).toContain('setFocusedRelatedNodeId(node.id)')
