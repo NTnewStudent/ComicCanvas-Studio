@@ -37,6 +37,7 @@ function inputFromView(gateway: GatewayConfigView, enabled = gateway.enabled): G
     auth: { mode: 'existingRef', keyRef: gateway.keyRef },
     capabilities: gateway.capabilities,
     modelMap: gateway.modelMap,
+    ...(gateway.modelRoutes ? { modelRoutes: gateway.modelRoutes } : {}),
     enabled
   }
 }

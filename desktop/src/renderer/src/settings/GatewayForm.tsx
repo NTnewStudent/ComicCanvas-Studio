@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { DownloadCloud, KeyRound, LinkIcon, Save, X } from 'lucide-react'
 
-import type { GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayFetchedModel, GatewayFetchModelsRequest, GatewayFetchModelsResponse, GatewayModelMap, GatewayType } from '../../../../../shared/gateway'
+import type { CreativeMediaProfile, GatewayCapability, GatewayConfigInput, GatewayConfigView, GatewayFetchedModel, GatewayFetchModelsRequest, GatewayFetchModelsResponse, GatewayModelMap, GatewayModelRoute, GatewayType } from '../../../../../shared/gateway'
 import { cn } from '../lib/cn'
 
 export interface GatewayFormProps {
@@ -15,8 +15,30 @@ export interface GatewayFormProps {
 const gatewayTypes: Array<{ value: GatewayType; label: string }> = [
   { value: 'openai_compat', label: 'OpenAI 兼容' },
   { value: 'async_media_task', label: '异步媒体任务' },
+  { value: 'creative_media', label: '内置创作媒体网关' },
   { value: 'stub', label: '桩供应商' }
 ]
+
+const creativeProfiles: Array<{ profile: CreativeMediaProfile; channel: keyof GatewayModelMap; label: string }> = [
+  { profile: 'openai_chat', channel: 'text', label: 'OpenAI 文本' },
+  { profile: 'nano_banana', channel: 'image', label: 'Nano Banana 图片' },
+  { profile: 'seedream', channel: 'image', label: 'Seedream 图片' },
+  { profile: 'seedance', channel: 'video', label: 'Seedance 视频' },
+  { profile: 'kling', channel: 'video', label: '可灵视频' }
+]
+
+function creativeRouteModels(gateway?: GatewayConfigView): Partial<Record<CreativeMediaProfile, string>> {
+  const values: Partial<Record<CreativeMediaProfile, string>> = {}
+  for (const route of gateway?.modelRoutes ?? []) values[route.profile] = route.modelKey
+  return values
+}
+
+function configuredCreativeRoutes(models: Partial<Record<CreativeMediaProfile, string>>): GatewayModelRoute[] {
+  return creativeProfiles.flatMap(({ profile, channel }) => {
+    const modelKey = models[profile]?.trim()
+    return modelKey ? [{ channel, modelKey, profile }] : []
+  })
+}
 
 const channelCapabilities: Array<{ channel: keyof GatewayModelMap; capability: GatewayCapability; label: string; inputLabel: string; dropLabel: string }> = [
   { channel: 'text', capability: 'text', label: '文本能力', inputLabel: '文本模型键', dropLabel: '文本' },
@@ -77,6 +99,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, fetchModels, saving =
   const [enabled, setEnabled] = useState(gateway?.enabled ?? true)
   const [capabilities, setCapabilities] = useState<GatewayCapability[]>(defaultCapabilities(gateway))
   const [modelMap, setModelMap] = useState<GatewayModelMap>(gateway?.modelMap ?? {})
+  const [creativeModels, setCreativeModels] = useState<Partial<Record<CreativeMediaProfile, string>>>(() => creativeRouteModels(gateway))
   const [fetchedModels, setFetchedModels] = useState<GatewayFetchedModel[]>([])
   const [fetchingModels, setFetchingModels] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -162,6 +185,7 @@ export function GatewayForm({ gateway, onSubmit, onCancel, fetchModels, saving =
       auth,
       capabilities,
       modelMap: compactModelMap(modelMap, capabilities),
+      ...(type === 'creative_media' ? { modelRoutes: configuredCreativeRoutes(creativeModels) } : {}),
       enabled
     })
   }
@@ -320,6 +344,24 @@ export function GatewayForm({ gateway, onSubmit, onCancel, fetchModels, saving =
           )
         })}
       </fieldset>
+
+      {type === 'creative_media' && (
+        <fieldset className="flex flex-col gap-3 rounded-lg border border-border-secondary bg-bg-input/60 p-3">
+          <legend className="px-1 text-[12px] font-semibold text-text-secondary">内置协议模型路由</legend>
+          {creativeProfiles.map(({ profile, channel, label }) => (
+            <label key={profile} className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+              {label}
+              <input
+                aria-label={`${label}模型键`}
+                value={creativeModels[profile] ?? ''}
+                onChange={(event) => setCreativeModels((current) => ({ ...current, [profile]: event.target.value }))}
+                placeholder={`${channel} 模型键`}
+                className="min-h-9 rounded-lg border border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+              />
+            </label>
+          ))}
+        </fieldset>
+      )}
 
       {error && <p className="text-[13px] text-semantic-negative">{error}</p>}
 

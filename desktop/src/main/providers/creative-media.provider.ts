@@ -148,6 +148,22 @@ function seedancePayload(request: GatewayRequest): Record<string, unknown> {
   }
 }
 
+function klingPayload(request: GatewayRequest): { path: string; body: Record<string, unknown> } {
+  const image = imageReferences(request)[0]
+  return {
+    path: image ? '/videos/image2video' : '/videos/text2video',
+    body: {
+      model: request.modelKey,
+      model_name: request.modelKey,
+      prompt: request.prompt,
+      ...(image ? { image } : {}),
+      ...(stringParameter(request.parameters, 'last_frame') ? { image_tail: stringParameter(request.parameters, 'last_frame') } : {}),
+      duration: String(numberParameter(request.parameters, 'duration') ?? 5),
+      aspect_ratio: stringParameter(request.parameters, 'ratio') ?? '1:1'
+    }
+  }
+}
+
 function taskId(body: unknown): string | undefined {
   const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
   const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
@@ -166,8 +182,39 @@ function taskUrl(body: unknown): string | undefined {
   const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
   const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
   const result = typeof record.result === 'object' && record.result !== null ? record.result as Record<string, unknown> : {}
-  for (const value of [record.url, record.video_url, data.url, data.result_url, result.video_url]) if (typeof value === 'string' && value.length > 0) return value
+  const taskResult = typeof data.task_result === 'object' && data.task_result !== null ? data.task_result as Record<string, unknown> : {}
+  const videos = Array.isArray(taskResult.videos) ? taskResult.videos : []
+  const firstVideo = typeof videos[0] === 'object' && videos[0] !== null ? videos[0] as Record<string, unknown> : {}
+  for (const value of [record.url, record.video_url, data.url, data.result_url, result.video_url, firstVideo.url]) if (typeof value === 'string' && value.length > 0) return value
   return undefined
+}
+
+async function invokeKling(options: CreativeMediaProviderOptions, request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const payload = klingPayload(request)
+  const submit = await fetchImpl(endpoint(options.baseUrl, payload.path), { method: 'POST', headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload.body) })
+  const accepted = await readJson(submit)
+  if (!submit.ok) throw providerError('provider_request_failed', redactedMessage(accepted, `Provider request failed with ${submit.status}`, options.apiKey), true)
+  const id = taskId(accepted)
+  if (!id) throw providerError('provider_payload_invalid', 'Kling submit response did not include a task ID', false)
+  const completed = await pollWithBackoff(async () => {
+    const response = await fetchImpl(endpoint(options.baseUrl, `${payload.path}/${encodeURIComponent(id)}`), { headers: { Authorization: `Bearer ${options.apiKey}` } })
+    const body = await readJson(response)
+    const status = taskStatus(body)
+    if (['succeed', 'succeeded', 'success', 'completed'].includes(status)) {
+      const url = taskUrl(body)
+      if (!url) throw providerError('provider_payload_invalid', 'Kling completed response did not include a video URL', false)
+      return { state: 'completed' as const, result: url }
+    }
+    if (!response.ok || ['failed', 'error', 'canceled', 'cancelled'].includes(status)) return { state: 'failed' as const, message: 'Kling task failed', retryable: !response.ok }
+    const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+    const data = typeof record.data === 'object' && record.data !== null ? record.data as Record<string, unknown> : {}
+    return { state: 'pending' as const, ...(typeof record.progress === 'number' ? { progress: record.progress } : {}), ...(typeof data.task_status_msg === 'string' ? { message: data.task_status_msg } : {}) }
+  }, { initialDelayMs: options.polling?.initialDelayMs ?? 1000, maxDelayMs: options.polling?.maxDelayMs ?? 10_000, timeoutMs: options.polling?.timeoutMs ?? 600_000, ...(options.polling?.clock ? { clock: options.polling.clock } : {}), ...(options.polling?.sleep ? { sleep: options.polling.sleep } : {}) }, context)
+  const media = await fetchImpl(completed)
+  if (!media.ok) throw providerError('provider_request_failed', 'Kling video URL fetch failed', true)
+  const bytes = new Uint8Array(await media.arrayBuffer())
+  return { kind: 'assetBytes', mediaType: 'video', bytes, metadata: { mediaType: 'video', mimeType: media.headers.get('content-type') ?? 'video/mp4', sizeBytes: bytes.byteLength, hash: createHash('sha256').update(bytes).digest('hex') } }
 }
 
 async function invokeSeedance(options: CreativeMediaProviderOptions, request: GatewayRequest, context?: GatewayProviderContext): Promise<GatewayResult> {
@@ -229,6 +276,7 @@ export function createCreativeMediaProvider(options: CreativeMediaProviderOption
       }
       if (route.profile === 'nano_banana' || route.profile === 'seedream') return invokeImage(options, request, route.profile)
       if (route.profile === 'seedance') return invokeSeedance(options, request, context)
+      if (route.profile === 'kling') return invokeKling(options, request, context)
       throw providerError('capability_unsupported', `Creative Media profile ${route.profile} is not available yet`, false)
     }
   }
