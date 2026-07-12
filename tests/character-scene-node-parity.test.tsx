@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CharacterNodeData, SceneNodeData } from '../shared/nodes'
 import { CharacterNode } from '../desktop/src/renderer/src/canvas/nodes/CharacterNode'
 import { SceneNode } from '../desktop/src/renderer/src/canvas/nodes/SceneNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 function renderInFlow(element: React.ReactElement): void {
   render(<ReactFlowProvider>{element}</ReactFlowProvider>)
@@ -26,7 +27,7 @@ describe('Task 32 character and scene node parity', () => {
     const onGenerate = vi.fn()
 
     renderInFlow(
-      <CharacterNode
+      <NodeEditorProvider selectedNodeIds={['character-1']}><CharacterNode
         id="character-1"
         selected
         data={{
@@ -41,7 +42,7 @@ describe('Task 32 character and scene node parity', () => {
         onChange={onChange}
         onViewAsset={onViewAsset}
         onGenerate={onGenerate}
-      />
+      /></NodeEditorProvider>
     )
 
     expect(screen.getByRole('group', { name: '角色节点 Mika' })).toBeInTheDocument()
@@ -73,7 +74,7 @@ describe('Task 32 character and scene node parity', () => {
     const onGenerate = vi.fn()
 
     renderInFlow(
-      <SceneNode
+      <NodeEditorProvider selectedNodeIds={['scene-1']}><SceneNode
         id="scene-1"
         selected
         data={{
@@ -87,7 +88,7 @@ describe('Task 32 character and scene node parity', () => {
         onChange={onChange}
         onViewAsset={onViewAsset}
         onGenerate={onGenerate}
-      />
+      /></NodeEditorProvider>
     )
 
     expect(screen.getByRole('group', { name: '场景节点 Rain Alley' })).toBeInTheDocument()

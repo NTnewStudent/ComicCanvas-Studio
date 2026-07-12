@@ -13,6 +13,8 @@ import type { ImageNodeData } from '../../../../../../shared/nodes'
 import { ImageEditorModal } from '../components/ImageEditorModal'
 import { ImageInpaintModal } from '../components/ImageInpaintModal'
 import MentionTextarea from '../components/MentionTextarea'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import { NodeFrame, NodeHeader, NodePreview, NodeSelectionEditor, NodeSummaryRows } from '../components/NodePrimitives'
 import { NodeAssetPickerModal, type NodeAssetOption } from '../components/NodeAssetPickerModal'
 import {
   getOrientationPreviewStyle,
@@ -65,6 +67,7 @@ function ImageNodeComponent({
   const [isImageEditorOpen, setIsImageEditorOpen] = useState(false)
   const [isInpaintGateOpen, setIsInpaintGateOpen] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const editorOpen = useNodeEditorOpen(id)
   const displayUrl = assetSafeUrl ?? data.url ?? ''
   const hasAsset = Boolean(data.assetId && displayUrl)
 
@@ -93,7 +96,7 @@ function ImageNodeComponent({
   }
 
   return (
-    <article className={NODE_UI_CLASS_NAMES.mediaShell} data-node-id={id}>
+    <NodeFrame selected={selected} className={NODE_UI_CLASS_NAMES.mediaShell} data-node-id={id}>
       <NodeResizer
         isVisible={selected}
         minWidth={NODE_MIN_WIDTH.image}
@@ -102,19 +105,27 @@ function ImageNodeComponent({
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="mb-1.5 flex min-h-6 items-center gap-1.5 px-1 text-[12px] font-medium text-text-muted">
-        <ImageIcon className="h-3.5 w-3.5 text-text-muted" />
-        <span className="min-w-0 truncate">{data.label || '图片节点'}</span>
-      </header>
+      <NodeHeader icon={<ImageIcon className="h-4 w-4" />} title={data.label || '图片节点'} meta="图片素材" />
 
-      <section
-        className={cn(
-          NODE_UI_CLASS_NAMES.mediaCard,
-          'group relative flex min-h-[320px] flex-1 flex-col gap-3 rounded-2xl bg-bg-card p-3.5',
-          selected ? 'border-brand shadow-[0_0_0_1px_var(--color-brand)]' : 'hover:border-border-primary'
-        )}
+      <NodePreview
+        className="relative flex min-h-[260px] w-full items-center justify-center overflow-hidden"
+        data-testid="image-preview-frame"
+        style={getOrientationPreviewStyle(data.orientation)}
       >
-        <div className="absolute left-3.5 top-3.5 z-10 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+        {displayUrl ? (
+          <img key={displayUrl} src={displayUrl} alt={`${data.label || '图片节点'} preview`} className="h-full w-full object-contain" loading="lazy" />
+        ) : (
+          <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-text-muted">
+            <ImageIcon className="h-8 w-8 opacity-45" />
+            <span className="text-[12px] font-medium">未绑定图片</span>
+          </div>
+        )}
+      </NodePreview>
+
+      <NodeSummaryRows rows={[{ label: '资产', value: data.assetId ?? '未绑定' }]} />
+
+      <NodeSelectionEditor open={editorOpen} testId="image-node-editor">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             aria-label="预览图片资产"
@@ -122,7 +133,7 @@ function ImageNodeComponent({
             onClick={() => {
               if (displayUrl) setPreviewUrl(displayUrl)
             }}
-            className="nodrag inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white shadow-md transition hover:bg-black disabled:pointer-events-none disabled:opacity-0"
+            className={NODE_UI_CLASS_NAMES.compactButton}
           >
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
@@ -135,7 +146,7 @@ function ImageNodeComponent({
               onEditAsset?.(data.assetId)
               setIsImageEditorOpen(true)
             }}
-            className="nodrag inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-2.5 text-[11px] font-semibold text-white shadow-md transition hover:bg-black disabled:pointer-events-none disabled:opacity-0"
+            className={NODE_UI_CLASS_NAMES.compactButton}
           >
             <Crop className="h-3.5 w-3.5" />
             编辑
@@ -147,32 +158,11 @@ function ImageNodeComponent({
             onClick={() => {
               if (hasAsset) setIsInpaintGateOpen(true)
             }}
-            className="nodrag inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-2.5 text-[11px] font-semibold text-white shadow-md transition hover:bg-black aria-disabled:pointer-events-none aria-disabled:opacity-0"
+            className={NODE_UI_CLASS_NAMES.compactButton}
           >
             <Brush className="h-3.5 w-3.5" />
             重绘
           </button>
-        </div>
-
-        <div
-          className="relative flex w-full items-center justify-center overflow-hidden rounded-xl border border-border-primary/50 bg-bg-input"
-          data-testid="image-preview-frame"
-          style={getOrientationPreviewStyle(data.orientation)}
-        >
-          {displayUrl ? (
-            <img
-              key={displayUrl}
-              src={displayUrl}
-              alt={`${data.label || '图片节点'} preview`}
-              className="h-full w-full object-contain"
-              loading="lazy"
-            />
-          ) : (
-            <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-text-muted">
-              <ImageIcon className="h-8 w-8 opacity-45" />
-              <span className="text-[12px] font-medium">未绑定图片</span>
-            </div>
-          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -201,16 +191,14 @@ function ImageNodeComponent({
           {data.assetId ?? '未绑定资产'}
         </div>
 
-        {selected ? (
-          <MentionTextarea
-            value={data.prompt ?? data.promptOverride ?? ''}
-            onChange={(prompt) => update({ prompt, promptOverride: prompt })}
-            ariaLabel="图片引用提示词"
-            rows={2}
-            sourceNodeId={id}
-          />
-        ) : null}
-      </section>
+        <MentionTextarea
+          value={data.prompt ?? data.promptOverride ?? ''}
+          onChange={(prompt) => update({ prompt, promptOverride: prompt })}
+          ariaLabel="图片引用提示词"
+          rows={3}
+          sourceNodeId={id}
+        />
+      </NodeSelectionEditor>
 
       {isAssetPickerOpen ? (
         <NodeAssetPickerModal
@@ -263,7 +251,7 @@ function ImageNodeComponent({
 
       <Handle type="target" position={Position.Left} id="left" className="cc-handle" />
       <Handle type="source" position={Position.Right} id="right" className="cc-handle" />
-    </article>
+    </NodeFrame>
   )
 }
 

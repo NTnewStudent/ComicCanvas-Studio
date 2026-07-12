@@ -11,6 +11,15 @@ import { useStore } from 'zustand'
 
 import type { CharacterNodeData } from '../../../../../../shared/nodes'
 import MentionTextarea from '../components/MentionTextarea'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import {
+  NodeEditorFooter,
+  NodeFrame,
+  NodeHeader,
+  NodePreview,
+  NodeSelectionEditor,
+  NodeSummaryRows,
+} from '../components/NodePrimitives'
 import { cn } from '../../lib/cn'
 import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES, NODE_UI_CLASS_NAMES } from '../lib/node-sizing'
 import { createMentionReferenceEdge, mentionTargetsForNodes, pruneMentionReferenceEdges } from '../lib/canvas-mention-links'
@@ -74,16 +83,14 @@ function CharacterNodeComponent({
   const tagsValue = tags.join(' / ')
   const canvasNodes = useStore(canvasStore, (state) => state.nodes)
   const mentionTargets = useMemo(() => mentionTargetsForNodes(canvasNodes, id), [canvasNodes, id])
+  const editorOpen = useNodeEditorOpen(id)
 
   return (
-    <article
+    <NodeFrame
       role="group"
       aria-label={`角色节点 ${data.label}`}
-      className={cn(
-        'h-full w-full',
-        NODE_UI_CLASS_NAMES.characterShell,
-        selected && 'border-border-primary shadow-active'
-      )}
+      selected={selected}
+      className={cn('h-full w-full', NODE_UI_CLASS_NAMES.characterShell)}
       data-node-id={id}
       data-node-type="character"
     >
@@ -95,72 +102,68 @@ function CharacterNodeComponent({
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className={NODE_UI_CLASS_NAMES.header}>
-        <UserRound className="h-4 w-4 text-brand" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">角色</div>
-          {selected ? (
-            <input
-              aria-label="角色名称"
-              className={cn('nodrag w-full font-semibold', NODE_UI_CLASS_NAMES.field)}
-              value={data.label}
-              onChange={(event) => update({ label: event.target.value })}
-            />
-          ) : (
-            <div className={cn('truncate', NODE_UI_CLASS_NAMES.title)}>{data.label}</div>
-          )}
-        </div>
-      </header>
+      <NodeHeader
+        icon={<UserRound className="h-4 w-4" />}
+        title={data.label}
+        meta="角色"
+        status={tags.length > 0 ? `${tags.length} 个标签` : undefined}
+      />
 
-      <div className="grid min-h-[132px] grid-cols-[112px_minmax(0,1fr)] gap-3">
-        <div className="flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border-input bg-bg-input">
-          {data.url ? (
-            <img src={data.url} alt={`${data.label} 角色参考图`} className="h-full w-full object-contain" />
-          ) : (
-            <ImageIcon className="h-7 w-7 text-text-muted" />
-          )}
-        </div>
-        <div className="min-w-0">
-          <label className="flex h-full flex-col gap-1.5 text-[12px] font-medium text-text-muted">
-            角色描述
-            <MentionTextarea
-              ariaLabel="角色描述"
-              value={data.description ?? ''}
-              onChange={(value) => update({ description: value })}
-              placeholder="角色外貌、性格、服装"
-              rows={3}
-              className="nodrag nowheel flex-1"
-              mentionTargets={mentionTargets}
-              sourceNodeId={id}
-              onMentionSelect={createMentionReferenceEdge}
-              onMentionsChange={pruneMentionReferenceEdges}
-            />
-          </label>
-        </div>
-      </div>
+      <NodePreview className="flex min-h-[168px] items-center justify-center">
+        {data.url ? (
+          <img src={data.url} alt={`${data.label} 角色参考图`} className="h-full w-full object-contain" />
+        ) : (
+          <ImageIcon className="h-7 w-7 text-text-muted" />
+        )}
+      </NodePreview>
 
-      <div className="flex min-h-8 items-center gap-2 text-[12px] text-text-muted">
-        <Tags className="h-3.5 w-3.5" />
-        {selected ? (
+      <NodeSummaryRows
+        rows={[
+          { label: '描述', value: data.description?.trim() || '未填写' },
+          { label: '标签', value: tags.length > 0 ? tagsValue : '未设置' },
+        ]}
+      />
+
+      <NodeSelectionEditor open={editorOpen} testId="character-node-editor">
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+          角色名称
+          <input
+            aria-label="角色名称"
+            className={cn('w-full font-semibold', NODE_UI_CLASS_NAMES.field)}
+            value={data.label}
+            onChange={(event) => update({ label: event.target.value })}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+          角色描述
+          <MentionTextarea
+            ariaLabel="角色描述"
+            value={data.description ?? ''}
+            onChange={(value) => update({ description: value })}
+            placeholder="角色外貌、性格、服装"
+            rows={4}
+            className="nodrag nowheel"
+            mentionTargets={mentionTargets}
+            sourceNodeId={id}
+            onMentionSelect={createMentionReferenceEdge}
+            onMentionsChange={pruneMentionReferenceEdges}
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+          <span className="flex items-center gap-1.5"><Tags className="h-3.5 w-3.5" />角色标签</span>
           <input
             aria-label="角色标签"
-            className="nodrag h-8 min-w-0 flex-1 rounded-lg border border-border-input bg-bg-input px-2.5 text-[12px] text-text-base outline-none focus:ring-1 focus:ring-brand"
+            className={cn('w-full', NODE_UI_CLASS_NAMES.field)}
             value={tagsValue}
             onChange={(event) => update({ tags: parseTagInput(event.target.value) })}
             placeholder="主角 / 飞行员 / 黑色电影"
           />
-        ) : (
-          <span className="min-w-0 flex-1 truncate">{tags.length > 0 ? tagsValue : '未设置标签'}</span>
-        )}
-      </div>
-
-      <div className="rounded-lg border border-border-secondary bg-bg-input/70 px-2.5 py-2 text-[11px] leading-[1.5] text-text-muted">
-        <div className="mb-1 font-semibold text-text-secondary">角色 Prompt</div>
-        <div className="line-clamp-3 text-text-base">{characterPromptPreview(data)}</div>
-      </div>
-
-      {selected && (
-        <div className="grid grid-cols-3 gap-2">
+        </label>
+        <div className="rounded-md border border-border-secondary bg-bg-input/60 px-3 py-2 text-[11px] leading-[1.5] text-text-muted">
+          <div className="mb-1 font-semibold text-text-secondary">角色 Prompt</div>
+          <div className="text-text-base">{characterPromptPreview(data)}</div>
+        </div>
+        <NodeEditorFooter>
           <button
             type="button"
             aria-label="查看角色资产"
@@ -191,12 +194,12 @@ function CharacterNodeComponent({
             <Images className="h-3.5 w-3.5" />
             多视图
           </button>
-        </div>
-      )}
+        </NodeEditorFooter>
+      </NodeSelectionEditor>
 
       <Handle type="target" position={Position.Left} className="cc-handle" />
       <Handle type="source" position={Position.Right} className="cc-handle" />
-    </article>
+    </NodeFrame>
   )
 }
 

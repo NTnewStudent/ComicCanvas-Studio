@@ -4,11 +4,20 @@
  */
 
 import { Handle, NodeResizer, Position } from '@xyflow/react'
+import { Boxes } from 'lucide-react'
 import React from 'react'
 
 import { defaultCanvasNodeSize } from '../../../../../../shared/node-layout'
 import type { CanvasNodeData, NodeStatus, NodeType } from '../../../../../../shared/nodes'
-import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import {
+  NodeFrame,
+  NodeHeader,
+  NodePreview,
+  NodeSelectionEditor,
+  NodeSummaryRows,
+} from '../components/NodePrimitives'
+import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES, NODE_UI_CLASS_NAMES } from '../lib/node-sizing'
 import { cn } from '../../lib/cn'
 
 const nodeTypeLabel: Record<NodeType, string> = {
@@ -86,19 +95,18 @@ function MigratedNodeComponent({ id, type, data, selected = false, onChange }: M
   const summary = primaryText(type, data)
   const fields = editableFields(type)
   const size = defaultCanvasNodeSize(type)
+  const editorOpen = useNodeEditorOpen(id)
 
   function updateField(field: EditableField, value: string): void {
     onChange?.(id, { [field]: field === 'assetId' && value.trim().length === 0 ? null : value } as Partial<CanvasNodeData>)
   }
 
   return (
-    <article
+    <NodeFrame
       role="group"
       aria-label={`${typeLabel}节点 ${label}`}
-      className={cn(
-        'cc-node-frame relative flex h-full w-full flex-col gap-3 rounded-lg border border-border-secondary bg-bg-card p-3 text-text-base transition-[border-color,box-shadow] duration-150',
-        selected && 'border-border-primary'
-      )}
+      selected={selected}
+      className="h-full w-full"
       style={{ minWidth: size.width, minHeight: size.height }}
       data-node-id={id}
       data-node-type={type}
@@ -111,39 +119,41 @@ function MigratedNodeComponent({ id, type, data, selected = false, onChange }: M
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-medium text-text-muted">{typeLabel}</div>
-          <div className="truncate text-[13px] font-semibold leading-5 text-text-base">{label}</div>
-        </div>
-        {status ? (
-          <span className="shrink-0 rounded-md border border-border-secondary bg-bg-input px-2 py-1 text-[11px] font-medium text-text-muted">
-            {status}
-          </span>
-        ) : null}
-      </header>
+      <NodeHeader
+        icon={<Boxes className="h-4 w-4" />}
+        title={label}
+        meta={typeLabel}
+        status={status ?? undefined}
+      />
 
-      <div className="min-h-10 border-y border-border-input bg-bg-input/50 px-2.5 py-2 text-[11px] leading-relaxed text-text-secondary">
+      <NodePreview className="flex min-h-[96px] items-center px-3 text-[12px] leading-relaxed text-text-secondary">
         {summary || '连接此节点以提供上下文或工具输入。'}
-      </div>
+      </NodePreview>
 
-      <div className="flex flex-col gap-2">
+      <NodeSummaryRows
+        rows={[
+          { label: '类型', value: typeLabel },
+          { label: '配置', value: fields.length > 0 ? `${fields.length} 项` : '无需配置' },
+        ]}
+      />
+
+      <NodeSelectionEditor open={editorOpen} testId="migrated-node-editor">
         {fields.map((field) => (
-          <label key={field} className="flex flex-col gap-1 text-[11px] font-medium text-text-muted">
+          <label key={field} className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
             {fieldLabel(field)}
             <input
               aria-label={fieldLabel(field)}
-              className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand"
+              className={cn('w-full', NODE_UI_CLASS_NAMES.field)}
               value={readString(data, field)}
               onChange={(event) => updateField(field, event.target.value)}
             />
           </label>
         ))}
-      </div>
+      </NodeSelectionEditor>
 
       <Handle type="target" position={Position.Left} className="cc-handle" />
       <Handle type="source" position={Position.Right} className="cc-handle" />
-    </article>
+    </NodeFrame>
   )
 }
 

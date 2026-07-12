@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { VideoNodeData } from '../shared/nodes'
 import { VideoNode, type VideoNodeProps } from '../desktop/src/renderer/src/canvas/nodes/VideoNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 const defaultData: VideoNodeData = {
   label: 'Video 1',
@@ -32,18 +33,20 @@ function renderVideoNode(overrides: VideoNodeRenderOverrides = {}) {
 
   render(
     <ReactFlowProvider>
-      <VideoNode
-        {...overrides}
-        id={overrides.id ?? 'video-1'}
-        data={data}
-        assetOptions={
-          overrides.assetOptions ?? [
-            { assetId: 'asset-video-a', label: 'Motion draft', safeUrl: 'cc-asset://asset/asset-video-a' },
-            { assetId: 'asset-video-b', label: 'Final shot', safeUrl: 'cc-asset://asset/asset-video-b' }
-          ]
-        }
-        onChange={overrides.onChange ?? onChange}
-      />
+      <NodeEditorProvider selectedNodeIds={overrides.selected ? [overrides.id ?? 'video-1'] : []}>
+        <VideoNode
+          {...overrides}
+          id={overrides.id ?? 'video-1'}
+          data={data}
+          assetOptions={
+            overrides.assetOptions ?? [
+              { assetId: 'asset-video-a', label: 'Motion draft', safeUrl: 'cc-asset://asset/asset-video-a' },
+              { assetId: 'asset-video-b', label: 'Final shot', safeUrl: 'cc-asset://asset/asset-video-b' }
+            ]
+          }
+          onChange={overrides.onChange ?? onChange}
+        />
+      </NodeEditorProvider>
     </ReactFlowProvider>
   )
 
@@ -59,8 +62,8 @@ describe('M2 VideoNode media reference surface', () => {
     renderVideoNode()
 
     expect(screen.getByText('未绑定视频')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '选择视频素材' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '清除视频素材' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '选择视频素材' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('video-node-editor')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '生成视频' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '配置视频节点' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Prompt 覆盖' })).not.toBeInTheDocument()
@@ -68,8 +71,16 @@ describe('M2 VideoNode media reference surface', () => {
     expect(screen.queryByText('帧')).not.toBeInTheDocument()
   })
 
+  it('mounts asset actions only in the selected editor', () => {
+    renderVideoNode({ selected: true })
+
+    expect(screen.getByTestId('video-node-editor')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择视频素材' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '清除视频素材' })).toBeDisabled()
+  })
+
   it('binds safe video assets directly from the media card', () => {
-    const { onChange } = renderVideoNode()
+    const { onChange } = renderVideoNode({ selected: true })
 
     fireEvent.click(screen.getByRole('button', { name: '选择视频素材' }))
 
@@ -86,6 +97,7 @@ describe('M2 VideoNode media reference surface', () => {
 
   it('renders completed safe video preview with stable contain layout', () => {
     renderVideoNode({
+      selected: true,
       data: { status: 'done', assetId: 'video-asset', orientation: 'portrait' },
       assetSafeUrl: 'cc-asset://asset/video-asset'
     })
@@ -98,6 +110,7 @@ describe('M2 VideoNode media reference surface', () => {
 
   it('offers URL copy for bound videos without writeback or run actions', () => {
     renderVideoNode({
+      selected: true,
       data: { status: 'done', assetId: 'asset-video-generated', url: 'cc-asset://asset/asset-video-generated' },
       assetSafeUrl: 'cc-asset://asset/asset-video-generated'
     })

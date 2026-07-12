@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CanvasNodeData, NodeType } from '../shared/nodes'
 import { MigratedNode, type MigratedNodeProps } from '../desktop/src/renderer/src/canvas/nodes/MigratedNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 type MigratedNodeRenderOptions = Omit<Partial<MigratedNodeProps>, 'data' | 'type'> & {
   type?: NodeType
@@ -26,13 +27,15 @@ function renderMigratedNode(options: MigratedNodeRenderOptions = {}) {
 
   render(
     <ReactFlowProvider>
-      <MigratedNode
-        id={options.id ?? 'character-1'}
-        type={options.type ?? 'character'}
-        data={{ ...data, ...options.data } as CanvasNodeData}
-        selected={options.selected ?? false}
-        onChange={options.onChange ?? onChange}
-      />
+      <NodeEditorProvider selectedNodeIds={[options.id ?? 'character-1']}>
+        <MigratedNode
+          id={options.id ?? 'character-1'}
+          type={options.type ?? 'character'}
+          data={{ ...data, ...options.data } as CanvasNodeData}
+          selected={options.selected ?? true}
+          onChange={options.onChange ?? onChange}
+        />
+      </NodeEditorProvider>
     </ReactFlowProvider>
   )
 
@@ -48,7 +51,7 @@ describe('REQ-093 MigratedNode', () => {
     const { onChange } = renderMigratedNode()
 
     expect(screen.getByRole('group', { name: '角色节点 Detective' })).toBeInTheDocument()
-    expect(screen.getByText('角色')).toBeInTheDocument()
+    expect(screen.getByText('角色', { selector: '.cc-node-meta' })).toBeInTheDocument()
     expect(screen.getByText('calm lead character')).toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('textbox', { name: '描述' }), {
@@ -75,7 +78,7 @@ describe('REQ-093 MigratedNode', () => {
     })
 
     expect(screen.getByRole('group', { name: 'MJ 图片节点 MJ Sheet' })).toBeInTheDocument()
-    expect(screen.getByText('MJ 图片')).toBeInTheDocument()
+    expect(screen.getByText('MJ 图片', { selector: '.cc-node-meta' })).toBeInTheDocument()
     expect(screen.getByText('idle')).toBeInTheDocument()
     expect(screen.getByDisplayValue('stub-mj')).toBeInTheDocument()
 

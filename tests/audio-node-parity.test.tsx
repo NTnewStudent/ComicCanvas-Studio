@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AudioNodeData } from '../shared/nodes'
 import { AudioNode } from '../desktop/src/renderer/src/canvas/nodes/AudioNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 function renderInFlow(element: React.ReactElement): void {
   render(<ReactFlowProvider>{element}</ReactFlowProvider>)
@@ -25,7 +26,7 @@ describe('Task 33 audio node parity', () => {
     const onViewAsset = vi.fn()
 
     renderInFlow(
-      <AudioNode
+      <NodeEditorProvider selectedNodeIds={['audio-1']}><AudioNode
         id="audio-1"
         selected
         data={{
@@ -39,7 +40,7 @@ describe('Task 33 audio node parity', () => {
         onChange={onChange}
         onImport={onImport}
         onViewAsset={onViewAsset}
-      />
+      /></NodeEditorProvider>
     )
 
     expect(screen.getByRole('group', { name: '音频节点 Theme' })).toBeInTheDocument()

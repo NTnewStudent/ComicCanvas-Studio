@@ -73,7 +73,7 @@ export interface AgentRunEventPayloadMap {
     requirements: string[]
     missing: string[]
     localCapabilities: string[]
-    recommendedAgentId: 'general-purpose' | 'canvas-orchestrator'
+    recommendedAgentId: 'general-purpose' | 'canvas-orchestrator' | 'canvas-operator'
     executionMode: 'clarify' | 'plan' | 'direct'
     complexity: 'low' | 'medium' | 'high'
   }

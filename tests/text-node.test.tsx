@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { TextNodeData } from '../shared/nodes'
 import { TextNode, type TextNodeProps } from '../desktop/src/renderer/src/canvas/nodes/TextNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 function renderTextNode(overrides: Partial<TextNodeProps> = {}) {
   const data: TextNodeData = {
@@ -19,7 +20,13 @@ function renderTextNode(overrides: Partial<TextNodeProps> = {}) {
   const onRename = vi.fn()
   const onPolish = vi.fn()
 
-  render(<ReactFlowProvider><TextNode id="text-1" data={data} onChange={onChange} onRename={onRename} onPolish={onPolish} {...overrides} /></ReactFlowProvider>)
+  render(
+    <ReactFlowProvider>
+      <NodeEditorProvider selectedNodeIds={overrides.selected ? ['text-1'] : []}>
+        <TextNode id="text-1" data={data} onChange={onChange} onRename={onRename} onPolish={onPolish} {...overrides} />
+      </NodeEditorProvider>
+    </ReactFlowProvider>
+  )
 
   return { onChange, onRename, onPolish }
 }
@@ -35,32 +42,16 @@ describe('M2 TextNode', () => {
     expect(screen.getByRole('button', { name: 'Text 1' })).toBeInTheDocument()
     expect(screen.getByText('hello canvas')).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: '文本内容' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('text-node-editor')).not.toBeInTheDocument()
   })
 
-  it('expands to a textarea on click, edits content, and collapses on blur', () => {
-    const { onChange } = renderTextNode()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Text 1' }))
+  it('edits content inside the selected node editor', () => {
+    const { onChange } = renderTextNode({ selected: true })
     const textbox = screen.getByRole('textbox', { name: '文本内容' })
 
+    expect(screen.getByTestId('text-node-editor')).toBeInTheDocument()
     fireEvent.change(textbox, { target: { value: 'new script beat' } })
     expect(onChange).toHaveBeenLastCalledWith('text-1', { content: 'new script beat' })
-
-    fireEvent.blur(textbox)
-    expect(screen.queryByRole('textbox', { name: '文本内容' })).not.toBeInTheDocument()
-    expect(screen.getByText('new script beat')).toBeInTheDocument()
-  })
-
-  it('collapses expanded editing when the user clicks outside the node', () => {
-    renderTextNode()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Text 1' }))
-    expect(screen.getByRole('textbox', { name: '文本内容' })).toBeInTheDocument()
-
-    fireEvent.mouseDown(document.body)
-
-    expect(screen.queryByRole('textbox', { name: '文本内容' })).not.toBeInTheDocument()
-    expect(screen.getByText('hello canvas')).toBeInTheDocument()
   })
 
   it('supports inline rename with Enter save, Escape cancel, and empty rejection', () => {
@@ -106,9 +97,7 @@ describe('M2 TextNode', () => {
   })
 
   it('opens a focus modal and saves edited content back to the node', () => {
-    const { onChange } = renderTextNode()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Text 1' }))
+    const { onChange } = renderTextNode({ selected: true })
     fireEvent.click(screen.getByRole('button', { name: '打开专注编辑' }))
 
     const modalEditor = screen.getByRole('textbox', { name: '专注编辑文本内容' })

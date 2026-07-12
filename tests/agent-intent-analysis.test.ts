@@ -231,6 +231,16 @@ describe('Agent intent analysis', () => {
     })
   })
 
+  it('routes an existing character node update to the canvas operator', () => {
+    expect(analyzeAgentIntent('把当前角色节点 Character 1 改为凌霜月，并补充角色描述')).toMatchObject({
+      kind: 'canvasOperation',
+      executionMode: 'direct',
+      complexity: 'low',
+      recommendedAgentId: 'canvas-operator',
+      localCapabilities: ['canvas.queryGraph', 'canvas.updateNodeData']
+    })
+  })
+
   it('routes generation requests to planned orchestration instead of direct reference-node creation', () => {
     for (const message of ['生成图片', '生成视频', '生成一张宇宙飞船图片']) {
       expect(analyzeAgentIntent(message)).toMatchObject({

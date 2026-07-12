@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImageNodeData } from '../shared/nodes'
 import { ImageNode, type ImageNodeProps } from '../desktop/src/renderer/src/canvas/nodes/ImageNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 const defaultData: ImageNodeData = {
   label: 'Image 1',
@@ -29,18 +30,20 @@ function renderImageNode(overrides: ImageNodeRenderOverrides = {}) {
 
   render(
     <ReactFlowProvider>
-      <ImageNode
-        {...overrides}
-        id={overrides.id ?? 'image-1'}
-        data={data}
-        assetOptions={
-          overrides.assetOptions ?? [
-            { assetId: 'asset-image-a', label: 'Hero still', safeUrl: 'cc-asset://asset/asset-image-a' },
-            { assetId: 'asset-image-b', label: 'Rain alley', safeUrl: 'cc-asset://asset/asset-image-b' }
-          ]
-        }
-        onChange={overrides.onChange ?? onChange}
-      />
+      <NodeEditorProvider selectedNodeIds={overrides.selected ? [overrides.id ?? 'image-1'] : []}>
+        <ImageNode
+          {...overrides}
+          id={overrides.id ?? 'image-1'}
+          data={data}
+          assetOptions={
+            overrides.assetOptions ?? [
+              { assetId: 'asset-image-a', label: 'Hero still', safeUrl: 'cc-asset://asset/asset-image-a' },
+              { assetId: 'asset-image-b', label: 'Rain alley', safeUrl: 'cc-asset://asset/asset-image-b' }
+            ]
+          }
+          onChange={overrides.onChange ?? onChange}
+        />
+      </NodeEditorProvider>
     </ReactFlowProvider>
   )
 
@@ -56,16 +59,25 @@ describe('M2 ImageNode media reference surface', () => {
     renderImageNode()
 
     expect(screen.getByText('未绑定图片')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '选择图片素材' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '清除图片素材' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '选择图片素材' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('image-node-editor')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '生成图片' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '配置图片节点' })).not.toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: 'Prompt 覆盖' })).not.toBeInTheDocument()
     expect(screen.queryByText('模型')).not.toBeInTheDocument()
   })
 
+  it('mounts asset and prompt controls only in the selected editor', () => {
+    renderImageNode({ selected: true })
+
+    expect(screen.getByTestId('image-node-editor')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '选择图片素材' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '清除图片素材' })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: '图片引用提示词' })).toBeInTheDocument()
+  })
+
   it('binds safe image assets directly from the media card', () => {
-    const { onChange } = renderImageNode()
+    const { onChange } = renderImageNode({ selected: true })
 
     fireEvent.click(screen.getByRole('button', { name: '选择图片素材' }))
 
@@ -82,6 +94,7 @@ describe('M2 ImageNode media reference surface', () => {
 
   it('renders completed safe asset preview with stable contain layout', () => {
     renderImageNode({
+      selected: true,
       data: { status: 'done', assetId: 'asset-1', orientation: 'square' },
       assetSafeUrl: 'cc-asset://asset/asset-1'
     })
@@ -94,6 +107,7 @@ describe('M2 ImageNode media reference surface', () => {
 
   it('keeps image edit and inpaint entries on the media node instead of generation config', () => {
     renderImageNode({
+      selected: true,
       data: { status: 'done', assetId: 'asset-generated', url: 'cc-asset://asset/asset-generated' },
       assetSafeUrl: 'cc-asset://asset/asset-generated'
     })

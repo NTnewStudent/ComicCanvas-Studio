@@ -50,6 +50,12 @@ afterEach(() => {
 })
 
 describe('CanvasChatBox', () => {
+  it('does not mount the closed workbench over the canvas interaction surface', () => {
+    render(<CanvasChatBox open={false} onToggle={vi.fn()} onApplyPlan={vi.fn()} />)
+
+    expect(screen.queryByRole('region', { name: '画布 Agent 对话' })).not.toBeInTheDocument()
+  })
+
   it('keeps the permission modal clickable inside the on-canvas pointer-events shell', () => {
     const approve = vi.fn()
 

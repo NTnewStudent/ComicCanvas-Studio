@@ -87,7 +87,7 @@ const EVENT_PAYLOAD_SCHEMAS = {
     requirements: stringArraySchema,
     missing: stringArraySchema,
     localCapabilities: stringArraySchema,
-    recommendedAgentId: z.enum(['general-purpose', 'canvas-orchestrator']),
+    recommendedAgentId: z.enum(['general-purpose', 'canvas-orchestrator', 'canvas-operator']),
     executionMode: z.enum(['clarify', 'plan', 'direct']),
     complexity: z.enum(['low', 'medium', 'high'])
   }),

@@ -18,7 +18,7 @@ export interface AgentIntentAnalysis {
   requirements: string[]
   missing: string[]
   localCapabilities: string[]
-  recommendedAgentId: 'general-purpose' | 'canvas-orchestrator'
+  recommendedAgentId: 'general-purpose' | 'canvas-orchestrator' | 'canvas-operator'
   executionMode: AgentExecutionMode
   complexity: 'low' | 'medium' | 'high'
 }
@@ -28,6 +28,8 @@ const canvasActionPattern = /生成|创建|新建|添加|绘制|画一张|画一
 const currentCanvasObjectPattern = /当前画布|这个画布|本画布|当前工作流|这个工作流|本工作流|当前节点|这个节点|选中节点|当前连线|这个连线|current\s*canvas|current\s*workflow|selected\s*node|current\s*node/iu
 const currentCanvasActionPattern = /查一下|查询|查看|看看|列出|读取|创建|新建|添加|生成|运行|执行|连接|连线|修改|更新|删除|移除|编排|query|inspect|list|read|create|add|generate|run|execute|connect|update|delete|remove/iu
 const currentCanvasTopologyQueryPattern = /(查一下|查询|查看|看看|列出|读取).*(节点|连线|工作流).*(有哪些|多少|列表|数量|状态|关系)|(?:list|query|inspect|read).*(nodes|edges|workflow|graph)/iu
+const existingCanvasNodePattern = /(?:当前|这个|本|选中).{0,8}(?:角色|人物|场景|文本|图片|图像|视频|音频)?节点|(?:角色|人物|场景|文本|图片|图像|视频|音频)节点.{0,48}(?:改为|改成|修改|更新|填写|补充|完善|设置)|(?:update|edit|rename).{0,32}(?:current|selected|character|scene|node)/iu
+const existingCanvasMutationActionPattern = /改为|改成|修改|更新|填写|补充|完善|设置|替换|update|edit|rename|set/iu
 const vagueRequestPattern = /^(帮我弄一下|帮我做一下|处理一下|搞一下|随便做点|做点东西|弄个东西|make\s*something|do\s*something)$/iu
 const greetingPattern = /^(hi|hello|hey|哈喽|你好|您好|嗨|在吗|在不在|早|早上好|晚上好|下午好)$/iu
 /** 口语化寒暄变体（如「你好啊」「嗨呀」），normalize 后匹配。 */
@@ -54,6 +56,10 @@ function hasCanvasOperationIntent(message: string): boolean {
 
 function hasCurrentCanvasOperationIntent(message: string): boolean {
   return (currentCanvasObjectPattern.test(message) && currentCanvasActionPattern.test(message)) || currentCanvasTopologyQueryPattern.test(message)
+}
+
+function hasExistingCanvasNodeMutationIntent(message: string): boolean {
+  return existingCanvasNodePattern.test(message) && existingCanvasMutationActionPattern.test(message)
 }
 
 function unique(values: string[]): string[] {
@@ -178,6 +184,19 @@ export function analyzeAgentIntent(message: string): AgentIntentAnalysis {
   const hasCanvasIntent = hasCanvasOperationIntent(trimmed)
   const hasCurrentCanvasIntent = hasCurrentCanvasOperationIntent(trimmed)
 
+  if (hasExistingCanvasNodeMutationIntent(trimmed)) {
+    return {
+      kind: 'canvasOperation',
+      summary: '用户要求更新当前画布中的既有节点属性。',
+      requirements: ['Inspect the existing node and update only the requested fields.'],
+      missing: [],
+      localCapabilities: ['canvas.queryGraph', 'canvas.updateNodeData'],
+      recommendedAgentId: 'canvas-operator',
+      executionMode: 'direct',
+      complexity: 'low'
+    }
+  }
+
   if ((strongRequirementPlanningPattern.test(trimmed) || capabilityPlanningPattern.test(trimmed)) && !hasCanvasIntent) {
     return {
       kind: 'requirementPlanning',
@@ -248,7 +267,9 @@ export function analyzeAgentIntent(message: string): AgentIntentAnalysis {
  */
 export function formatIntentProgress(analysis: AgentIntentAnalysis): string {
   if (analysis.kind === 'canvasOperation') {
-    const mode = analysis.executionMode === 'direct' ? '直接产出简单画布计划' : '先提供任务计划'
+    const mode = analysis.recommendedAgentId === 'canvas-operator'
+      ? '直接更新既有节点'
+      : analysis.executionMode === 'direct' ? '直接产出简单画布计划' : '先提供任务计划'
     return `理解输入：${analysis.summary}；复杂度=${analysis.complexity}；${mode}；将交给 ${analysis.recommendedAgentId}。`
   }
 

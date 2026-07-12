@@ -8,6 +8,8 @@ import React, { useEffect, useRef, useState } from 'react'
 
 import type { TextNodeData } from '../../../../../../shared/nodes'
 import MentionTextarea from '../components/MentionTextarea'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import { NodeFrame, NodeHeader, NodePreview, NodeSelectionEditor } from '../components/NodePrimitives'
 import { RichTextToolbar, type RichTextCommand } from '../components/RichTextToolbar'
 import { TextFocusModal, textToParagraphHtml } from '../components/TextFocusModal'
 import { useInlineRename } from '../hooks/use-inline-rename'
@@ -57,14 +59,13 @@ function htmlForCommand(command: RichTextCommand, content: string): string {
  * @see docs/api-contracts/canvas-plan.md
  */
 function TextNodeComponent({ id, data, selected = false, onChange, onRename, onPolish }: TextNodeProps): JSX.Element {
-  const [isExpanded, setIsExpanded] = useState(false)
   const [isFocusOpen, setIsFocusOpen] = useState(false)
   const [content, setContent] = useState(data.content)
+  const editorOpen = useNodeEditorOpen(id)
   const rename = useInlineRename({
     value: data.label,
     onCommit: (next) => onRename?.(id, next)
   })
-  const nodeRef = useRef<HTMLElement>(null)
   const renameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -77,21 +78,6 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
       renameRef.current?.select()
     }
   }, [rename.isRenaming])
-
-  useEffect(() => {
-    if (!isExpanded) return
-
-    function collapseOnOutsidePointer(event: MouseEvent): void {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (nodeRef.current?.contains(target)) return
-
-      setIsExpanded(false)
-    }
-
-    document.addEventListener('mousedown', collapseOnOutsidePointer)
-    return () => document.removeEventListener('mousedown', collapseOnOutsidePointer)
-  }, [isExpanded])
 
   function updateContent(next: string): void {
     setContent(next)
@@ -116,26 +102,7 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
   const isPolishing = data.polishStatus === 'pending' || data.polishStatus === 'running'
 
   return (
-    <article
-      ref={nodeRef}
-      className={cn(
-        'h-full w-full',
-        NODE_UI_CLASS_NAMES.textShell,
-        selected && 'border-border-primary shadow-active'
-      )}
-      data-node-id={id}
-    >
-      {selected || isExpanded ? (
-        <div className="absolute left-3 right-3 top-[-48px] z-20 flex justify-center">
-          <RichTextToolbar
-            {...(data.polishStatus ? { polishStatus: data.polishStatus } : {})}
-            onCommand={applyRichTextCommand}
-            onOpenFocus={() => setIsFocusOpen(true)}
-            onPolish={requestPolish}
-          />
-        </div>
-      ) : null}
-
+    <NodeFrame selected={selected} className={cn('h-full w-full', NODE_UI_CLASS_NAMES.textShell)} data-node-id={id}>
       <NodeResizer
         isVisible={selected}
         minWidth={NODE_MIN_WIDTH.text}
@@ -144,8 +111,9 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className={NODE_UI_CLASS_NAMES.header}>
-        {rename.isRenaming ? (
+      <NodeHeader
+        icon="T"
+        title={rename.isRenaming ? (
           <input
             ref={renameRef}
             aria-label="重命名文本节点"
@@ -159,13 +127,12 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
           <button
             type="button"
             className={cn('cursor-text bg-transparent p-0 text-left outline-none focus-visible:shadow-[0_0_0_4px_var(--cc-focus-ring)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand', NODE_UI_CLASS_NAMES.title)}
-            onClick={() => setIsExpanded(true)}
             onDoubleClick={rename.start}
           >
             {rename.value}
           </button>
         )}
-        {data.polishStatus ? (
+        status={data.polishStatus ? (
           <span
             className={cn(
               'ml-auto rounded-sm border border-border-secondary bg-bg-input px-2 py-1 text-[11px] font-medium text-text-muted',
@@ -174,30 +141,16 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
           >
             {isPolishing ? '润色中' : data.polishStatus === 'done' ? '润色完成' : data.polishStatus === 'error' ? '润色失败' : '等待润色'}
           </span>
-        ) : null}
-      </header>
+        ) : undefined}
+      />
 
-      {isExpanded ? (
-        <MentionTextarea
-          ariaLabel="文本内容"
-          className={cn('min-h-[116px] flex-1 resize-none', NODE_UI_CLASS_NAMES.field)}
-          value={content}
-          onChange={updateContent}
-          onBlur={() => setIsExpanded(false)}
-          rows={5}
-          sourceNodeId={id}
-        />
-      ) : (
-        <button
-          type="button"
-          className={cn('min-h-[116px] flex-1 cursor-text overflow-auto whitespace-pre-wrap break-words text-left', NODE_UI_CLASS_NAMES.field)}
-          onClick={() => setIsExpanded(true)}
-        >
+      <NodePreview className="min-h-[116px] whitespace-pre-wrap break-words">
+        <p className="m-0 text-left text-sm leading-6 text-text-secondary">
           {content || '写一段节拍、提示词或场景备注'}
-        </button>
-      )}
+        </p>
+      </NodePreview>
 
-      {chips.length > 0 ? (
+      {!editorOpen && chips.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {chips.map((chip) => (
             <span
@@ -210,14 +163,28 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
         </div>
       ) : null}
 
-      {selected || isExpanded ? (
+      <NodeSelectionEditor open={editorOpen} testId="text-node-editor">
+        <RichTextToolbar
+          {...(data.polishStatus ? { polishStatus: data.polishStatus } : {})}
+          onCommand={applyRichTextCommand}
+          onOpenFocus={() => setIsFocusOpen(true)}
+          onPolish={requestPolish}
+        />
+        <MentionTextarea
+          ariaLabel="文本内容"
+          className={cn('min-h-[148px] w-full resize-y', NODE_UI_CLASS_NAMES.field)}
+          value={content}
+          onChange={updateContent}
+          rows={6}
+          sourceNodeId={id}
+        />
         <div
           aria-label="Prompt 贡献预览"
-          className="max-h-16 overflow-auto rounded-md border border-border-secondary bg-bg-input/60 px-2.5 py-2 text-[11px] leading-[1.5] text-text-muted"
+          className="max-h-20 overflow-auto rounded-md border border-border-secondary bg-bg-input/60 px-3 py-2 text-[11px] leading-[1.5] text-text-muted"
         >
           {content || '该文本节点尚无 prompt 贡献'}
         </div>
-      ) : null}
+      </NodeSelectionEditor>
 
       {isFocusOpen ? (
         <TextFocusModal
@@ -226,7 +193,6 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
           onSave={(nextContent, html) => {
             updateContentAndHtml(nextContent, html)
             setIsFocusOpen(false)
-            setIsExpanded(false)
           }}
         />
       ) : null}
@@ -234,7 +200,7 @@ function TextNodeComponent({ id, data, selected = false, onChange, onRename, onP
       {/* 输入/输出连接点 */}
       <Handle type="target" position={Position.Left} className="cc-handle" />
       <Handle type="source" position={Position.Right} className="cc-handle" />
-    </article>
+    </NodeFrame>
   )
 }
 

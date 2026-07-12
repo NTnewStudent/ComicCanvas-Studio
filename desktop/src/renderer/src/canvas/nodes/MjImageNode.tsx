@@ -11,7 +11,15 @@ import { useStore } from 'zustand'
 
 import type { MjImageNodeData } from '../../../../../../shared/nodes'
 import { cn } from '../../lib/cn'
-import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import {
+  NodeFrame,
+  NodeHeader,
+  NodePreview,
+  NodeSelectionEditor,
+  NodeSummaryRows,
+} from '../components/NodePrimitives'
+import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES, NODE_UI_CLASS_NAMES } from '../lib/node-sizing'
 import { canvasStore } from '../store/canvas.store'
 
 /** Renderer props for the production MJ image node. */
@@ -47,15 +55,15 @@ function MjImageNodeComponent({ id, data, selected = false, onChange }: MjImageN
   )
   const urls = data.urls ?? []
   const selectedIndex = data.selectedIndex ?? 0
+  const selectedUrl = urls[selectedIndex] ?? data.url
+  const editorOpen = useNodeEditorOpen(id)
 
   return (
-    <article
+    <NodeFrame
       role="group"
       aria-label={`MJ Image node ${data.label}`}
-      className={cn(
-        'relative flex h-full min-h-[390px] w-full min-w-[360px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
-        selected && 'border-border-primary shadow-active'
-      )}
+      selected={selected}
+      className="h-full w-full"
       data-node-id={id}
       data-node-type="mjImage"
     >
@@ -67,70 +75,85 @@ function MjImageNodeComponent({ id, data, selected = false, onChange }: MjImageN
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="flex items-center gap-2">
-        <ImagePlus className="h-4 w-4 text-brand" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">MJ Image</div>
-          <div className="truncate text-[15px] font-semibold text-text-base">{data.label}</div>
+      <NodeHeader
+        icon={<ImagePlus className="h-4 w-4" />}
+        title={data.label}
+        meta="MJ Image"
+        status={data.status}
+      />
+
+      <NodePreview className="flex min-h-[180px] items-center justify-center">
+        {selectedUrl ? (
+          <img src={selectedUrl} alt={`${data.label} 当前 MJ 结果`} className="h-full w-full object-contain" />
+        ) : (
+          <Sparkles className="h-7 w-7 text-text-muted" />
+        )}
+      </NodePreview>
+
+      <div className="line-clamp-2 text-[12px] leading-relaxed text-text-secondary">
+        {data.prompt?.trim() || '未填写 Prompt'}
+      </div>
+
+      <NodeSummaryRows
+        rows={[
+          { label: '模型', value: data.modelId ?? '未选择' },
+          { label: '画幅', value: data.ratio ?? '1:1' },
+          { label: '结果', value: `${urls.filter(Boolean).length}/4` },
+        ]}
+      />
+
+      <NodeSelectionEditor open={editorOpen} testId="mj-image-node-editor">
+        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-muted">
+          MJ Prompt
+          <textarea
+            aria-label="MJ Prompt"
+            className={cn('min-h-[88px] resize-none py-2 leading-relaxed', NODE_UI_CLASS_NAMES.field)}
+            value={data.prompt ?? ''}
+            onChange={(event) => update({ prompt: event.target.value })}
+            placeholder="描述一组关键帧图像"
+          />
+        </label>
+
+        <div className="grid grid-cols-2 gap-2">
+          {[0, 1, 2, 3].map((index) => {
+            const url = urls[index]
+            const isSelected = selectedIndex === index
+            return (
+              <button
+                key={index}
+                type="button"
+                aria-label={`选择 MJ 结果 ${index + 1}`}
+                aria-pressed={isSelected}
+                className={cn(
+                  'relative aspect-video overflow-hidden rounded-md border border-border-input bg-bg-input text-[12px] text-text-muted transition hover:border-border-primary',
+                  isSelected && 'border-brand shadow-[0_0_0_1px_var(--cc-brand)]'
+                )}
+                onClick={() => {
+                  if (url) update({ selectedIndex: index, url })
+                }}
+              >
+                {url ? (
+                  <img src={url} alt={`MJ result ${index + 1}`} className="h-full w-full object-contain" />
+                ) : (
+                  <span className="flex h-full items-center justify-center gap-1">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    空结果
+                  </span>
+                )}
+                {isSelected ? (
+                  <span className="absolute bottom-1 right-1 rounded-full bg-brand p-1 text-bg-base">
+                    <Check className="h-3 w-3" />
+                  </span>
+                ) : null}
+              </button>
+            )
+          })}
         </div>
-        <span className="rounded-sm bg-bg-input px-2 py-1 text-[11px] text-text-muted">{data.status}</span>
-      </header>
-
-      <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">
-        MJ Prompt
-        <textarea
-          aria-label="MJ Prompt"
-          className="min-h-[72px] resize-none rounded-sm border border-border-input bg-bg-input px-2 py-1.5 text-[13px] leading-relaxed text-text-base outline-none focus:ring-1 focus:ring-brand"
-          value={data.prompt ?? ''}
-          onChange={(event) => update({ prompt: event.target.value })}
-          placeholder="描述一组关键帧图像"
-        />
-      </label>
-
-      <div className="grid grid-cols-2 gap-2">
-        {[0, 1, 2, 3].map((index) => {
-          const url = urls[index]
-          const isSelected = selectedIndex === index
-          return (
-            <button
-              key={index}
-              type="button"
-              aria-label={`选择 MJ 结果 ${index + 1}`}
-              aria-pressed={isSelected}
-              className={cn(
-                'relative aspect-video overflow-hidden rounded-lg border border-border-input bg-bg-input text-[12px] text-text-muted transition hover:border-border-primary',
-                isSelected && 'border-brand shadow-[0_0_0_1px_var(--cc-brand)]'
-              )}
-              onClick={() => {
-                if (url) update({ selectedIndex: index, url })
-              }}
-            >
-              {url ? (
-                <img src={url} alt={`MJ result ${index + 1}`} className="h-full w-full object-contain" />
-              ) : (
-                <span className="flex h-full items-center justify-center gap-1">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  空结果
-                </span>
-              )}
-              {isSelected ? (
-                <span className="absolute bottom-1 right-1 rounded-full bg-brand p-1 text-bg-base">
-                  <Check className="h-3 w-3" />
-                </span>
-              ) : null}
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="flex items-center justify-between gap-2 text-[12px] text-text-muted">
-        <span>{data.modelId ?? '未选择模型'}</span>
-        <span>{data.ratio ?? '1:1'}</span>
-      </div>
+      </NodeSelectionEditor>
 
       <Handle type="target" position={Position.Left} className="cc-handle" />
       <Handle type="source" position={Position.Right} className="cc-handle" />
-    </article>
+    </NodeFrame>
   )
 }
 

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { SuperResolutionNodeData } from '../shared/nodes'
 import { SuperResolutionNode } from '../desktop/src/renderer/src/canvas/nodes/SuperResolutionNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 function renderInFlow(element: React.ReactElement): void {
   render(<ReactFlowProvider>{element}</ReactFlowProvider>)
@@ -25,7 +26,7 @@ describe('Task 35 super resolution node parity', () => {
     const onWriteOutputAsset = vi.fn()
 
     renderInFlow(
-      <SuperResolutionNode
+      <NodeEditorProvider selectedNodeIds={['super-1']}><SuperResolutionNode
         id="super-1"
         selected
         data={{
@@ -41,7 +42,7 @@ describe('Task 35 super resolution node parity', () => {
         onChange={onChange}
         onRun={onRun}
         onWriteOutputAsset={onWriteOutputAsset}
-      />
+      /></NodeEditorProvider>
     )
 
     expect(screen.getByText('video-source-1')).toBeInTheDocument()

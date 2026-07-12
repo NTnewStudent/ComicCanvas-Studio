@@ -620,6 +620,7 @@ describe('Gateway-backed Agent loop planner', () => {
     expect(prompts[0]).toContain('Use web.search before answering current, latest, price, news, or time-sensitive questions')
     expect(prompts[0]).toContain('If web.search is unavailable or denied, say that clearly')
     expect(prompts[0]).toContain('cite the relevant source URL or numbered source marker')
+    expect(prompts[0]).toContain('CanvasPlan only describes new nodes, edges, and run steps')
     expect(prompts[1]).toContain('\\"nodeCount\\":0')
     expect(expectAgentResponse(next.value)).toEqual({ type: 'canvasPlan', plan: finalPlan })
   })
@@ -667,6 +668,53 @@ describe('Gateway-backed Agent loop planner', () => {
     }
     expect(response.plan.nodes.map((node) => node.type)).toEqual(['text', 'imageConfigV2'])
     expect(response.plan.dropped).toEqual(expect.arrayContaining(['model:raw-warning', 'node:legacy:unsupported_type']))
+  })
+
+  it('turns a fully dropped model mutation into a clarification instead of an empty plan', async () => {
+    const planner = createGatewayAgentPlanner({
+      gateways: {
+        invoke() {
+          return Promise.resolve(textResult(JSON.stringify({
+            type: 'canvasPlan',
+            plan: {
+              kind: 'plan',
+              summary: 'Update Character 1 to 凌霜月.',
+              nodes: [{ type: 'character', title: '凌霜月', data: { label: '凌霜月' } }],
+              edges: [],
+              runSteps: [],
+              question: null,
+              dropped: []
+            }
+          })))
+        }
+      },
+      tools: createToolRuntime(),
+      listTools: () => [queryGraphDescriptor]
+    })
+    const result = planner.proposePlan({
+      runId: 'run-fully-dropped-plan',
+      messageId: 'message-fully-dropped-plan',
+      message: '把当前角色节点 Character 1 改为凌霜月',
+      agentId: 'orchestrator',
+      agent: agent(),
+      trigger: 'canvasChat'
+    })
+
+    if (!(typeof result === 'object' && result !== null && Symbol.asyncIterator in result)) {
+      throw new Error('expected_async_gateway_planner')
+    }
+
+    let next = await result.next()
+    while (!next.done) {
+      next = await result.next()
+    }
+
+    const response = expectAgentResponse(next.value)
+    expect(response.type).toBe('clarification')
+    if (response.type !== 'clarification') {
+      throw new Error('expected_clarification_response')
+    }
+    expect(response.dropped).toContain('node[0].ref:invalid_string')
   })
 
   it('converts invalid model JSON into a safe clarify plan with dropped audit', async () => {

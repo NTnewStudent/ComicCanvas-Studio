@@ -69,6 +69,14 @@ import MentionTextarea from '../components/MentionTextarea'
 import type { CanvasMentionTarget } from '../lib/canvas-mention-links'
 import { createMentionReferenceEdge, mentionTargetsForNodes, pruneMentionReferenceEdges } from '../lib/canvas-mention-links'
 import { canvasStore } from '../store/canvas.store'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import {
+  NodeFrame,
+  NodeHeader,
+  NodePreview,
+  NodeSelectionEditor,
+  NodeSummaryRows,
+} from '../components/NodePrimitives'
 
 // ─── 常量 ──────────────────────────────────────────────────────────────────
 
@@ -290,7 +298,7 @@ const VideoToolbar: FC<ToolbarProps> = ({
   return (
     <div
       data-testid="video-config-v2-toolbar"
-      className={NODE_UI_CLASS_NAMES.toolbar}
+      className={cn(NODE_UI_CLASS_NAMES.toolbar, 'w-[min(520px,calc(100vw-32px))]')}
     >
       {/* ── 提示词输入 ── */}
       <MentionTextarea
@@ -510,9 +518,10 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
   const storeNodeData = canvasNodes.find((node) => node.id === id)?.data as VideoNodeData | undefined
   const d: VideoNodeData = { ...(data as unknown as VideoNodeData), ...(storeNodeData ?? {}) }
   const runStatus = d.status ?? 'idle'
+  const editorOpen = useNodeEditorOpen(id)
 
   // ── 本地状态 ──
-  const [isHovered, setIsHovered] = useState(false)
+  const [, setIsHovered] = useState(false)
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false)
   const [isPreviewPinned, setIsPreviewPinned] = useState(false)
   const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null)
@@ -520,7 +529,6 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
   const [styleLoadState, setStyleLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
 
   const previewVideoRef = useRef<HTMLVideoElement>(null)
-  const showControls = isHovered || !!selected
 
   // ── 派生值 ──
   const ratio = d.ratio ?? '9:16'
@@ -676,65 +684,24 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      {/* ── 顶部悬浮操作栏 ── */}
-      {showControls && (
-        <div
-          className="border border-border-primary bg-bg-panel shadow-card"
-          style={{
-            position: 'absolute',
-            zIndex: 20,
-            top: -40,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 280,
-            height: 32,
-            borderRadius: 16,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 3,
-            backdropFilter: 'blur(8px)',
-            padding: '2px 4px',
-          }}
-        >
-          <button
-            type="button"
-            className="nodrag flex cursor-pointer items-center gap-1 rounded-full border-none bg-transparent px-3 py-1 text-[12px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base"
-            onClick={handleUploadClick}
-          >
-            <Upload className="h-3.5 w-3.5" style={{ strokeWidth: 2.2 }} />
-            上传
-          </button>
-          <button
-            type="button"
-            className="nodrag flex cursor-pointer items-center gap-1 rounded-full border-none bg-transparent px-3 py-1 text-[12px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-base"
-            onClick={handleAssetLibraryClick}
-          >
-            <FolderOpen className="h-3.5 w-3.5" style={{ strokeWidth: 2.2 }} />
-            资产库
-          </button>
-        </div>
-      )}
-
-      {/* ── 标签行 ── */}
-      <article
-        className="relative flex h-full w-full flex-col items-center p-0"
+      <NodeFrame
+        selected={selected ?? false}
+        data-testid="video-v2-node-frame"
+        className="relative flex h-full w-full flex-col"
       >
-        <header className="flex min-h-8 w-full shrink-0 items-center gap-[5px] self-start px-3 pb-1.5 pt-2.5 text-[12px] text-text-muted">
-          <Film className="h-3.5 w-3.5 text-text-muted" />
-          <span className="font-semibold text-text-muted">
-            {d.label || '视频配置'}
-          </span>
-          <RunStatusBadge status={runStatus} className="ml-auto" />
-        </header>
+        <NodeHeader
+          icon={<Film className="h-3.5 w-3.5" />}
+          title={d.label || '视频配置'}
+          meta={VIDEO_MODELS.find((model) => model.id === d.modelId)?.label ?? d.modelId}
+          status={<RunStatusBadge status={runStatus} />}
+        />
 
         {/* ── 预览卡 ── */}
         <div className="relative flex min-h-0 w-full flex-1 px-3 pb-3" style={{ minWidth: cardWidth + 24 }}>
-          <div
+          <NodePreview
             data-testid="video-v2-preview"
             className={cn(
-              'group relative h-full min-h-0 w-full overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
-              selected && 'border-border-primary shadow-active',
+              'group relative h-full min-h-0 w-full overflow-hidden',
             )}
             style={previewCardStyle}
             onMouseEnter={handlePreviewMouseEnter}
@@ -847,8 +814,14 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
                 </div>
               </div>
             )}
-          </div>
+          </NodePreview>
         </div>
+
+        <NodeSummaryRows rows={[
+          { label: '画幅', value: `${ratio} · ${d.resolution ?? '720p'}` },
+          { label: '时长', value: `${d.duration ?? d.durationSeconds ?? 5}s` },
+          { label: '素材', value: `${d.referenceAssets?.length ?? 0} 个 · 首帧${d.firstFrameAssetId || d.firstFrameAssetV2Id ? '已设' : '未设'} · 尾帧${d.lastFrameAssetId || d.lastFrameAssetV2Id ? '已设' : '未设'}` },
+        ]} />
 
         {/* ── Handle ── */}
         <Handle
@@ -863,14 +836,27 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
           id="right"
           className="cc-handle"
         />
-      </article>
+      </NodeFrame>
 
-      {/* ── Toolbar（仅选中时显示） ── */}
-      {selected && (
-        <div
-          className="absolute z-30"
-          style={{ top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 8 }}
-        >
+      <NodeSelectionEditor open={editorOpen} testId="video-config-v2-editor">
+        <div className="mb-3 flex items-center gap-2 border-b border-border-secondary/50 pb-3">
+          <button
+            type="button"
+            className="nodrag flex h-8 items-center gap-1.5 rounded-md border border-border-input px-3 text-[12px] font-medium text-text-secondary hover:bg-bg-hover"
+            onClick={handleUploadClick}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            上传
+          </button>
+          <button
+            type="button"
+            className="nodrag flex h-8 items-center gap-1.5 rounded-md border border-border-input px-3 text-[12px] font-medium text-text-secondary hover:bg-bg-hover"
+            onClick={handleAssetLibraryClick}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            资产库
+          </button>
+        </div>
           <VideoToolbar
             nodeId={id}
             data={d}
@@ -883,8 +869,7 @@ const VideoConfigV2Node: FC<VideoConfigV2NodeProps> = ({ id, data, selected, onR
             onMentionsChange={pruneMentionReferenceEdges}
             {...(onRun ? { onRun } : {})}
           />
-        </div>
-      )}
+      </NodeSelectionEditor>
 
       {/* ── 全屏视频预览 ── */}
       {fullscreenUrl !== null && (

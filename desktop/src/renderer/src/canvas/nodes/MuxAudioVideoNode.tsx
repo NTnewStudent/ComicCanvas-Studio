@@ -4,12 +4,13 @@
  */
 
 import { Handle, NodeResizer, Position } from '@xyflow/react'
-import { AudioLines, Film, Play, Save, Tv2 } from 'lucide-react'
+import { Film, Play, Save, Tv2 } from 'lucide-react'
 import React, { useCallback } from 'react'
 import { useStore } from 'zustand'
 
 import type { MuxAudioVideoNodeData } from '../../../../../../shared/nodes'
-import { cn } from '../../lib/cn'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import { NodeEditorFooter, NodeFrame, NodeHeader, NodePreview, NodeSelectionEditor, NodeSummaryRows } from '../components/NodePrimitives'
 import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
 import { canvasStore } from '../store/canvas.store'
 
@@ -56,6 +57,7 @@ function MuxAudioVideoNodeComponent({
     [id, onChange, updateNodeData]
   )
   const isRunning = data.status === 'pending' || data.status === 'running'
+  const editorOpen = useNodeEditorOpen(id)
 
   const handleRun = useCallback(() => {
     if (isRunning) return
@@ -64,13 +66,11 @@ function MuxAudioVideoNodeComponent({
   }, [id, isRunning, onRun, update])
 
   return (
-    <article
+    <NodeFrame
+      className="h-full w-full"
       role="group"
       aria-label={`音视频合成节点 ${data.label}`}
-      className={cn(
-        'relative flex h-full min-h-[470px] w-full min-w-[380px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
-        selected && 'border-border-primary shadow-active'
-      )}
+      selected={selected}
       data-node-id={id}
       data-node-type="muxAudioVideo"
     >
@@ -82,27 +82,8 @@ function MuxAudioVideoNodeComponent({
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="flex items-center gap-2">
-        <Tv2 className="h-4 w-4 text-brand" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">音视频合成</div>
-          <div className="truncate text-[15px] font-semibold text-text-base">{data.label}</div>
-        </div>
-        <span className="rounded-sm bg-bg-input px-2 py-1 text-[11px] text-text-muted">{data.status}</span>
-      </header>
-
-      <div className="grid gap-2">
-        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-muted">
-          <Film className="h-4 w-4" />
-          <span className="min-w-0 flex-1 truncate">{data.videoInputId ?? '连接视频输入'}</span>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border-input bg-bg-input px-3 py-2 text-[13px] text-text-muted">
-          <AudioLines className="h-4 w-4" />
-          <span className="min-w-0 flex-1 truncate">{data.audioInputId ?? '连接音频输入'}</span>
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-lg border border-border-input bg-bg-input">
+      <NodeHeader icon={<Tv2 className="h-4 w-4" />} title={data.label} meta="音视频合成" status={data.status} />
+      <NodePreview>
         {data.url ? (
           <video
             data-testid="mux-output"
@@ -111,24 +92,22 @@ function MuxAudioVideoNodeComponent({
             className="aspect-video w-full bg-black object-contain"
           />
         ) : (
-          <div className="flex aspect-video items-center justify-center text-[13px] text-text-muted">
+          <div className="flex aspect-video items-center justify-center gap-2 text-[13px] text-text-muted"><Film className="h-4 w-4" />
             音视频输出等待队列回写
           </div>
         )}
-      </div>
+      </NodePreview>
+      <NodeSummaryRows rows={[
+        { label: '视频', value: data.videoInputId ?? '等待连接' },
+        { label: '音频', value: data.audioInputId ?? '等待连接' },
+        { label: '模型', value: data.modelId || '未配置' }
+      ]} />
 
-      <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">
-        音视频合成模型
-        <input
-          aria-label="音视频合成模型"
-          className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
-          value={data.modelId ?? ''}
-          onChange={(event) => update({ modelId: event.target.value })}
-        />
-      </label>
-
-      {selected && (
-        <>
+      <NodeSelectionEditor open={editorOpen} testId="mux-audio-video-node-editor">
+        <div className="grid gap-3">
+          <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">音视频合成模型
+            <input aria-label="音视频合成模型" className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand" value={data.modelId ?? ''} onChange={(event) => update({ modelId: event.target.value })} />
+          </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">
               视频输入
@@ -150,7 +129,8 @@ function MuxAudioVideoNodeComponent({
             </label>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+        </div>
+        <NodeEditorFooter>
             <button
               type="button"
               aria-label="运行音视频合成"
@@ -173,13 +153,12 @@ function MuxAudioVideoNodeComponent({
               <Save className="h-3.5 w-3.5" />
               写回
             </button>
-          </div>
-        </>
-      )}
+        </NodeEditorFooter>
+      </NodeSelectionEditor>
 
       <Handle type="target" position={Position.Left} className="cc-handle" />
       <Handle type="source" position={Position.Right} className="cc-handle" />
-    </article>
+    </NodeFrame>
   )
 }
 

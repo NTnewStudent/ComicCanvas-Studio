@@ -33,7 +33,6 @@ import {
   NODE_MIN_HEIGHT,
   NODE_MIN_WIDTH,
   NODE_RESIZER_CLASS_NAMES,
-  NODE_UI_CLASS_NAMES,
 } from '../lib/node-sizing'
 import { canvasStore } from '../store/canvas.store'
 import RunStatusBadge from '../components/RunStatusBadge'
@@ -41,6 +40,15 @@ import Chip from '../components/Chip'
 import PopoverMenu from '../components/PopoverMenu'
 import PromptFocusModal from '../components/PromptFocusModal'
 import MentionTextarea from '../components/MentionTextarea'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import {
+  NodeEditorFooter,
+  NodeFrame,
+  NodeHeader,
+  NodePreview,
+  NodeSelectionEditor,
+  NodeSummaryRows,
+} from '../components/NodePrimitives'
 import { createMentionReferenceEdge, mentionTargetsForNodes, pruneMentionReferenceEdges } from '../lib/canvas-mention-links'
 
 interface UpstreamImageReference {
@@ -120,6 +128,7 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
   const deleteNode = useStore(canvasStore, (s) => s.deleteNode)
   const canvasNodes = useStore(canvasStore, (s) => s.nodes)
   const canvasEdges = useStore(canvasStore, (s) => s.edges)
+  const editorOpen = useNodeEditorOpen(id)
 
   const [isHovered, setIsHovered] = useState(false)
   const [isFocusModeOpen, setIsFocusModeOpen] = useState(false)
@@ -302,50 +311,44 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="mb-1.5 flex min-h-8 shrink-0 items-center gap-1.5 px-1 text-xs font-medium text-text-muted">
-        <ImagePlus className="h-3.5 w-3.5 text-text-muted" />
-        {isEditingTitle ? (
-          <input
-            ref={titleInputRef}
-            className="nodrag w-[160px] rounded-lg border border-brand bg-bg-input px-2 py-1 text-[13px] text-text-base outline-none"
-            value={d.label}
-            onChange={(e) => updateNodeData(id, { label: e.target.value })}
-            onBlur={handleTitleBlur}
-            onKeyDown={handleTitleKeyDown}
-          />
-        ) : (
-          <span
-            className="max-w-[190px] cursor-pointer truncate"
-            onDoubleClick={handleTitleDoubleClick}
-            title="双击重命名"
-          >
-            {d.label || '生图节点'}
-          </span>
-        )}
-        <RunStatusBadge status={status} />
-      </header>
-
-      <div
-        className={cn(
-          'group relative flex min-h-0 w-full flex-1 overflow-hidden rounded-xl border border-border-secondary bg-bg-card shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
-          selected && 'border-border-primary shadow-active',
-          generating && 'cc-generating-ring',
-          hasError && 'cc-failed-shake',
-        )}
+      <NodeFrame
+        selected={selected ?? false}
+        data-testid="image-config-v2-node"
+        className={cn('group relative w-full', generating && 'cc-generating-ring', hasError && 'cc-failed-shake')}
       >
-        {showControls && (
+        <NodeHeader
+          icon={<ImagePlus className="h-4 w-4" />}
+          title={isEditingTitle ? (
+            <input
+              ref={titleInputRef}
+              className="nodrag w-full rounded-md border border-brand bg-bg-input px-2 py-1 text-[13px] text-text-base outline-none"
+              value={d.label}
+              onChange={(e) => updateNodeData(id, { label: e.target.value })}
+              onBlur={handleTitleBlur}
+              onKeyDown={handleTitleKeyDown}
+            />
+          ) : (
+            <span onDoubleClick={handleTitleDoubleClick} title="双击重命名">
+              {d.label || '生图节点'}
+            </span>
+          )}
+          meta={modelLabel}
+          status={<RunStatusBadge status={status} />}
+          actions={showControls ? (
           <button
             type="button"
             onClick={handleDelete}
-            className="nodrag absolute right-3 top-3 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white opacity-0 shadow-md transition-all hover:bg-black group-hover:opacity-100"
+            className="nodrag flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-text-base"
+            aria-label="删除节点"
             title="删除节点"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
-        )}
+          ) : null}
+        />
 
-        <div
-          className="relative h-full min-h-0 w-full overflow-hidden rounded-lg border border-border-input bg-bg-input"
+        <NodePreview
+          className="group relative aspect-video min-h-[180px] overflow-hidden bg-bg-input"
           data-testid="image-config-v2-preview"
         >
           {generating ? (
@@ -413,9 +416,16 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
               </button>
             </div>
           )}
-        </div>
-      </div>
+        </NodePreview>
 
+        <NodeSummaryRows rows={[
+          { label: '画幅', value: ratio },
+          { label: '风格', value: styleLabel },
+          { label: '结果', value: resultUrls.length > 0 ? `${selectedResultIndex + 1} / ${resultUrls.length}` : '暂无' },
+        ]} />
+      </NodeFrame>
+
+      <NodeSelectionEditor open={editorOpen} testId="image-config-v2-editor">
       {(upstreamImageReferences.length > 0 || resultUrls.length > 0) && (
         <section className="mt-2 flex w-full flex-col gap-2 rounded-lg border border-border-secondary bg-bg-card/95 p-2 text-[11px] text-text-muted shadow-sm">
           {upstreamImageReferences.length > 0 && (
@@ -492,13 +502,7 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
         </section>
       )}
 
-      {selected && (
-        <div
-          className="absolute z-30"
-          style={{ top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 4 }}
-          data-testid="image-config-v2-toolbar"
-        >
-          <div className={NODE_UI_CLASS_NAMES.toolbar}>
+          <div data-testid="image-config-v2-toolbar">
             <div className="relative min-h-[78px]">
               <MentionTextarea
                 value={d.prompt ?? ''}
@@ -521,8 +525,9 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
               </button>
             </div>
 
+            <NodeEditorFooter>
             <div
-              className="mt-2 flex flex-wrap items-center gap-2 border-t border-border-secondary/50 pt-2.5 text-[12px]"
+              className="flex w-full flex-wrap items-center gap-2 text-[12px]"
               data-testid="image-config-v2-controls"
             >
               <PopoverMenu
@@ -588,9 +593,9 @@ const ImageConfigV2Node: FC<ImageConfigV2NodeProps> = ({
                 )}
               </button>
             </div>
+            </NodeEditorFooter>
           </div>
-        </div>
-      )}
+      </NodeSelectionEditor>
 
       <Handle
         type="target"

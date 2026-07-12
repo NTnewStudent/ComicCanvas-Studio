@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ImageConfigV2Node from '../desktop/src/renderer/src/canvas/nodes/ImageConfigV2Node'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 import { canvasStore } from '../desktop/src/renderer/src/canvas/store/canvas.store'
 import type { StylePresetView } from '../shared/styles'
 
@@ -42,7 +43,10 @@ afterEach(() => {
   cleanup()
 })
 
-function renderImageConfig(onRun?: (id: string) => void): void {
+function renderImageConfig(
+  onRun?: (id: string) => void,
+  activeEditorId: string | null = 'image-config',
+): void {
   canvasStore.getState().setNodes([
     {
       id: 'reference-image',
@@ -89,38 +93,50 @@ function renderImageConfig(onRun?: (id: string) => void): void {
 
   render(
     <ReactFlowProvider>
-      <ImageConfigV2Node
-        id="image-config"
-        selected
-        data={{
-          label: 'Image Config',
-          promptOverride: '',
-          prompt: 'rainy hero key art',
-          modelId: 'sd-xl',
-          orientation: 'landscape',
-          ratio: '16:9',
-          stylePresetId: 'style-ink',
-          urls: ['cc-asset://asset/result-a', 'cc-asset://asset/result-b'],
-          selectedIndex: 0,
-          assetId: 'asset-result-a',
-          url: 'cc-asset://asset/result-a',
-          status: 'done'
-        }}
-        {...(onRun ? { onRun } : {})}
-      />
+      <NodeEditorProvider selectedNodeIds={activeEditorId ? [activeEditorId] : []}>
+        <ImageConfigV2Node
+          id="image-config"
+          selected={activeEditorId === 'image-config'}
+          data={{
+            label: 'Image Config',
+            promptOverride: '',
+            prompt: 'rainy hero key art',
+            modelId: 'sd-xl',
+            orientation: 'landscape',
+            ratio: '16:9',
+            stylePresetId: 'style-ink',
+            urls: ['cc-asset://asset/result-a', 'cc-asset://asset/result-b'],
+            selectedIndex: 0,
+            assetId: 'asset-result-a',
+            url: 'cc-asset://asset/result-a',
+            status: 'done'
+          }}
+          {...(onRun ? { onRun } : {})}
+        />
+      </NodeEditorProvider>
     </ReactFlowProvider>
   )
 }
 
 describe('Task 30 imageConfigV2 parity', () => {
+  it('keeps the collapsed node compact without mounting configuration controls', () => {
+    renderImageConfig(undefined, null)
+
+    expect(screen.getByTestId('image-config-v2-node')).toHaveClass('cc-node-frame')
+    expect(screen.queryByTestId('image-config-v2-editor')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '选择图片结果 2' })).not.toBeInTheDocument()
+  })
+
   it('shows prompt/model/style/ratio controls for image generation config', async () => {
     renderImageConfig()
 
+    expect(screen.getByTestId('image-config-v2-editor')).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveValue('rainy hero key art')
-    expect(await screen.findByText(/Industrial Ink/u)).toBeInTheDocument()
-    expect(screen.getByText(/16:9/u)).toBeInTheDocument()
+    expect(await screen.findByText('Industrial Ink ▾')).toBeInTheDocument()
+    expect(screen.getByText('16:9 横屏 ▾')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText(/SDXL/u))
+    fireEvent.click(screen.getByText('SDXL ▾'))
     expect(screen.getByText('Flux Pro')).toBeInTheDocument()
   })
 

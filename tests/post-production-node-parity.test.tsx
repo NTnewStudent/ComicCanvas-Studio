@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MuxAudioVideoNodeData, VideoComposeNodeData } from '../shared/nodes'
 import { MuxAudioVideoNode } from '../desktop/src/renderer/src/canvas/nodes/MuxAudioVideoNode'
 import { VideoComposeNode } from '../desktop/src/renderer/src/canvas/nodes/VideoComposeNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 
 function renderInFlow(element: React.ReactElement): void {
   render(<ReactFlowProvider>{element}</ReactFlowProvider>)
@@ -26,7 +27,7 @@ describe('Task 34 video compose and mux node parity', () => {
     const onWriteOutputAsset = vi.fn()
 
     renderInFlow(
-      <VideoComposeNode
+      <NodeEditorProvider selectedNodeIds={['compose-1']}><VideoComposeNode
         id="compose-1"
         selected
         data={{
@@ -41,7 +42,7 @@ describe('Task 34 video compose and mux node parity', () => {
         onChange={onChange}
         onRun={onRun}
         onWriteOutputAsset={onWriteOutputAsset}
-      />
+      /></NodeEditorProvider>
     )
 
     expect(screen.getByText('video-a')).toBeInTheDocument()
@@ -68,7 +69,7 @@ describe('Task 34 video compose and mux node parity', () => {
     const onWriteOutputAsset = vi.fn()
 
     renderInFlow(
-      <MuxAudioVideoNode
+      <NodeEditorProvider selectedNodeIds={['mux-1']}><MuxAudioVideoNode
         id="mux-1"
         selected
         data={{
@@ -83,7 +84,7 @@ describe('Task 34 video compose and mux node parity', () => {
         onChange={onChange}
         onRun={onRun}
         onWriteOutputAsset={onWriteOutputAsset}
-      />
+      /></NodeEditorProvider>
     )
 
     expect(screen.getByText('video-final')).toBeInTheDocument()

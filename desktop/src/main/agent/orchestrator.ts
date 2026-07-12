@@ -332,6 +332,14 @@ function canonicalAgentRoleId(agentId: string): CanonicalAgentRoleId | null {
   return roleAliases[agentId] ?? null
 }
 
+function chatAgentIdForIntent(requestedAgentId: string | undefined, intent: AgentIntentAnalysis): string {
+  if (requestedAgentId) {
+    return requestedAgentId
+  }
+
+  return intent.recommendedAgentId === 'canvas-operator' ? 'canvas-operator' : DEFAULT_CHAT_AGENT_ID
+}
+
 function isToolPermissionKind(value: unknown): value is ToolPermissionKind {
   return value === 'canvas.read'
     || value === 'canvas.write'
@@ -2105,9 +2113,9 @@ export function createOrchestratorRuntime(options: OrchestratorRuntimeOptions): 
 
   const runtime: OrchestratorRuntime = {
     chatSend(input) {
-      const agentId = input.agentId ?? DEFAULT_CHAT_AGENT_ID
       const trigger = input.trigger ?? 'canvasChat'
       const intentAnalysis = analyzeAgentIntent(input.message)
+      const agentId = chatAgentIdForIntent(input.agentId, intentAnalysis)
       const submitted = submitRun({
         message: input.message,
         agentId,

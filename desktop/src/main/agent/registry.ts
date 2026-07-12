@@ -147,7 +147,7 @@ const builtinAgents: AgentDefinition[] = [
       maxContextTokens: 6000
     },
     permissionPolicy: { allowedPermissionKinds: ['canvas.read', 'canvas.write'], requireAskForDestructive: true },
-    triggerPolicy: { allowedTriggers: ['manual', 'mention'], defaultTrigger: 'manual', autoRun: false },
+    triggerPolicy: { allowedTriggers: ['manual', 'mention', 'canvasChat'], defaultTrigger: 'canvasChat', autoRun: false },
     maxTurns: 6,
     effort: 'medium',
     enabled: true

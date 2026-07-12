@@ -222,6 +222,46 @@ function expectClosedNativeToolCalls(messages: readonly GatewayChatMessage[]): v
 }
 
 describe('M4 orchestrator AsyncGenerator runtime', () => {
+  it('routes an unmentioned existing-node update to the canvas operator', () => {
+    let queuedJob: unknown
+    const runtime = createOrchestratorRuntime({
+      queue: {
+        enqueue(input) {
+          queuedJob = input
+          return { jobId: 'job-existing-node-update', status: 'pending', createdAt: 1 }
+        }
+      },
+      events: createJobEventBus(),
+      idFactory: (prefix) => `${prefix}-existing-node-update`,
+      planner: createDefaultOrchestratorPlanner()
+    })
+
+    const ticket = runtime.chatSend({
+      message: '把当前角色节点 Character 1 改为凌霜月，并补充角色描述',
+      requestedBy: 'user-1'
+    })
+
+    expect(ticket).toEqual({
+      runId: 'run-existing-node-update',
+      jobId: 'job-existing-node-update',
+      messageId: 'message-existing-node-update',
+      status: 'pending'
+    })
+    expect(queuedJob).toMatchObject({
+      type: 'agent.run',
+      payload: {
+        agentId: 'canvas-operator'
+      }
+    })
+    expect(runtime.getRun(ticket.runId)?.trace).toMatchObject({
+      agentId: 'canvas-operator',
+      intentAnalysis: {
+        recommendedAgentId: 'canvas-operator',
+        localCapabilities: ['canvas.queryGraph', 'canvas.updateNodeData']
+      }
+    })
+  })
+
   it('answers low-signal greetings without creating canvas nodes', () => {
     const response = createDefaultOrchestratorPlanner().proposePlan({
       runId: 'run-greeting',

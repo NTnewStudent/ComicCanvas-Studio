@@ -430,34 +430,31 @@ const CanvasChatBox = ({ open, onToggle, agentEnabled = true, onApplyPlan, onDra
       </div>
 
       {/* ── 展开面板 ── */}
-      <div
-        className={`pointer-events-auto fixed bottom-6 left-1/2 z-30 w-full max-w-2xl -translate-x-1/2 px-4 transition-all duration-400 ${
-          open
-            ? 'translate-y-0 scale-100 opacity-100'
-            : 'pointer-events-none translate-y-4 scale-95 opacity-0'
-        }`}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.34,1.56,0.64,1)' }}
-      >
-        <AgentWorkbench
-          variant="compact"
-          title="AI 对话"
-          statusText={agentEnabled ? (busy ? 'Agent 执行中' : '就绪') : '本地画布模式'}
-          agentName={selectedAgent ? selectedAgent.name : 'General Purpose'}
-          agentEnabled={agentEnabled}
-          turns={turns}
-          busy={busy}
-          permissionBusy={permissionBusy}
-          runView={activeRunView}
-          transcriptRef={scrollRef}
-          renderPlan={renderPlan}
-          onApprovePermission={(callId, scope) => { void handle?.store.getState().approvePermission(callId, scope) }}
-          onDenyPermission={(callId) => { void handle?.store.getState().denyPermission(callId) }}
-          onApplyDraftGraph={applyDraftGraph}
-          getChildRun={(runId) => window.comicCanvas.getAgentRun({ runId })}
-          headerActions={headerActions}
-          composer={composer}
-        />
-      </div>
+      {open && (
+        <div
+          className="pointer-events-auto fixed bottom-6 left-1/2 z-30 w-full max-w-2xl -translate-x-1/2 px-4"
+        >
+          <AgentWorkbench
+            variant="compact"
+            title="AI 对话"
+            statusText={agentEnabled ? (busy ? 'Agent 执行中' : '就绪') : '本地画布模式'}
+            agentName={selectedAgent ? selectedAgent.name : 'General Purpose'}
+            agentEnabled={agentEnabled}
+            turns={turns}
+            busy={busy}
+            permissionBusy={permissionBusy}
+            runView={activeRunView}
+            transcriptRef={scrollRef}
+            renderPlan={renderPlan}
+            onApprovePermission={(callId, scope) => { void handle?.store.getState().approvePermission(callId, scope) }}
+            onDenyPermission={(callId) => { void handle?.store.getState().denyPermission(callId) }}
+            onApplyDraftGraph={applyDraftGraph}
+            getChildRun={(runId) => window.comicCanvas.getAgentRun({ runId })}
+            headerActions={headerActions}
+            composer={composer}
+          />
+        </div>
+      )}
     </div>
   )
 }

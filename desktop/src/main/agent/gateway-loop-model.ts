@@ -128,6 +128,41 @@ function parseToolCall(entry: unknown, index: number): AgentToolCall | null {
   }
 }
 
+function hasRequestedCanvasMutation(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  return ['nodes', 'edges', 'runSteps'].some((key) => Array.isArray(value[key]) && value[key].length > 0)
+}
+
+function isEmptyCanvasPlan(plan: CanvasPlan): boolean {
+  return plan.nodes.length === 0 && plan.edges.length === 0 && plan.runSteps.length === 0
+}
+
+function clarificationFromDroppedCanvasMutation(plan: CanvasPlan): AgentLoopStepResult {
+  return {
+    type: 'response',
+    response: {
+      type: 'clarification',
+      summary: 'The requested canvas mutation could not be represented as a valid CanvasPlan.',
+      question: '我无法将这项已有节点更新作为新建画布计划执行。请确认要更新的节点和字段，系统会改由画布操作 Agent 处理。',
+      missing: ['可更新的节点标识或字段'],
+      dropped: [...plan.dropped, 'canvas_plan_mutation_fully_dropped']
+    }
+  }
+}
+
+function parsedCanvasPlanResponse(planSource: unknown): AgentLoopStepResult {
+  const plan = sanitizePlan(planSource)
+
+  if (hasRequestedCanvasMutation(planSource) && isEmptyCanvasPlan(plan)) {
+    return clarificationFromDroppedCanvasMutation(plan)
+  }
+
+  return { type: 'response', response: { type: 'canvasPlan', plan } }
+}
+
 function parseModelJson(json: ModelJson): AgentLoopStepResult {
   if (json.type === 'toolCalls' && Array.isArray(json.calls)) {
     return {
@@ -165,19 +200,20 @@ function parseModelJson(json: ModelJson): AgentLoopStepResult {
   }
 
   if (json.type === 'canvasPlan' && isRecord(json.plan)) {
-    return {
-      type: 'response',
-      response: { type: 'canvasPlan', plan: sanitizePlan(json.plan) },
-      ...(typeof json.message === 'string' ? { message: json.message } : {})
-    }
+    const response = parsedCanvasPlanResponse(json.plan)
+    return { ...response, ...(typeof json.message === 'string' ? { message: json.message } : {}) }
   }
 
   const planSource = isRecord(json.plan) ? json.plan : json
-  const plan = sanitizePlan(planSource)
+  const parsed = parsedCanvasPlanResponse(planSource)
+
+  if (parsed.type === 'response') {
+    return { ...parsed, ...(typeof json.message === 'string' ? { message: json.message } : {}) }
+  }
 
   return {
     type: 'plan',
-    plan,
+    plan: sanitizePlan(planSource),
     ...(typeof json.message === 'string' ? { message: json.message } : {})
   }
 }
@@ -397,6 +433,7 @@ function buildPrompt(state: AgentContextLoopState): string {
     '- Ask at most ONE clarification in the entire conversation, and only when you genuinely cannot produce anything useful. NEVER ask which operation to perform — infer it (e.g. "想做一个角色" → create a character node; "画布节点" after describing a character → create that character node).',
     '- For pure greetings, small talk, or general questions with no canvas intent, return type=answer. Do not invent canvas nodes for those.',
     '- CanvasPlan is declarative JSON only. Never include executable code, scripts, shell commands, or provider secrets.',
+    '- CanvasPlan only describes new nodes, edges, and run steps. For an existing node update, query the graph and call canvas.updateNodeData when that tool is available; never encode an existing node ID as a CanvasPlan ref.',
     '- Image/video reference nodes do not generate. Use imageConfigV2 for imageRun and videoConfigV2 for videoRun.',
     '- Use only migrated node types: text, image, video, imageConfigV2, videoConfigV2, character, scene, audio, videoCompose, superResolution, muxAudioVideo.',
     '- If a minor detail is missing (a name, exact color), pick a reasonable default and proceed; only clarify when the core goal itself is unknowable.',
@@ -453,6 +490,7 @@ function buildNativeSystemPrompt(state: AgentContextLoopState): string {
     '- For system capability design requests, analyze requirements first and ask one key question before implementation or canvas mutations.',
     '- Prefer action over questions for clear creative intents; produce a CanvasPlan with sensible defaults.',
     '- CanvasPlan is declarative JSON only. Never include executable code or provider secrets.',
+    '- CanvasPlan only describes new nodes, edges, and run steps. For an existing node update, query the graph and call canvas.updateNodeData when that tool is available; never encode an existing node ID as a CanvasPlan ref.',
     '- Image/video reference nodes do not generate. Use imageConfigV2 for imageRun and videoConfigV2 for videoRun.',
     '- Use only migrated node types: text, image, video, imageConfigV2, videoConfigV2, character, scene, audio, videoCompose, superResolution, muxAudioVideo.',
     '',

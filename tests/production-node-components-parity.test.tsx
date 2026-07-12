@@ -19,6 +19,7 @@ import type {
 } from '../shared/nodes'
 import { AudioNode } from '../desktop/src/renderer/src/canvas/nodes/AudioNode'
 import { CharacterNode } from '../desktop/src/renderer/src/canvas/nodes/CharacterNode'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 import { MjImageNode } from '../desktop/src/renderer/src/canvas/nodes/MjImageNode'
 import { MuxAudioVideoNode } from '../desktop/src/renderer/src/canvas/nodes/MuxAudioVideoNode'
 import { SceneNode } from '../desktop/src/renderer/src/canvas/nodes/SceneNode'
@@ -68,35 +69,41 @@ describe('Task 27 production node components parity', () => {
 
     renderInFlow(
       <>
-        <CharacterNode
-          id="character-1"
-          data={{
-            label: 'Mika',
-            description: 'brave pilot with blue coat',
-            assetId: 'asset-character',
-            url: 'cc-asset://asset/asset-character',
-            tags: ['lead']
-          } satisfies CharacterNodeData}
-          onChange={onCharacterChange}
-        />
-        <SceneNode
-          id="scene-1"
-          data={{
-            label: 'Rain Alley',
-            description: 'neon street after rain',
-            assetId: 'asset-scene',
-            url: 'cc-asset://asset/asset-scene',
-            category: 'exterior'
-          } satisfies SceneNodeData}
-          onChange={onSceneChange}
-        />
+        <NodeEditorProvider selectedNodeIds={['character-1']}>
+          <CharacterNode
+            id="character-1"
+            selected
+            data={{
+              label: 'Mika',
+              description: 'brave pilot with blue coat',
+              assetId: 'asset-character',
+              url: 'cc-asset://asset/asset-character',
+              tags: ['lead']
+            } satisfies CharacterNodeData}
+            onChange={onCharacterChange}
+          />
+        </NodeEditorProvider>
+        <NodeEditorProvider selectedNodeIds={['scene-1']}>
+          <SceneNode
+            id="scene-1"
+            selected
+            data={{
+              label: 'Rain Alley',
+              description: 'neon street after rain',
+              assetId: 'asset-scene',
+              url: 'cc-asset://asset/asset-scene',
+              category: 'exterior'
+            } satisfies SceneNodeData}
+            onChange={onSceneChange}
+          />
+        </NodeEditorProvider>
       </>
     )
 
     expect(screen.getByRole('group', { name: '角色节点 Mika' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: '场景节点 Rain Alley' })).toBeInTheDocument()
-    expect(screen.getByText('brave pilot with blue coat')).toBeInTheDocument()
-    expect(screen.getByText('neon street after rain')).toBeInTheDocument()
+    expect(screen.getByText('brave pilot with blue coat', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('neon street after rain', { selector: 'strong' })).toBeInTheDocument()
 
     fireEvent.change(screen.getByRole('textbox', { name: '角色描述' }), {
       target: { value: 'older detective in graphite coat' }
@@ -117,26 +124,30 @@ describe('Task 27 production node components parity', () => {
 
     renderInFlow(
       <>
-        <AudioNode
+        <NodeEditorProvider selectedNodeIds={['audio-1']}><AudioNode
           id="audio-1"
+          selected
           data={{ label: 'Theme', assetId: 'asset-audio', url: 'cc-asset://asset/asset-audio', durationSeconds: 42, status: 'idle' } satisfies AudioNodeData}
           onChange={onAudioChange}
-        />
-        <VideoComposeNode
+        /></NodeEditorProvider>
+        <NodeEditorProvider selectedNodeIds={['compose-1']}><VideoComposeNode
           id="compose-1"
+          selected
           data={{ label: 'Compose', inputOrder: ['video-1'], transitionName: 'cut', modelId: 'compose-local', assetId: null, status: 'idle' } satisfies VideoComposeNodeData}
           onChange={onComposeChange}
-        />
-        <SuperResolutionNode
+        /></NodeEditorProvider>
+        <NodeEditorProvider selectedNodeIds={['super-1']}><SuperResolutionNode
           id="super-1"
+          selected
           data={{ label: 'Upscale', scene: 'aigc', resolution: '1080p', fps: 30, assetId: null, status: 'idle' } satisfies SuperResolutionNodeData}
           onChange={onSuperChange}
-        />
-        <MuxAudioVideoNode
+        /></NodeEditorProvider>
+        <NodeEditorProvider selectedNodeIds={['mux-1']}><MuxAudioVideoNode
           id="mux-1"
+          selected
           data={{ label: 'Mux', modelId: 'mux-local', assetId: null, status: 'idle' } satisfies MuxAudioVideoNodeData}
           onChange={onMuxChange}
-        />
+        /></NodeEditorProvider>
       </>
     )
 
@@ -160,8 +171,9 @@ describe('Task 27 production node components parity', () => {
     const onChange = vi.fn()
 
     renderInFlow(
-      <MjImageNode
+      <NodeEditorProvider selectedNodeIds={['mj-1']}><MjImageNode
         id="mj-1"
+        selected
         data={{
           label: 'MJ Sheet',
           prompt: 'cinematic rainy alley',
@@ -173,7 +185,7 @@ describe('Task 27 production node components parity', () => {
           status: 'done'
         } satisfies MjImageNodeData}
         onChange={onChange}
-      />
+      /></NodeEditorProvider>
     )
 
     expect(screen.getByRole('group', { name: 'MJ Image node MJ Sheet' })).toBeInTheDocument()

@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import VideoConfigV2Node from '../desktop/src/renderer/src/canvas/nodes/VideoConfigV2Node'
+import { NodeEditorProvider } from '../desktop/src/renderer/src/canvas/components/NodeEditorContext'
 import { canvasStore } from '../desktop/src/renderer/src/canvas/store/canvas.store'
 import type { StylePresetView } from '../shared/styles'
 
@@ -42,7 +43,10 @@ afterEach(() => {
   cleanup()
 })
 
-function renderVideoConfig(onRun?: (id: string) => void): void {
+function renderVideoConfig(
+  onRun?: (id: string) => void,
+  activeEditorId: string | null = 'video-config',
+): void {
   const data = {
     label: 'Video Config',
     promptOverride: '',
@@ -94,36 +98,52 @@ function renderVideoConfig(onRun?: (id: string) => void): void {
 
   render(
     <ReactFlowProvider>
-      <VideoConfigV2Node
-        {...({
-          id: 'video-config',
-          type: 'videoConfigV2',
-          selected: true,
-          zIndex: 0,
-          draggable: true,
-          dragging: false,
-          selectable: true,
-          deletable: true,
-          isConnectable: true,
-          positionAbsoluteX: 0,
-          positionAbsoluteY: 0,
-          data
-        })}
-        {...(onRun ? { onRun } : {})}
-      />
+      <NodeEditorProvider selectedNodeIds={activeEditorId ? [activeEditorId] : []}>
+        <VideoConfigV2Node
+          {...({
+            id: 'video-config',
+            type: 'videoConfigV2',
+            selected: true,
+            zIndex: 0,
+            draggable: true,
+            dragging: false,
+            selectable: true,
+            deletable: true,
+            isConnectable: true,
+            positionAbsoluteX: 0,
+            positionAbsoluteY: 0,
+            data
+          })}
+          {...(onRun ? { onRun } : {})}
+        />
+      </NodeEditorProvider>
     </ReactFlowProvider>
   )
 }
 
 describe('Task 31 videoConfigV2 parity', () => {
+  it('keeps controls unmounted while collapsed and mounts the cloud-paper editor when active', () => {
+    renderVideoConfig(undefined, null)
+
+    expect(screen.getByTestId('video-v2-node-frame')).toHaveClass('cc-node-frame')
+    expect(screen.queryByTestId('video-config-v2-toolbar')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('video-config-v2-editor')).not.toBeInTheDocument()
+
+    cleanup()
+    renderVideoConfig()
+
+    expect(screen.getByTestId('video-config-v2-editor').querySelector('section')).toHaveClass('cc-node-editor')
+    expect(screen.getByTestId('video-config-v2-toolbar')).toBeInTheDocument()
+  })
+
   it('shows prompt/model/style/duration/ratio/resolution controls', async () => {
     renderVideoConfig()
 
     expect(screen.getByRole('textbox')).toHaveValue('slow push through rainy alley')
     expect(await screen.findByText(/Industrial Ink/u)).toBeInTheDocument()
-    expect(screen.getByText(/16:9/u)).toBeInTheDocument()
-    expect(screen.getByText('8s')).toBeInTheDocument()
-    expect(screen.getByText(/720p/u)).toBeInTheDocument()
+    expect(screen.getAllByText(/16:9/u)).not.toHaveLength(0)
+    expect(screen.getAllByText('8s')).not.toHaveLength(0)
+    expect(screen.getAllByText(/720p/u)).not.toHaveLength(0)
 
     fireEvent.click(screen.getByRole('button', { name: /Stub Video/u }))
     fireEvent.click(screen.getByText('Runway Gen-3'))

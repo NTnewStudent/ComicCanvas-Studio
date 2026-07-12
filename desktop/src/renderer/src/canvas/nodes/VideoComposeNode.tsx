@@ -9,7 +9,8 @@ import React, { useCallback } from 'react'
 import { useStore } from 'zustand'
 
 import type { VideoComposeNodeData } from '../../../../../../shared/nodes'
-import { cn } from '../../lib/cn'
+import { useNodeEditorOpen } from '../components/NodeEditorContext'
+import { NodeEditorFooter, NodeFrame, NodeHeader, NodePreview, NodeSelectionEditor, NodeSummaryRows } from '../components/NodePrimitives'
 import { NODE_MIN_HEIGHT, NODE_MIN_WIDTH, NODE_RESIZER_CLASS_NAMES } from '../lib/node-sizing'
 import { canvasStore } from '../store/canvas.store'
 
@@ -63,6 +64,7 @@ function VideoComposeNodeComponent({
   )
   const inputOrder = data.inputOrder ?? []
   const isRunning = data.status === 'pending' || data.status === 'running'
+  const editorOpen = useNodeEditorOpen(id)
 
   const handleRun = useCallback(() => {
     if (isRunning) return
@@ -71,13 +73,11 @@ function VideoComposeNodeComponent({
   }, [id, isRunning, onRun, update])
 
   return (
-    <article
+    <NodeFrame
+      className="h-full w-full"
       role="group"
       aria-label={`视频合成节点 ${data.label}`}
-      className={cn(
-        'relative flex h-full min-h-[520px] w-full min-w-[380px] flex-col gap-3 rounded-xl border border-border-secondary bg-bg-card p-4 text-text-base shadow-card transition-[border-color,box-shadow] duration-300 ease-luxury',
-        selected && 'border-border-primary shadow-active'
-      )}
+      selected={selected}
       data-node-id={id}
       data-node-type="videoCompose"
     >
@@ -89,34 +89,8 @@ function VideoComposeNodeComponent({
         handleClassName={NODE_RESIZER_CLASS_NAMES.handle}
       />
 
-      <header className="flex items-center gap-2">
-        <Combine className="h-4 w-4 text-brand" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase text-text-muted">视频合成</div>
-          <div className="truncate text-[15px] font-semibold text-text-base">{data.label}</div>
-        </div>
-        <span className="rounded-sm bg-bg-input px-2 py-1 text-[11px] text-text-muted">{data.status}</span>
-      </header>
-
-      <section className="rounded-lg border border-border-input bg-bg-input p-3">
-        <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-text-muted">
-          <ListOrdered className="h-3.5 w-3.5" />
-          输入顺序
-        </div>
-        {inputOrder.length > 0 ? (
-          <ol className="flex flex-col gap-1 text-[13px] text-text-base">
-            {inputOrder.map((nodeId, index) => (
-              <li key={`${nodeId}-${index}`} className="rounded-sm bg-bg-card px-2 py-1">
-                {nodeId}
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <div className="text-[13px] text-text-muted">连接多个视频节点后按边顺序合成</div>
-        )}
-      </section>
-
-      <div className="overflow-hidden rounded-lg border border-border-input bg-bg-input">
+      <NodeHeader icon={<Combine className="h-4 w-4" />} title={data.label} meta="视频合成" status={data.status} />
+      <NodePreview>
         {data.url ? (
           <video
             data-testid="video-compose-output"
@@ -125,40 +99,34 @@ function VideoComposeNodeComponent({
             className="aspect-video w-full bg-black object-contain"
           />
         ) : (
-          <div className="flex aspect-video items-center justify-center text-[13px] text-text-muted">
+          <div className="flex aspect-video items-center justify-center gap-2 text-[13px] text-text-muted">
+            <ListOrdered className="h-4 w-4" />
             合成输出等待队列回写
           </div>
         )}
-      </div>
+      </NodePreview>
+      <NodeSummaryRows rows={[
+        { label: '输入', value: inputOrder.length > 0 ? `${inputOrder.length} 个视频` : '等待连接' },
+        { label: '转场', value: transitionOptions.find((option) => option.value === (data.transitionName ?? 'cut'))?.label ?? '硬切' },
+        { label: '模型', value: data.modelId || '未配置' }
+      ]} />
 
-      <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">
-        转场
-        <select
-          aria-label="转场"
-          className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
-          value={data.transitionName ?? 'cut'}
-          onChange={(event) => update({ transitionName: event.target.value })}
-        >
-          {transitionOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">
-        合成模型
-        <input
-          aria-label="合成模型"
-          className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand"
-          value={data.modelId ?? ''}
-          onChange={(event) => update({ modelId: event.target.value })}
-        />
-      </label>
-
-      {selected && (
-        <div className="grid grid-cols-2 gap-2">
+      <NodeSelectionEditor open={editorOpen} testId="video-compose-node-editor">
+        <div className="grid gap-3">
+          <section>
+            <div className="mb-2 flex items-center gap-2 text-[12px] font-medium text-text-muted"><ListOrdered className="h-3.5 w-3.5" />输入顺序</div>
+            {inputOrder.length > 0 ? <ol className="grid gap-1 text-[13px]">{inputOrder.map((nodeId, index) => <li key={`${nodeId}-${index}`}>{nodeId}</li>)}</ol> : <p className="text-[13px] text-text-muted">连接多个视频节点后按边顺序合成</p>}
+          </section>
+          <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">转场
+            <select aria-label="转场" className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand" value={data.transitionName ?? 'cut'} onChange={(event) => update({ transitionName: event.target.value })}>
+              {transitionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[12px] font-medium text-text-muted">合成模型
+            <input aria-label="合成模型" className="h-8 rounded-sm border border-border-input bg-bg-input px-2 text-[13px] text-text-base outline-none focus:ring-1 focus:ring-brand" value={data.modelId ?? ''} onChange={(event) => update({ modelId: event.target.value })} />
+          </label>
+        </div>
+        <NodeEditorFooter>
           <button
             type="button"
             aria-label="运行视频合成"
@@ -181,12 +149,12 @@ function VideoComposeNodeComponent({
             <Save className="h-3.5 w-3.5" />
             写回
           </button>
-        </div>
-      )}
+        </NodeEditorFooter>
+      </NodeSelectionEditor>
 
       <Handle type="target" position={Position.Left} className="cc-handle" />
       <Handle type="source" position={Position.Right} className="cc-handle" />
-    </article>
+    </NodeFrame>
   )
 }
 
