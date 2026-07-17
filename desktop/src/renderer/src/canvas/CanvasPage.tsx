@@ -35,12 +35,8 @@ import {
   type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Link, useSearchParams, Navigate } from 'react-router-dom'
+import { useSearchParams, Navigate } from 'react-router-dom'
 import {
-  IconArrowLeft,
-  IconArrowBackUp,
-  IconArrowForwardUp,
-  IconPlayerPlay,
   IconTypography,
   IconPhoto,
   IconVideo,
@@ -59,12 +55,9 @@ import {
   IconListDetails,
   IconMoon,
   IconSun,
-  IconChevronDown,
   IconHandGrab,
   IconPointer,
   IconSearch,
-  IconUpload,
-  IconDownload,
   IconHelp,
   IconZoomIn,
   IconZoomOut,
@@ -107,6 +100,7 @@ import { ProjectStyleSelector } from './components/ProjectStyleSelector'
 import { CanvasJobPanel } from './components/CanvasJobPanel'
 import { CanvasCommandPalette, type CanvasCommand } from './components/CanvasCommandPalette'
 import { ConnectionFeedback } from './components/ConnectionFeedback'
+import { TopBar } from './components/TopBar'
 import { NodeEditorProvider } from './components/NodeEditorContext'
 import PromptOrderEdge from './edges/PromptOrderEdge'
 import ImageOrderEdge from './edges/ImageOrderEdge'
@@ -587,6 +581,9 @@ function CanvasPageInner(): JSX.Element {
   const [interactionMode, setInteractionMode] = useState<'select' | 'pan'>('select')
   const themePreference = useThemeStore((s) => s.preference)
   const setThemePreference = useThemeStore((s) => s.setPreference)
+  const [focusMode, setFocusMode] = useState(false)
+  const toggleFocusMode = useCallback(() => setFocusMode((v) => !v), [])
+  const [jobCount, setJobCount] = useState(0)
 
   /* Context menu state */
   const [contextMenu, setContextMenu] = useState<{
@@ -882,6 +879,31 @@ function CanvasPageInner(): JSX.Element {
       unsubscribeFailed()
     }
   }, [planExecutionController, syncReactFlowFromStore])
+
+  useEffect(() => {
+    async function countActiveJobs() {
+      try {
+        const jobs = await window.comicCanvas.listJobs({})
+        const active = jobs.filter((job) => job.status === 'pending' || job.status === 'processing').length
+        setJobCount(active)
+      } catch {
+        setJobCount(0)
+      }
+    }
+
+    void countActiveJobs()
+    const unsubscribeCompleted = window.comicCanvas.onJobCompleted(() => {
+      void countActiveJobs()
+    })
+    const unsubscribeFailed = window.comicCanvas.onJobFailed(() => {
+      void countActiveJobs()
+    })
+
+    return () => {
+      unsubscribeCompleted()
+      unsubscribeFailed()
+    }
+  }, [])
 
   /* Save graph handler */
   const handleSave = useCallback(async () => {
@@ -1467,6 +1489,12 @@ function CanvasPageInner(): JSX.Element {
       event.preventDefault()
       handleDeleteSelection(selectedNodeIds)
     }
+
+    if (key === 'f') {
+      event.preventDefault()
+      toggleFocusMode()
+      return
+    }
   }, [
     fitView,
     handleDeleteSelection,
@@ -1476,6 +1504,7 @@ function CanvasPageInner(): JSX.Element {
     handleUndo,
     isMacLikePlatform,
     selectedNodeIds,
+    toggleFocusMode,
   ])
 
   useEffect(() => {
@@ -1486,6 +1515,22 @@ function CanvasPageInner(): JSX.Element {
   const handleRunAll = useCallback(() => {
     // Keep React Flow local state and Zustand durable state in sync.
   }, [])
+
+  const handleRunSelected = useCallback(() => {
+    // TODO: wire per-selection run once selection-run policy is finalised.
+  }, [])
+
+  const handleOpenCommandPalette = useCallback(() => {
+    setShowCommandPalette(true)
+  }, [setShowCommandPalette])
+
+  const handleRename = useCallback(
+    async (name: string) => {
+      const result = await window.comicCanvas.renameWorkflow({ workflowId: currentWorkflowId, name })
+      setWorkflowName(result.name)
+    },
+    [currentWorkflowId],
+  )
 
   const handleSaveSnippet = useCallback(async () => {
     try {
@@ -1741,179 +1786,38 @@ function CanvasPageInner(): JSX.Element {
   return (
     <CanvasRunContext.Provider value={canvasRunContextValue}>
       <div className="flex h-screen w-screen flex-col bg-bg-base">
-      <header
-        data-testid="canvas-topbar"
-        className="flex h-14 shrink-0 items-center justify-between border-b border-border-secondary bg-bg-surface px-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]"
-      >
-        <div className="flex items-center gap-3">
-          <Link
-            to="/projects"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-secondary bg-bg-card text-text-secondary shadow-sm transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="返回项目"
-            title="返回项目"
-          >
-            <IconArrowLeft className="h-4 w-4" />
-          </Link>
-          <button
-            onClick={() => setShowProjectManager(true)}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[15px] font-semibold text-text-base transition-all duration-200 ease-luxury hover:bg-bg-hover active:scale-95"
-            aria-label="打开工作流切换器"
-            title="打开工作流切换器"
-          >
-            {workflowName}
-            <IconChevronDown className="h-3.5 w-3.5 text-text-muted" />
-          </button>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-2.5 py-1 text-[11px] font-semibold text-brand">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-            画布项目
-          </span>
-          <ProjectStyleSelector workflowId={currentWorkflowId} />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <input
-            ref={importWorkflowInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(event) => void handleImportWorkflowFile(event)}
-            aria-label="工作流 JSON 文件"
-          />
-          <button
-            type="button"
-            onClick={handleUndo}
-            disabled={pastLen === 0}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="撤销"
-            title="撤销"
-          >
-            <IconArrowBackUp className="h-3.5 w-3.5" />
-            撤销
-          </button>
-          <button
-            type="button"
-            onClick={handleRedo}
-            disabled={futureLen === 0}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="重做"
-            title="重做"
-          >
-            <IconArrowForwardUp className="h-3.5 w-3.5" />
-            重做
-          </button>
-          <span className="h-5 w-px bg-border-secondary" />
-          <button
-            type="button"
-            onClick={() => importWorkflowInputRef.current?.click()}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="导入工作流 JSON"
-            title="导入工作流 JSON"
-          >
-            <IconUpload className="h-3.5 w-3.5" />
-            导入
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleExportWorkflow()}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="导出工作流 JSON"
-            title="导出工作流 JSON"
-          >
-            <IconDownload className="h-3.5 w-3.5" />
-            导出
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSave().catch(() => undefined)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95"
-            aria-label="保存工作流"
-            title="保存工作流"
-          >
-            {saveStatus === 'saving' ? (
-              <>
-                <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
-                保存中...
-              </>
-            ) : saveStatus === 'saved' ? (
-              <>
-                <IconCheck className="h-3.5 w-3.5 text-green-400" />
-                <span className="text-green-400">已保存</span>
-              </>
-            ) : saveStatus === 'error' ? (
-              <>
-                <IconDeviceFloppy className="h-3.5 w-3.5 text-red-400" />
-                <span className="text-red-400">保存失败</span>
-              </>
-            ) : (
-              <>
-                <IconDeviceFloppy className="h-3.5 w-3.5" />
-                保存
-              </>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSaveSnippet()}
-            disabled={selectedNodeIds.length < 2}
-            className="inline-flex h-8 items-center rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="保存片段"
-            title={selectedNodeIds.length < 2 ? '请选择至少两个节点' : '保存选中节点为片段'}
-          >
-            保存片段
-          </button>
-          <select
-            value={selectedSnippet?.id ?? ''}
-            onChange={(event) => setSelectedSnippetId(event.target.value)}
-            className="h-8 max-w-[180px] rounded-lg border border-border-secondary bg-bg-card px-2 text-[13px] font-medium text-text-secondary outline-none transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base"
-            aria-label="片段库"
-          >
-            {snippets.length === 0 ? (
-              <option value="">暂无片段</option>
-            ) : snippets.map((snippet) => (
-              <option key={snippet.id} value={snippet.id}>
-                {snippet.name} ({snippet.nodeCount})
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={handleInsertSnippet}
-            disabled={!selectedSnippet}
-            className="inline-flex h-8 items-center rounded-lg border border-border-secondary bg-bg-card px-3 text-[13px] font-medium text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="插入片段"
-          >
-            插入片段
-          </button>
-          <button
-            type="button"
-            onClick={handleRunAll}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-[13px] font-semibold text-bg-base transition-all duration-200 ease-luxury hover:bg-brand-hover active:scale-95"
-            aria-label="运行全部"
-          >
-            <IconPlayerPlay className="h-3.5 w-3.5" />
-            运行全部
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowJobPanel((v) => !v)}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-full border border-border-secondary px-3 text-[13px] font-medium transition-all duration-200 ease-luxury active:scale-95 ${showJobPanel ? 'bg-brand/10 text-brand' : 'bg-bg-card text-text-secondary hover:bg-bg-hover hover:text-text-base'}`}
-            aria-label="切换任务状态"
-            title="运行任务"
-          >
-            <IconListDetails className="h-3.5 w-3.5" />
-            运行任务
-          </button>
-          <button
-            type="button"
-            onClick={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-text-secondary transition-all duration-200 ease-luxury hover:bg-bg-hover hover:text-text-base active:scale-90"
-            aria-label="切换主题"
-            title={themePreference === 'dark' ? '切换到亮色' : '切换到暗色'}
-          >
-            {themePreference === 'dark' ? <IconSun className="h-4 w-4" /> : <IconMoon className="h-4 w-4" />}
-          </button>
-        </div>
-      </header>
+      <TopBar
+        workflowId={currentWorkflowId}
+        workflowName={workflowName}
+        onRename={handleRename}
+        onOpenProjectManager={() => setShowProjectManager(true)}
+        onUndo={handleUndo}
+        canUndo={pastLen > 0}
+        onRedo={handleRedo}
+        canRedo={futureLen > 0}
+        importInputRef={importWorkflowInputRef}
+        onImportFileChange={handleImportWorkflowFile}
+        onImport={() => importWorkflowInputRef.current?.click()}
+        onExport={handleExportWorkflow}
+        onSave={handleSave}
+        saveStatus={saveStatus}
+        onSaveSnippet={() => void handleSaveSnippet()}
+        canSaveSnippet={selectedNodeIds.length >= 2}
+        snippets={snippets}
+        selectedSnippetId={selectedSnippet?.id ?? ''}
+        onSelectSnippet={setSelectedSnippetId}
+        onInsertSnippet={() => void handleInsertSnippet()}
+        onRunAll={handleRunAll}
+        onRunSelected={handleRunSelected}
+        showJobPanel={showJobPanel}
+        onToggleJobPanel={() => setShowJobPanel((v) => !v)}
+        jobCount={jobCount}
+        themePreference={themePreference}
+        onToggleTheme={() => setThemePreference(themePreference === 'dark' ? 'light' : 'dark')}
+        focusMode={focusMode}
+        onToggleFocusMode={toggleFocusMode}
+        onOpenCommandPalette={handleOpenCommandPalette}
+      />
       <div className="relative flex-1" onDragOver={handleCanvasDragOver} onDrop={(event) => void handleCanvasDrop(event)}>
         <NodeEditorProvider selectedNodeIds={selectedNodeIds}>
         <ReactFlow

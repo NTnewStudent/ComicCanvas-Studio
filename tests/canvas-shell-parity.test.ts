@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const CANVAS_PAGE = 'desktop/src/renderer/src/canvas/CanvasPage.tsx'
+const TOP_BAR = 'desktop/src/renderer/src/canvas/components/TopBar.tsx'
 const CANVAS_CSS = 'desktop/src/renderer/src/canvas/canvas.css'
 const NODE_SIZING = 'desktop/src/renderer/src/canvas/lib/node-sizing.ts'
 
 describe('Task 20 canvas shell parity', () => {
-  it('wires hjwall-style top bar actions into CanvasPage', () => {
-    const source = readFileSync(CANVAS_PAGE, 'utf8')
+  it('wires hjwall-style top bar actions into TopBar', () => {
+    const source = readFileSync(TOP_BAR, 'utf8')
 
     expect(source).toContain('data-testid="canvas-topbar"')
     expect(source).toContain('aria-label="返回项目"')
