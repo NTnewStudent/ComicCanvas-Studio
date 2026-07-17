@@ -107,3 +107,4 @@ ltm/snapshots/
 # Local gateway bootstrap (contains provider API keys; never commit)
 local-gateways.json
 **/local-gateways.json
+.worktrees/
